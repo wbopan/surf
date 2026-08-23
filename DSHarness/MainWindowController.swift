@@ -127,6 +127,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
               let type = dict["type"] as? String, type == "width",
               let width = dict["width"] as? Double else { return }
         let w = min(max(CGFloat(width), 120), 480)
+        Log.write("侧边栏宽度回传：\(Int(w))px", to: harnessManager.logURL, tag: "web")
         guard abs(w - currentSidebarWidth) > 4 else { return }
         setSidebarWidth(w)
     }
@@ -459,12 +460,48 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     // MARK: - WKNavigationDelegate（防御式：注入失败不影响功能）
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: harnessManager.logURL, tag: "web")
+        // 诊断：SPA 异步挂载，延迟再查一次 DOM（仅日志，不影响功能）
+        let script = """
+        JSON.stringify({
+            title: document.title,
+            rootChildren: (document.getElementById('root') ? document.getElementById('root').children.length : -1),
+            injected: !!document.getElementById('dsharness-vibrancy-style'),
+            bodyTextLen: document.body ? document.body.innerText.length : -1,
+            bodyText: document.body ? document.body.innerText.slice(0, 400) : '',
+            interactiveEls: document.querySelectorAll('button,a,input,textarea,[role]').length,
+            rails: [...document.querySelectorAll('#root div')].filter(function(d){
+                var r = d.getBoundingClientRect(); var s = getComputedStyle(d);
+                return r.left <= 8 && r.width >= 40 && r.width <= 420 && r.height > window.innerHeight * 0.5;
+            }).map(function(d){
+                var r = d.getBoundingClientRect();
+                return { w: Math.round(r.width), bg: getComputedStyle(d).backgroundColor,
+                         parentBg: d.parentElement ? getComputedStyle(d.parentElement).backgroundColor : '' };
+            }).slice(0, 3),
+            url: location.href
+        })
+        """
+        webView.evaluateJavaScript(script) { result, _ in
+            if let s = result as? String {
+                Log.write("WebView DOM(0s)：\(s)", to: self.harnessManager.logURL, tag: "web")
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            webView.evaluateJavaScript(script) { result, _ in
+                if let s = result as? String {
+                    Log.write("WebView DOM(3s)：\(s)", to: self.harnessManager.logURL, tag: "web")
+                }
+            }
+        }
+    }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 导航失败：\(error.localizedDescription)", tag: "web")
+        Log.write("WebView 导航失败：\(error.localizedDescription)", to: harnessManager.logURL, tag: "web")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 加载失败：\(error.localizedDescription)", tag: "web")
+        Log.write("WebView 加载失败：\(error.localizedDescription)", to: harnessManager.logURL, tag: "web")
         // 页面尚未载入过且进程可能刚重启：延迟重载一次
         if harnessProcess.isRunning() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
