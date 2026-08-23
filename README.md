@@ -8,8 +8,8 @@ Swift/AppKit + WKWebView 的 macOS 应用，把 [`dsh`](https://github.com/deeps
 DSHarness.app（Swift/AppKit，ad-hoc 签名，不可变）
  ├─ 窗口: transparent titlebar + fullSizeContentView
  │    ├─ 左: NSVisualEffectView(.sidebar) —— vibrancy 层
+ │    ├─ 顶: 28pt 透明拖拽条（WindowDragRegionView）
  │    └─ WKWebView(透明) → http://127.0.0.1:<port>
- │         + WKUserScript 注入（Resources/SidebarInjection.css|js）
  ├─ HarnessManager: npm 管理的 dsh 安装 + 自更新
  ├─ HarnessProcess: posix_spawn `dsh web`，进程组隔离 + 监督重启
  └─ EventsBridge: SSE 订阅 /api/events.mux + /api/events.host → 原生通知
@@ -51,10 +51,7 @@ DSHarness/
  ├─ EventsBridge.swift           WebSocket 双流解析、通知策略、断线重连
  ├─ BootstrapViewController.swift 首启/错误引导视图
  ├─ SettingsWindowController.swift Node 路径、更新频率设置
- ├─ Support/                     Semver / NodeResolver / Shell / Log
- └─ Resources/
-    ├─ SidebarInjection.css      侧边栏透明注入选择器（易改，见下）
-    └─ SidebarInjection.js       结构启发式检测 + 宽度回传 Swift
+ └─ Support/                     Semver / NodeResolver / Shell / Log
 ```
 
 ## 与 dsh 的接口（对照 0.1.1-rc.2 源码验证）
@@ -78,18 +75,9 @@ DSHarness/
 
 断线指数退避重连（1s→30s 封顶），重连后不回填历史（通知只关心此后事件）。点击通知 → 唤起应用并前置窗口。
 
-## Vibrancy 侧边栏的"尽力而为"注入
-
-dsh Web UI 是 hash 化 CSS-module 的 SPA，**没有稳定语义钩子**（已核对 0.1.1-rc.2 dist）。注入策略：
-
-1. `SidebarInjection.css` —— 仓库内单一可编辑文件：文档级透明 + 语义选择器兜底（`aside`/`nav`/`[role=…]`）。
-2. `SidebarInjection.js` —— 结构启发式：找「窄宽 40–420px + 近全高 + 贴左 + 非 fixed」的容器，把该容器及其祖先链背景清透明，让原生 vibrancy 透出；并把宽度 `postMessage` 回 Swift 同步 NSVisualEffectView 宽度。
-
-**降级**：选择器/启发式全部失效时页面保留自带背景（功能不受损）；`⌘V` 可切换 vibrancy 层开关。
-
 ## 已知限制
 
-- **dsh 处于 developer preview**，明示会有 breaking change：CSS 注入与事件帧解析全部防御式编写（未知帧忽略、注入失败不崩溃）；harness 版本切换保留 N-1 回滚。
+- **dsh 处于 developer preview**，明示会有 breaking change：事件帧解析全部防御式编写（未知帧忽略、异常不崩溃）；harness 版本切换保留 N-1 回滚。
 - 壳应用无自更新通道（Sparkle 未接入）：自用场景重新 build 即可。
 - 首启需 npm install（约 3–6 分钟，网络相关）；引导视图会显示进度。
 - 更新检查：启动时 + 每 6 小时（可在设置里改为手动/24h）；发现新版 → 装新目录 → 校验 → 切链接 → 提示重启生效。
@@ -98,8 +86,9 @@ dsh Web UI 是 hash 化 CSS-module 的 SPA，**没有稳定语义钩子**（已�
 
 ## 菜单
 
-- `⌘,` 设置（Node 路径、更新频率）
-- `⌘U` 检查 harness 更新
-- `⌘⇧R` 重启 Harness
-- `⌘R` 重载页面；`⌘V` 切换 vibrancy
-- 「打开日志目录」
+标准 macOS 菜单结构（应用 / 文件 / 编辑 / 显示 / 窗口）：
+
+- `⌘,` 设置（Node 路径、更新频率）；`⌘U` 检查 harness 更新；`⌘⇧R` 重启 Harness；`⌘R` 重载页面
+- `⌘W` 关闭窗口；`⌘M` 最小化；`⌘Q` 退出；`⌘H` 隐藏
+- 编辑快捷键（作用于 WebView 与设置窗口的文本框）：`⌘Z` 撤销 / `⌘⇧Z` 重做 / `⌘X` 剪切 / `⌘C` 拷贝 / `⌘V` 粘贴 / `⌘A` 全选
+- 「切换侧边栏 Vibrancy」在显示菜单内（无快捷键，避免占用 `⌘V` 粘贴）；「打开日志目录」在应用菜单内

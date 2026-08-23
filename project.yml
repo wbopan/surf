@@ -20,9 +20,6 @@ targets:
         excludes:
           - "Info.plist"
           - "DSHarness.entitlements"
-    resources:
-      - path: DSHarness/Resources/SidebarInjection.css
-      - path: DSHarness/Resources/SidebarInjection.js
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness

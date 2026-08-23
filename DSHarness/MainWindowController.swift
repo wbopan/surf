@@ -1,10 +1,23 @@
 import AppKit
 import WebKit
 
+/// 顶部透明拖拽条：命中后整窗可拖，
+/// 弥补 fullSizeContentView 下原生标题栏被 WebView 盖住、无拖拽区的问题。
+/// 用 `performDrag(with:)`（标题栏内部同款 API）手动发起拖拽，
+/// 比只靠 `mouseDownCanMoveWindow` 更可靠（后者在该窗口形态下实测不生效）。
+private final class WindowDragRegionView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+    /// 窗口非激活时第一次点击也直接拖拽（与原生标题栏手感一致）。
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+}
+
 /// 主窗口：透明标题栏 + 左侧 vibrancy 侧边栏 + 整幅透明 WKWebView，
 /// 并驱动整体状态机（安装 → 启动 → 健康 → 载入 Web UI / 通知桥）。
 @MainActor
-final class MainWindowController: NSWindowController, WKNavigationDelegate, WKScriptMessageHandler, NSWindowDelegate {
+final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
 
     static let sidebarDefaultWidth: CGFloat = 232
 
@@ -17,7 +30,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     private let backdropView = NSVisualEffectView() // 右侧普通背景
     private let sidebarView = NSVisualEffectView()  // 左侧 vibrancy
-    private var currentSidebarWidth: CGFloat = MainWindowController.sidebarDefaultWidth
+    private let titleBarDragView = WindowDragRegionView() // 顶部可拖拽条
 
     private var bootstrapVC: BootstrapViewController?
     private var settingsWC: SettingsWindowController?
@@ -25,16 +38,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
     private var bootTask: Task<Void, Never>?
     private var healthCheckInFlight = false
 
-    // MARK: - WebView（lazy：注入脚本需先配好 userContentController）
+    // MARK: - WebView
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
-        let ucc = WKUserContentController()
-        ucc.add(self, name: "sidebar")
-        if let script = Self.buildInjectionScript() {
-            ucc.addUserScript(script)
-        }
-        config.userContentController = ucc
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
@@ -69,6 +76,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
         win.isMovableByWindowBackground = true
         win.minSize = NSSize(width: 720, height: 480)
         win.backgroundColor = .windowBackgroundColor
+        // 关窗只隐藏、不销毁窗口：harness 后台持续运行，点 Dock 图标可原样恢复页面。
+        win.isReleasedWhenClosed = false
         win.delegate = self
         self.window = win
         win.center()
@@ -92,51 +101,20 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
         sidebarView.material = .sidebar
         sidebarView.blendingMode = .behindWindow
         sidebarView.state = .followsWindowActiveState
-        sidebarView.frame = NSRect(x: 0, y: 0, width: currentSidebarWidth, height: bounds.height)
+        sidebarView.frame = NSRect(x: 0, y: 0, width: MainWindowController.sidebarDefaultWidth, height: bounds.height)
         sidebarView.autoresizingMask = [.height]
 
         content.addSubview(backdropView)
         content.addSubview(sidebarView)
         content.addSubview(webView)
+        content.addSubview(titleBarDragView)
 
         webView.frame = bounds
         webView.autoresizingMask = [.width, .height]
-    }
 
-    // MARK: - 注入脚本
-
-    /// 组装注入脚本：SidebarInjection.js + 内嵌 CSS（base64 防转义问题）。
-    static func buildInjectionScript() -> WKUserScript? {
-        let bundle = Bundle.main
-        guard let jsURL = bundle.url(forResource: "SidebarInjection", withExtension: "js"),
-              let cssURL = bundle.url(forResource: "SidebarInjection", withExtension: "css"),
-              let js = try? String(contentsOf: jsURL, encoding: .utf8),
-              let css = try? String(contentsOf: cssURL, encoding: .utf8) else {
-            return nil
-        }
-        let cssB64 = css.data(using: .utf8)!.base64EncodedString()
-        let combined = js.replacingOccurrences(of: "__CSS_B64__", with: cssB64)
-        return WKUserScript(source: combined, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-    }
-
-    // MARK: - WKScriptMessageHandler（侧边栏宽度同步）
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "sidebar",
-              let dict = message.body as? [String: Any],
-              let type = dict["type"] as? String, type == "width",
-              let width = dict["width"] as? Double else { return }
-        let w = min(max(CGFloat(width), 120), 480)
-        Log.write("侧边栏宽度回传：\(Int(w))px", to: harnessManager.logURL, tag: "web")
-        guard abs(w - currentSidebarWidth) > 4 else { return }
-        setSidebarWidth(w)
-    }
-
-    private func setSidebarWidth(_ width: CGFloat) {
-        currentSidebarWidth = width
-        var f = sidebarView.frame
-        f.size.width = width
-        sidebarView.frame = f
+        // 顶部 28pt 透明拖拽条（标准标题栏高度），随窗口宽度伸缩、贴顶。
+        titleBarDragView.frame = NSRect(x: 0, y: bounds.height - 28, width: bounds.width, height: 28)
+        titleBarDragView.autoresizingMask = [.width, .minYMargin]
     }
 
     // MARK: - 状态机
@@ -370,9 +348,14 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     // MARK: - 菜单
 
+    /// 标准 macOS 菜单：应用 / 文件 / 编辑 / 显示 / 窗口。
+    /// 编辑菜单把 ⌘A/⌘C/⌘V/⌘X/⌘Z 等以标准 selector（cut:/copy:/paste:/selectAll:…）
+    /// 挂到 nil target（走响应链）——WKWebView 与原生文本框（设置窗口）都会正确响应，
+    /// 不再依赖 Web 内容层对裸按键的偶发处理。
     private func setupMenus() {
         let mainMenu = NSMenu()
 
+        // 应用菜单（⌘Q 退出、⌘H 隐藏）
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
@@ -394,11 +377,46 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "隐藏 DSHarness",
+                        action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthersItem = appMenu.addItem(withTitle: "隐藏其他",
+                                             action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "全部显示",
+                        action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出 DSHarness",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         appItem.title = "DSHarness"
 
+        // 文件菜单（⌘W 关闭窗口）
+        let fileItem = NSMenuItem()
+        mainMenu.addItem(fileItem)
+        let fileMenu = NSMenu(title: "文件")
+        fileMenu.addItem(withTitle: "关闭窗口",
+                         action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileItem.submenu = fileMenu
+        fileItem.title = "文件"
+
+        // 编辑菜单（⌘Z/⌘⇧Z/⌘X/⌘C/⌘V/⌘A）
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "删除", action: Selector(("delete:")), keyEquivalent: "")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "全选", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        editItem.title = "编辑"
+
+        // 显示菜单（⌘R 重载；vibrancy 不再占 ⌘V）
         let viewItem = NSMenuItem()
         mainMenu.addItem(viewItem)
         let viewMenu = NSMenu(title: "显示")
@@ -406,10 +424,22 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
                                           action: #selector(reloadPage), keyEquivalent: "r")
         reloadItem.target = self
         let toggleItem = viewMenu.addItem(withTitle: "切换侧边栏 Vibrancy",
-                                          action: #selector(toggleVibrancy), keyEquivalent: "v")
+                                          action: #selector(toggleVibrancy), keyEquivalent: "")
         toggleItem.target = self
         viewItem.submenu = viewMenu
         viewItem.title = "显示"
+
+        // 窗口菜单（⌘M 最小化）
+        let windowItem = NSMenuItem()
+        mainMenu.addItem(windowItem)
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化",
+                           action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "缩放",
+                           action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        windowItem.title = "窗口"
+        NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
     }
@@ -443,6 +473,19 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
         sidebarView.isHidden = !hidden
     }
 
+    // MARK: - NSWindowDelegate
+
+    /// 窗口重新成为关键窗口时（首次显示、从 Dock 恢复、关掉设置窗口后），
+    /// 若焦点没有落在更具体的控件上，就把键盘焦点还给 WebView——
+    /// 否则 ⌘A/⌘C/⌘V 等快捷键要等用户点进页面才会响应。
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window else { return }
+        let fr = window.firstResponder
+        if fr === window || fr === window.contentView {
+            window.makeFirstResponder(webView)
+        }
+    }
+
     // MARK: - 提示
 
     /// 异步 NSAlert；返回 0 = 第一个按钮。必须在主线程调用。
@@ -462,23 +505,18 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: harnessManager.logURL, tag: "web")
+        // 页面就绪后把键盘焦点交给 WebView，快捷键/输入立即可用
+        if let window, window.firstResponder === window || window.firstResponder === window.contentView {
+            window.makeFirstResponder(webView)
+        }
         // 诊断：SPA 异步挂载，延迟再查一次 DOM（仅日志，不影响功能）
         let script = """
         JSON.stringify({
             title: document.title,
             rootChildren: (document.getElementById('root') ? document.getElementById('root').children.length : -1),
-            injected: !!document.getElementById('dsharness-vibrancy-style'),
             bodyTextLen: document.body ? document.body.innerText.length : -1,
             bodyText: document.body ? document.body.innerText.slice(0, 400) : '',
             interactiveEls: document.querySelectorAll('button,a,input,textarea,[role]').length,
-            rails: [...document.querySelectorAll('#root div')].filter(function(d){
-                var r = d.getBoundingClientRect(); var s = getComputedStyle(d);
-                return r.left <= 8 && r.width >= 40 && r.width <= 420 && r.height > window.innerHeight * 0.5;
-            }).map(function(d){
-                var r = d.getBoundingClientRect();
-                return { w: Math.round(r.width), bg: getComputedStyle(d).backgroundColor,
-                         parentBg: d.parentElement ? getComputedStyle(d.parentElement).backgroundColor : '' };
-            }).slice(0, 3),
             url: location.href
         })
         """

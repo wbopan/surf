@@ -43,8 +43,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController?.shutdown()
     }
 
+    /// macOS 14+ 要求显式声明安全的状态恢复，否则启动时打 Secure coding 警告。
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        true
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // 关窗 ≠ 退出：harness 在后台持续运行，只有真正退出 App 才被杀。
         false
+    }
+
+    /// 关窗后再点 Dock 图标：把主窗口原样带回前台（窗口未销毁，页面状态不变）。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if let window = windowController?.window {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            windowController?.showWindow(nil)
+        }
+        return true
     }
 
     private func appSupportURL() -> URL {
