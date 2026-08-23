@@ -17,7 +17,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     private let backdropView = NSVisualEffectView() // 右侧普通背景
     private let sidebarView = NSVisualEffectView()  // 左侧 vibrancy
-    private var sidebarWidthConstraint: NSLayoutConstraint?
     private var currentSidebarWidth: CGFloat = MainWindowController.sidebarDefaultWidth
 
     private var bootstrapVC: BootstrapViewController?
@@ -77,40 +76,31 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     private func setupContentView() {
         guard let content = window?.contentView else { return }
+        let bounds = content.bounds
+
+        // 注意：contentView 层刻意不用 Auto Layout 约束——
+        // 约束解算器会在窗口首次可见时把窗口尺寸解算为 0×0
+        // （-[NSWindow _changeWindowFrameFromConstraintsIfNecessary] 经典坑），
+        // 全出血布局用 autoresizing 掩码即可。
 
         backdropView.material = .windowBackground
         backdropView.blendingMode = .behindWindow
         backdropView.state = .followsWindowActiveState
-        backdropView.translatesAutoresizingMaskIntoConstraints = false
+        backdropView.frame = bounds
+        backdropView.autoresizingMask = [.width, .height]
 
         sidebarView.material = .sidebar
         sidebarView.blendingMode = .behindWindow
         sidebarView.state = .followsWindowActiveState
-        sidebarView.translatesAutoresizingMaskIntoConstraints = false
+        sidebarView.frame = NSRect(x: 0, y: 0, width: currentSidebarWidth, height: bounds.height)
+        sidebarView.autoresizingMask = [.height]
 
         content.addSubview(backdropView)
         content.addSubview(sidebarView)
         content.addSubview(webView)
 
-        let widthC = sidebarView.widthAnchor.constraint(equalToConstant: currentSidebarWidth)
-        sidebarWidthConstraint = widthC
-
-        NSLayoutConstraint.activate([
-            backdropView.topAnchor.constraint(equalTo: content.topAnchor),
-            backdropView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            backdropView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            backdropView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-
-            sidebarView.topAnchor.constraint(equalTo: content.topAnchor),
-            sidebarView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            sidebarView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            widthC,
-
-            webView.topAnchor.constraint(equalTo: content.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            webView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-        ])
+        webView.frame = bounds
+        webView.autoresizingMask = [.width, .height]
     }
 
     // MARK: - 注入脚本
@@ -143,11 +133,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
 
     private func setSidebarWidth(_ width: CGFloat) {
         currentSidebarWidth = width
-        sidebarWidthConstraint?.constant = width
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            window?.contentView?.layoutSubtreeIfNeeded()
-        }
+        var f = sidebarView.frame
+        f.size.width = width
+        sidebarView.frame = f
     }
 
     // MARK: - 状态机
@@ -340,14 +328,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, WKSc
             bootstrapVC = vc
             if let content = window?.contentView {
                 let v = vc.view
-                v.translatesAutoresizingMaskIntoConstraints = false
+                v.frame = content.bounds
+                v.autoresizingMask = [.width, .height]
                 content.addSubview(v, positioned: .above, relativeTo: nil)
-                NSLayoutConstraint.activate([
-                    v.topAnchor.constraint(equalTo: content.topAnchor),
-                    v.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-                    v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-                    v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-                ])
             }
         }
         bootstrapVC?.setBusy(text)
