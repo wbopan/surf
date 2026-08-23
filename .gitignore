@@ -1,0 +1,16 @@
+# Xcode / XcodeGen
+*.xcodeproj/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# 本地构建工具（从 GitHub Releases 下载，见 README）
+tools/
+
+# macOS
+.DS_Store
+
+# Swift Package Manager (unused so far)
+.build/
+.swiftpm/
