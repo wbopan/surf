@@ -1,0 +1,12 @@
+# dsharness-web-adapter 的 bundle patch 层：
+# `dsh plugin --profile web add` 安装本包后，reconcile 会把包名写进
+# dsh.profile.bundles，本文件随之作为一个 patch 层生效——插入自己的浏览器插件 row。
+# 用户 profile 的 cordis.patch.yml 仍在其后，可覆盖这里的 config（例如 topInset）。
+- insert:
+    - id: ui-dsharness-adapter
+      name: dsharness-web-adapter
+      config:
+        # 侧边栏顶部预留高度（px），给 macOS 红绿灯让位。
+        # 壳应用拖拽条高 40pt（MainWindowController.titleBarHeight），红绿灯往右下微调过
+        # （trafficLightOffset 12,12），纵向约占 24–38pt；40px 让内容起点落在拖拽条下缘之下。
+        topInset: 40

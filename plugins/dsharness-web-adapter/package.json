@@ -1,0 +1,23 @@
+{
+  "name": "dsharness-web-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSHarness macOS 壳适配插件：仅在 DSHarness WKWebView 内生效的 dsh Web UI 调整（bundle + 浏览器插件双面包）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

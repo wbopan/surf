@@ -10,6 +10,11 @@ private final class WindowDragRegionView: NSView {
     /// 窗口非激活时第一次点击也直接拖拽（与原生标题栏手感一致）。
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) {
+        // 双击标题栏 = 缩放（最大化/还原），与原生标题栏一致。
+        if event.clickCount >= 2 {
+            window?.performZoom(nil)
+            return
+        }
         window?.performDrag(with: event)
     }
 }
@@ -21,12 +26,22 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     static let sidebarDefaultWidth: CGFloat = 232
 
+    // 红绿灯微调：默认位置紧贴窗口左上角（close 按钮距左/上约 12pt），
+    // 往右下挪一点视觉上更自然。当前 (12,12) 使上边距与左边距对齐（均约 24pt）。
+    // AppKit 会在窗口 resize / 重新布局时把它们复位到默认位置，
+    // 因此 windowDidResize / windowDidBecomeKey 里会重新应用。
+    private let trafficLightOffset = NSPoint(x: 12, y: 12)
+
     // 供 SettingsWindowController 使用
     let harnessManager: HarnessManager
 
     private let harnessProcess: HarnessProcess
     private var eventsBridge: EventsBridge?
     private var installed: HarnessManager.InstalledHarness?
+
+    // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
+    // 需与插件 cordis.patch.yml 的 topInset 保持一致，网页内容才不会钻到条底下。
+    static let titleBarHeight: CGFloat = 40
 
     private let backdropView = NSVisualEffectView() // 右侧普通背景
     private let sidebarView = NSVisualEffectView()  // 左侧 vibrancy
@@ -42,6 +57,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
+        // UA 追加 "DSHarness/<version>"：dsharness-web-adapter 插件以此判断
+        // 页面运行在壳内（终端 dsh web / 普通浏览器共用同一 profile，不受影响）。
+        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        config.applicationNameForUserAgent = "DSHarness/\(shortVersion)"
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
@@ -80,6 +99,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         win.isReleasedWhenClosed = false
         win.delegate = self
         self.window = win
+        applyTrafficLightOffset()
         win.center()
     }
 
@@ -112,9 +132,38 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         webView.frame = bounds
         webView.autoresizingMask = [.width, .height]
 
-        // 顶部 28pt 透明拖拽条（标准标题栏高度），随窗口宽度伸缩、贴顶。
-        titleBarDragView.frame = NSRect(x: 0, y: bounds.height - 28, width: bounds.width, height: 28)
+        // 顶部透明拖拽条（titleBarHeight，比标准 28pt 更高更好抓），随窗口宽度伸缩、贴顶。
+        titleBarDragView.frame = NSRect(x: 0, y: bounds.height - MainWindowController.titleBarHeight,
+                                        width: bounds.width, height: MainWindowController.titleBarHeight)
         titleBarDragView.autoresizingMask = [.width, .minYMargin]
+    }
+
+    // MARK: - 红绿灯微调
+
+    /// 各按钮上一次应用后的 frame；用于判断 AppKit 是否已把按钮复位回默认位置。
+    private var trafficLightAppliedFrames: [NSWindow.ButtonType: NSRect] = [:]
+
+    /// 把三个红绿灯从系统默认位置往右下挪 trafficLightOffset（幂等）。
+    /// 不存固定基准：按钮 frame 是窗口坐标系（原点左下）里的绝对坐标，
+    /// resize 后系统复位到的位置会随窗口高度变化，因此每次以「当前 frame + 偏移」重算；
+    /// 若当前 frame 仍是我们上一次应用的位置，说明系统没动过它，直接跳过。
+    private func applyTrafficLightOffset() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for type in types {
+            guard let button = window.standardWindowButton(type) else { continue }
+            let current = button.frame
+            if trafficLightAppliedFrames[type] == current { continue } // 未被复位，跳过
+            // 视觉方向换算：按钮 frame 位于非翻转坐标系（原点左下），“向下”要减 y。
+            let flipped = button.superview?.isFlipped ?? false
+            let dy = flipped ? trafficLightOffset.y : -trafficLightOffset.y
+            let target = NSRect(x: current.minX + trafficLightOffset.x,
+                                y: current.minY + dy,
+                                width: current.width,
+                                height: current.height)
+            button.setFrameOrigin(target.origin)
+            trafficLightAppliedFrames[type] = target
+        }
     }
 
     // MARK: - 状态机
@@ -479,11 +528,18 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 若焦点没有落在更具体的控件上，就把键盘焦点还给 WebView——
     /// 否则 ⌘A/⌘C/⌘V 等快捷键要等用户点进页面才会响应。
     func windowDidBecomeKey(_ notification: Notification) {
+        // 首次显示/从 Dock 恢复时标题栏可能被 AppKit 重新布局，红绿灯会复位，重新应用偏移。
+        applyTrafficLightOffset()
         guard let window else { return }
         let fr = window.firstResponder
         if fr === window || fr === window.contentView {
             window.makeFirstResponder(webView)
         }
+    }
+
+    /// 窗口尺寸变化时 AppKit 会把红绿灯复位到默认位置，这里重新应用偏移。
+    func windowDidResize(_ notification: Notification) {
+        applyTrafficLightOffset()
     }
 
     // MARK: - 提示
