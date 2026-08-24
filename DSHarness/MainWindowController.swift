@@ -39,8 +39,22 @@ private final class WKScriptMessageHandlerProxy: NSObject, WKScriptMessageHandle
 @MainActor
 final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
 
-    /// 侧边栏首次显示的默认宽度（之后由 NSSplitViewItem autosave 记忆）。
-    static let sidebarDefaultWidth: CGFloat = 280
+    /// 侧边栏首次显示的默认宽度（之后由 autosave 记忆）。
+    static let sidebarDefaultWidth: CGFloat = 364
+
+    /// 默认窗口大小（按屏幕可见区域收缩后应用，之后由 autosave 记忆）。
+    static let defaultWindowSize = NSSize(width: 1200, height: 800)
+
+    /// 窗口 frame / 分隔条宽度的 autosave key。AppKit 的记忆会盖住代码里的
+    /// 默认值，调整默认值时需换 key 才能对已有用户生效。
+    private static let windowAutosaveName = "MainWindow.v3"
+    private static let sidebarAutosaveName = "MainSidebar.v3"
+
+    /// 启动时的目标窗口 frame（默认或 autosave 恢复值）。赋
+    /// contentViewController / 插入侧边栏项时 AppKit 会把窗口收缩成内容
+    /// fitting size（连 autosave 恢复的 frame 都保不住），布局跑完后用它
+    /// 断言拉回；有用户记忆时记忆值优先。
+    private var launchWindowFrame: NSRect = .zero
 
     // 供 SettingsWindowController 使用
     let harnessManager: HarnessManager
@@ -99,6 +113,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         wv.underPageBackgroundColor = .clear
         wv.navigationDelegate = self
         wv.allowsMagnification = true
+        // 主 frame 橡皮筋不在原生侧处理：页面滚动由插件注入的
+        // overflow:hidden + overscroll-behavior 控制（页面本就不可滚动，
+        // 触摸板过度滚动残留的 elastic 拉伸可接受）。曾试过 SPI
+        // _setRubberBandingEnabled: 全关四边，会在底部滚动时引发内容闪动。
         return wv
     }()
 
@@ -120,9 +138,27 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private func setupWindow() {
         let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+        let win = NSWindow(contentRect: NSRect(origin: .zero, size: Self.defaultWindowSize),
                            styleMask: style, backing: .buffered, defer: false)
-        win.title = "DeepSeek Harness"
+        win.title = AppInfo.displayName
+        #if DEBUG
+        // Dev 构建窗口标题旁常驻 DEV 徽标，与 Release 一眼区分。
+        let devBadge = NSTextField(labelWithString: "DEV")
+        devBadge.font = .systemFont(ofSize: 10, weight: .semibold)
+        devBadge.textColor = .white
+        devBadge.alignment = .center
+        devBadge.wantsLayer = true
+        devBadge.layer?.cornerRadius = 4
+        devBadge.layer?.masksToBounds = true
+        devBadge.layer?.backgroundColor = NSColor.systemOrange.cgColor
+        devBadge.layer?.opacity = 0.92
+        devBadge.translatesAutoresizingMaskIntoConstraints = false
+        win.contentView?.addSubview(devBadge)
+        NSLayoutConstraint.activate([
+            devBadge.topAnchor.constraint(equalTo: win.contentView?.topAnchor, constant: 8),
+            devBadge.centerXAnchor.constraint(equalTo: win.contentView?.centerXAnchor),
+        ])
+        #endif
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
@@ -132,13 +168,24 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         win.isReleasedWhenClosed = false
         win.delegate = self
         self.window = win
-        win.center()
-    }
+        // 记忆窗口位置/大小。注意 setFrameAutosaveName 只要设置成功就返回
+        // true（不代表恢复了存档），有没有存档要自己查 defaults。
+        let hasSavedFrame = UserDefaults.standard
+            .string(forKey: "NSWindow Frame \(Self.windowAutosaveName)") != nil
+        win.setFrameAutosaveName(Self.windowAutosaveName)
+        if !hasSavedFrame {
+            win.setContentSize(Self.defaultWindowSize)
+            win.center()
+        }
+        launchWindowFrame = win.frame
 
     private func setupContentView() {
         // NSSplitViewController 全权负责布局：侧边栏项在 loadWebUI 时端口
         // 确定后才插入，装配前 bootstrap 覆盖整个窗口，不露馅。
+        // contentViewController 赋值会把窗口收缩成 fitting size，布局后
+        // 由 assertLaunchWindowFrame 拉回。
         window?.contentViewController = splitViewController
+        assertLaunchWindowFrame()
 
         let contentItem = NSSplitViewItem(viewController: webViewController)
         contentItem.canCollapse = false
@@ -177,8 +224,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         hosting.preferredContentSize = NSSize(width: MainWindowController.sidebarDefaultWidth,
                                               height: 0)
         let item = NSSplitViewItem(sidebarWithViewController: hosting)
-        // 宽度记忆（系统级）。默认宽度调整时换 key，否则旧记忆盖住新默认值。
-        splitViewController.splitView.autosaveName = "MainSidebar.v2"
+        // 宽度记忆（系统级）；默认宽度调整时换 key（见 sidebarAutosaveName）。
+        // 侧边栏无存档时首次布局会把它钳到最小厚度，布局后补回默认宽度。
+        let sidebarHadArchive = UserDefaults.standard
+            .string(forKey: "NSSplitView Subview Frames \(Self.sidebarAutosaveName)") != nil
+        splitViewController.splitView.autosaveName = Self.sidebarAutosaveName
         item.minimumThickness = 200
         item.maximumThickness = 420
         item.canCollapse = true
@@ -188,6 +238,33 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
         installToolbar()
         Task { await store.start() }
+
+        // 插入侧边栏项的布局同样会收缩窗口（且时机晚于 setupContentView）；
+        // 补回窗口 frame 后再把无存档时的默认侧边栏宽度落位。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.assertLaunchWindowFrameNow()
+            if !sidebarHadArchive {
+                self.splitViewController.splitView
+                    .setPosition(Self.sidebarDefaultWidth, ofDividerAt: 0)
+            }
+        }
+    }
+
+    /// 首次布局完成后，若窗口被 AppKit 收缩成内容 fitting size，拉回启动
+    /// frame（默认值或 autosave 记忆）。注意需在 main runloop 一拍之后
+    /// 调用，布局发生在当前 runloop 内。
+    private func assertLaunchWindowFrame() {
+        DispatchQueue.main.async { [weak self] in
+            self?.assertLaunchWindowFrameNow()
+        }
+    }
+
+    private func assertLaunchWindowFrameNow() {
+        guard let win = window else { return }
+        if win.frame.size != launchWindowFrame.size {
+            win.setFrame(launchWindowFrame, display: true)
+        }
     }
 
     /// 左上角工具栏（红绿灯同排）：收起侧边栏 + 新建会话。
@@ -492,7 +569,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 DeepSeek Harness",
+        appMenu.addItem(withTitle: "关于 \(AppInfo.displayName)",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
@@ -510,7 +587,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 DeepSeek Harness",
+        appMenu.addItem(withTitle: "隐藏 \(AppInfo.displayName)",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthersItem = appMenu.addItem(withTitle: "隐藏其他",
                                              action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -518,10 +595,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         appMenu.addItem(withTitle: "全部显示",
                         action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 DeepSeek Harness",
+        appMenu.addItem(withTitle: "退出 \(AppInfo.displayName)",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
-        appItem.title = "DeepSeek Harness"
+        appItem.title = AppInfo.displayName
 
         // 文件菜单（⌘W 关闭窗口）
         let fileItem = NSMenuItem()
