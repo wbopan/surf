@@ -1,5 +1,8 @@
 import AppKit
+import SwiftUI
 import WebKit
+import DSHKit
+import DSHSidebarUI
 
 /// 顶部透明拖拽条：命中后整窗可拖，
 /// 弥补 fullSizeContentView 下原生标题栏被 WebView 盖住、无拖拽区的问题。
@@ -19,7 +22,50 @@ private final class WindowDragRegionView: NSView {
     }
 }
 
-/// 主窗口：透明标题栏 + 左侧 vibrancy 侧边栏 + 整幅透明 WKWebView，
+/// 原生侧边栏右缘拖拽分隔条：cursor 提示 + 拖拽调宽（onDrag 回调返回 dx）。
+private final class SidebarDividerView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+    private let onDrag: (CGFloat) -> Void
+    private var dragging = false
+
+    init(onDrag: @escaping (CGFloat) -> Void) {
+        self.onDrag = onDrag
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragging = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard dragging else { return }
+        // deltaX 是屏幕坐标增量，直接给回调（窗口未移动，等价于本地增量）。
+        onDrag(event.deltaX)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragging = false
+    }
+}
+
+/// WKScriptMessageHandler 的弱引用代理：userContentController.add 会强持有
+/// handler，直接传 self（NSWindowController）会造成引用循环。
+private final class WKScriptMessageHandlerProxy: NSObject, WKScriptMessageHandler {
+    weak var target: MainWindowController?
+    init(_ target: MainWindowController) { self.target = target }
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        target?.handleBridgeMessage(message)
+    }
+}
+
+/// 主窗口：透明标题栏 + 左侧 Liquid Glass 侧边栏（NSGlassEffectView）+ 整幅透明 WKWebView，
 /// 并驱动整体状态机（安装 → 启动 → 健康 → 载入 Web UI / 通知桥）。
 @MainActor
 final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
@@ -44,8 +90,48 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     static let titleBarHeight: CGFloat = 40
 
     private let backdropView = NSVisualEffectView() // 右侧普通背景
-    private let sidebarView = NSVisualEffectView()  // 左侧 vibrancy
+    // 左侧侧边栏：NSGlassEffectView（macOS 26 Liquid Glass，部署目标 26.0 可直用）。
+    // WWDC25「Build an AppKit app with the new design」：新设计里侧边栏直接坐在
+    // glass 上，旧的 NSVisualEffectView(.sidebar) 材质会挡住 glass，应移除；
+    // 需要自绘 glass 区域时用 NSGlassEffectView（cornerRadius/tint 可调）。
+    // 这里不设 contentView：玻璃层只做背景，交互内容是上方透明 WebView。
+    private let sidebarView = NSGlassEffectView()
     private let titleBarDragView = WindowDragRegionView() // 顶部可拖拽条
+
+    // MARK: - 原生侧边栏（阶段一）
+
+    /// 是否使用原生侧边栏（逃生舱：显示菜单可翻转；UserDefaults 记忆）。
+    private var useNativeSidebar: Bool {
+        get { UserDefaults.standard.object(forKey: "useNativeSidebar") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "useNativeSidebar") }
+    }
+    /// 原生侧边栏宽度（拖拽调宽，UserDefaults 记忆）。
+    private var sidebarWidth: CGFloat {
+        get {
+            let raw = UserDefaults.standard.double(forKey: "nativeSidebarWidth")
+            return raw > 0 ? raw : MainWindowController.sidebarDefaultWidth
+        }
+        set {
+            let clamped = min(max(newValue, 180), 420)
+            UserDefaults.standard.set(clamped, forKey: "nativeSidebarWidth")
+        }
+    }
+    /// 原生侧边栏收起态。
+    private var sidebarCollapsed = false
+    private var sidebarCollapsedWidth: CGFloat = 56
+
+    private var sessionStore: SessionStore?
+    private var sidebarModel: AppSidebarModel?
+    private var conversationSurface: WebViewConversationSurface?
+    private var sidebarHostingView: NSHostingView<AnyView>?
+    /// 侧边栏右侧拖拽分隔条。
+    private lazy var sidebarDividerView: SidebarDividerView = SidebarDividerView { [weak self] dx in
+        self?.sidebarDividerDragged(dx: dx)
+    }
+    /// 桥 ready 监视（8s 超时 → 自动回退全网页模式）。
+    private var bridgeReady = false
+    private var bridgeFallbackWork: DispatchWorkItem?
+    private let bridgeReadyTimeout: TimeInterval = 8
 
     private var bootstrapVC: BootstrapViewController?
     private var settingsWC: SettingsWindowController?
@@ -61,6 +147,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 页面运行在壳内（终端 dsh web / 普通浏览器共用同一 profile，不受影响）。
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         config.applicationNameForUserAgent = "DSHarness/\(shortVersion)"
+        // 网页 → 原生通道：
+        //  - "dsharness"：插件 v2 桥（ready / currentSession 上报）
+        //  - "dsharnessSidebar"：v1 玻璃宽度上报（网页侧边栏模式下仍使用）
+        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "dsharnessSidebar")
+        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "dsharness")
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
@@ -89,7 +180,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
                            styleMask: style, backing: .buffered, defer: false)
-        win.title = "DSHarness"
+        win.title = "DeepSeek Harness"
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
@@ -118,9 +209,18 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         backdropView.frame = bounds
         backdropView.autoresizingMask = [.width, .height]
 
-        sidebarView.material = .sidebar
-        sidebarView.blendingMode = .behindWindow
-        sidebarView.state = .followsWindowActiveState
+        sidebarView.style = .regular
+        sidebarView.cornerRadius = 0 // 侧边栏贴窗口左缘全出血，不要圆角
+        // 玻璃 tint 随外观动态切换（对齐官方侧边栏观感）：
+        // - 浅色：regular 玻璃默认几乎全白，叠一层半透明灰白压成「透的白灰」；
+        // - 深色：实测 32% 纯黑会把玻璃压成 rgb(36,39,44)（偏暗偏蓝），
+        //   系统深色侧边栏约 rgb(50,50,55) 中性——改用低 alpha 白微提亮。
+        sidebarView.tintColor = NSColor(name: "dsharness-sidebar-glass") { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(calibratedWhite: 1, alpha: 0.06)
+                : NSColor(calibratedWhite: 0.62, alpha: 0.30)
+        }
         sidebarView.frame = NSRect(x: 0, y: 0, width: MainWindowController.sidebarDefaultWidth, height: bounds.height)
         sidebarView.autoresizingMask = [.height]
 
@@ -129,13 +229,113 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         content.addSubview(webView)
         content.addSubview(titleBarDragView)
 
-        webView.frame = bounds
+        // WebView 不再全出血：原生侧边栏模式下只占侧边栏右侧区域
+        //（autoresizing 手动布局，沿用现有风格）。
+        // 注意：原生侧边栏的装配推迟到 loadWebUI（此时端口才确定），
+        // 这里只按当前模式摆初始 frame。
+        if useNativeSidebar {
+            let sidebarW = sidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth
+            webView.frame = NSRect(x: sidebarW, y: 0,
+                                   width: bounds.width - sidebarW, height: bounds.height)
+        } else {
+            webView.frame = bounds // v1 全出血（网页侧边栏透明化 + 玻璃跟随）
+        }
         webView.autoresizingMask = [.width, .height]
 
         // 顶部透明拖拽条（titleBarHeight，比标准 28pt 更高更好抓），随窗口宽度伸缩、贴顶。
         titleBarDragView.frame = NSRect(x: 0, y: bounds.height - MainWindowController.titleBarHeight,
                                         width: bounds.width, height: MainWindowController.titleBarHeight)
         titleBarDragView.autoresizingMask = [.width, .minYMargin]
+    }
+
+    // MARK: - 原生侧边栏装配
+
+    /// 装配原生侧边栏：NSHostingView(SidebarView) 叠在玻璃层上，同宽联动；
+    /// 分隔条贴在右缘供拖拽调宽。WebView 移到侧边栏右侧。
+    private func installNativeSidebar(width: CGFloat) {
+        guard sidebarHostingView == nil,
+              let content = window?.contentView else { return }
+
+        conversationSurface = WebViewConversationSurface(webView: webView)
+        let store = SessionStore(transport: DSHTransportFactory.live(
+            baseURL: URL(string: "http://127.0.0.1:\(harnessProcess.port)")!))
+        sessionStore = store
+        let model = AppSidebarModel(store: store, surface: conversationSurface!)
+        sidebarModel = model
+
+        let rootView = AnyView(SidebarView(
+            model: model,
+            surface: conversationSurface!,
+            topInset: MainWindowController.titleBarHeight,
+            collapsed: sidebarCollapsed,
+            onToggleCollapse: { [weak self] in
+                self?.toggleSidebarCollapsed()
+            }))
+        let hosting = NSHostingView(rootView: rootView)
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: content.bounds.height)
+        hosting.autoresizingMask = [.height]
+        sidebarHostingView = hosting
+
+        // 侧边栏右侧拖拽分隔条（在 WebView 之下、玻璃之上）
+        content.addSubview(sidebarDividerView, positioned: .below, relativeTo: webView)
+        sidebarDividerView.frame = NSRect(x: width - 4, y: 0, width: 8, height: content.bounds.height)
+        sidebarDividerView.autoresizingMask = [.height]
+
+        layoutNativeSidebar()
+        Task { await store.start() }
+    }
+
+    /// 移除原生侧边栏（切回网页侧边栏模式）。
+    private func uninstallNativeSidebar() {
+        sessionStore?.stop()
+        sessionStore = nil
+        sidebarModel = nil
+        conversationSurface = nil
+        sidebarHostingView?.removeFromSuperview()
+        sidebarHostingView = nil
+        sidebarDividerView.removeFromSuperview()
+    }
+
+    /// 布局三件套：玻璃 / SidebarView / 分隔条 同宽，WebView 移到右侧。
+    private func layoutNativeSidebar() {
+        guard let content = window?.contentView else { return }
+        let w = sidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth
+        var f = sidebarView.frame
+        f.size.width = w
+        sidebarView.frame = f
+        sidebarHostingView?.frame = NSRect(x: 0, y: 0, width: w, height: content.bounds.height)
+        sidebarDividerView.frame = NSRect(x: w - 4, y: 0, width: 8, height: content.bounds.height)
+        webView.frame = NSRect(x: w, y: 0, width: content.bounds.width - w, height: content.bounds.height)
+    }
+
+    private func toggleSidebarCollapsed() {
+        sidebarCollapsed.toggle()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            layoutNativeSidebar()
+        }
+        refreshSidebarRootView()
+    }
+
+    /// collapsed 状态变化后重建 SwiftUI root（简单起见不搞双向绑定桥）。
+    private func refreshSidebarRootView() {
+        guard let model = sidebarModel, let surface = conversationSurface,
+              let hosting = sidebarHostingView else { return }
+        hosting.rootView = AnyView(SidebarView(
+            model: model,
+            surface: surface,
+            topInset: MainWindowController.titleBarHeight,
+            collapsed: sidebarCollapsed,
+            onToggleCollapse: { [weak self] in
+                self?.toggleSidebarCollapsed()
+            }))
+    }
+
+    private func sidebarDividerDragged(dx: CGFloat) {
+        guard !sidebarCollapsed else { return }
+        let newWidth = min(max(sidebarWidth + dx, 180), 420)
+        guard abs(newWidth - sidebarWidth) > 0.5 else { return }
+        sidebarWidth = newWidth
+        layoutNativeSidebar()
     }
 
     // MARK: - 红绿灯微调
@@ -262,8 +462,59 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     private func loadWebUI() {
-        guard let url = URL(string: "http://127.0.0.1:\(harnessProcess.port)/") else { return }
+        var components = URLComponents(string: "http://127.0.0.1:\(harnessProcess.port)/")!
+        if useNativeSidebar {
+            // 插件 v2 门控参数：网页侧边栏隐藏，原生侧边栏接管。
+            components.queryItems = [URLQueryItem(name: "dsharness-native-sidebar", value: "1")]
+        }
+        guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
+        // 原生模式下启动 DSHKit 镜像 + 桥 ready 超时监视
+        if useNativeSidebar {
+            bridgeReady = false
+            armBridgeFallback()
+            // harness 重启后端口会变：镜像若已停则整件重装（transport 持旧端口）。
+            if sessionStore == nil { uninstallNativeSidebar() }
+            installNativeSidebar(width: sidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth)
+        }
+    }
+
+    /// 桥 ready 超时：页面加载完成 8s 未见 ready → 插件失效（上游 breaking change 等），
+    /// 自动回退网页侧边栏模式并记录原因。
+    private func armBridgeFallback() {
+        bridgeFallbackWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.useNativeSidebar, !self.bridgeReady else { return }
+            Log.write("桥 ready 超时（\(Int(self.bridgeReadyTimeout))s）——插件疑似失效，自动回退网页侧边栏模式",
+                      to: self.harnessManager.logURL, tag: "bridge")
+            self.setNativeSidebar(false, reason: "auto-fallback")
+        }
+        bridgeFallbackWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + bridgeReadyTimeout, execute: work)
+    }
+
+    /// 切换原生/网页侧边栏（菜单开关与自动回退共用）。
+    private func setNativeSidebar(_ enabled: Bool, reason: String) {
+        guard useNativeSidebar != enabled else { return }
+        useNativeSidebar = enabled
+        bridgeFallbackWork?.cancel()
+        bridgeFallbackWork = nil
+        if enabled {
+            installNativeSidebar(width: sidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth)
+        } else {
+            uninstallNativeSidebar()
+            // 恢复玻璃宽度跟随网页侧边栏
+            var f = sidebarView.frame
+            f.size.width = MainWindowController.sidebarDefaultWidth
+            sidebarView.frame = f
+            webView.frame = contentBounds()
+        }
+        Log.write("侧边栏模式 → \(enabled ? "原生" : "网页")（\(reason)）", to: harnessManager.logURL, tag: "bridge")
+        loadWebUI()
+    }
+
+    private func contentBounds() -> NSRect {
+        window?.contentView?.bounds ?? .zero
     }
 
     private func startEventsBridge() {
@@ -323,6 +574,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     func restartHarness() {
         eventsBridge?.stop()
+        sessionStore?.stop()
         webView.stopLoading()
         showBootstrap("正在重启 harness…")
         let port = HarnessProcess.pickFreePort()
@@ -341,11 +593,17 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
     }
 
-    /// 应用退出前调用：停桥、杀进程组。
-    func shutdown() {
+    /// 应用退出前调用：停桥、杀进程组。terminate 阻塞轮询（最长 5s + 1s），
+    /// 同 terminateAsync 放后台队列，收完再回主线程 completion 放行退出。
+    func shutdown(completion: @escaping () -> Void) {
         bootTask?.cancel()
         eventsBridge?.stop()
-        harnessProcess.terminate(waitTimeout: 5)
+        sessionStore?.stop()
+        let process = harnessProcess
+        DispatchQueue.global(qos: .userInitiated).async {
+            process.terminate(waitTimeout: 5)
+            DispatchQueue.main.async(execute: completion)
+        }
     }
 
     // MARK: - 引导视图
@@ -408,7 +666,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 DSHarness",
+        appMenu.addItem(withTitle: "关于 DeepSeek Harness",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
@@ -426,7 +684,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 DSHarness",
+        appMenu.addItem(withTitle: "隐藏 DeepSeek Harness",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthersItem = appMenu.addItem(withTitle: "隐藏其他",
                                              action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -434,10 +692,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         appMenu.addItem(withTitle: "全部显示",
                         action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 DSHarness",
+        appMenu.addItem(withTitle: "退出 DeepSeek Harness",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
-        appItem.title = "DSHarness"
+        appItem.title = "DeepSeek Harness"
 
         // 文件菜单（⌘W 关闭窗口）
         let fileItem = NSMenuItem()
@@ -465,16 +723,19 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         editItem.submenu = editMenu
         editItem.title = "编辑"
 
-        // 显示菜单（⌘R 重载；vibrancy 不再占 ⌘V）
+        // 显示菜单（⌘R 重载；玻璃切换无快捷键，避免占用 ⌘V 粘贴）
         let viewItem = NSMenuItem()
         mainMenu.addItem(viewItem)
         let viewMenu = NSMenu(title: "显示")
         let reloadItem = viewMenu.addItem(withTitle: "重新载入页面",
                                           action: #selector(reloadPage), keyEquivalent: "r")
         reloadItem.target = self
-        let toggleItem = viewMenu.addItem(withTitle: "切换侧边栏 Vibrancy",
-                                          action: #selector(toggleVibrancy), keyEquivalent: "")
+        let toggleItem = viewMenu.addItem(withTitle: "切换侧边栏玻璃效果",
+                                          action: #selector(toggleSidebarGlass), keyEquivalent: "")
         toggleItem.target = self
+        let nativeItem = viewMenu.addItem(withTitle: "使用原生侧边栏",
+                                          action: #selector(toggleNativeSidebar), keyEquivalent: "")
+        nativeItem.target = self
         viewItem.submenu = viewMenu
         viewItem.title = "显示"
 
@@ -517,9 +778,64 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         NSWorkspace.shared.open(dir)
     }
 
-    @objc private func toggleVibrancy() {
+    @objc private func toggleSidebarGlass() {
         let hidden = sidebarView.isHidden
         sidebarView.isHidden = !hidden
+    }
+
+    /// 逃生舱开关：翻转 → 隐藏原生侧边栏 + 去参数重载 WebView（恢复完整 Web UI）。
+    @objc private func toggleNativeSidebar() {
+        setNativeSidebar(!useNativeSidebar, reason: "menu-toggle")
+    }
+
+    // MARK: - 网页 → 原生消息
+
+    /// v1 玻璃宽度跟随（网页侧边栏模式）+ v2 桥消息（ready / currentSession）。
+    func handleBridgeMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        switch message.name {
+        case "dsharnessSidebar":
+            // 插件 v1 上报网页侧边栏列宽度（px）。网页 1px ≈ 屏幕 1pt（WKWebView
+            // 默认无缩放），直接同步 NSGlassEffectView 宽度；钳制在合理区间防异常值。
+            guard let raw = body["width"] as? Double else { return }
+            let width = min(max(CGFloat(raw), 0), 600)
+            guard abs(width - sidebarView.frame.width) > 0.5 else { return }
+            var frame = sidebarView.frame
+            frame.size.width = width
+            sidebarView.frame = frame
+            // 网页侧边栏模式下 WebView 仍需全出血（宽度跟随）
+            if !useNativeSidebar {
+                webView.frame = NSRect(x: width, y: 0,
+                                       width: contentBounds().width - width,
+                                       height: contentBounds().height)
+            }
+
+        case "dsharness":
+            guard let type = body["type"] as? String else { return }
+            switch type {
+            case "ready":
+                bridgeReady = true
+                bridgeFallbackWork?.cancel()
+                bridgeFallbackWork = nil
+                let caps = body["capabilities"] as? [String] ?? []
+                var diag = ""
+                if let d = body["diag"] as? [String: Any] {
+                    diag = " diag=\(d)"
+                }
+                Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: harnessManager.logURL, tag: "bridge")
+            case "currentSession":
+                if let id = body["id"] as? String {
+                    sidebarModel?.pageDidSelect(sessionId: id)
+                }
+            case "debug":
+                Log.write("页内诊断：\(body["msg"] ?? "?")", to: harnessManager.logURL, tag: "bridge")
+            default:
+                break // 防御式：未知消息忽略
+            }
+
+        default:
+            break
+        }
     }
 
     // MARK: - NSWindowDelegate
@@ -540,6 +856,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 窗口尺寸变化时 AppKit 会把红绿灯复位到默认位置，这里重新应用偏移。
     func windowDidResize(_ notification: Notification) {
         applyTrafficLightOffset()
+        if useNativeSidebar {
+            layoutNativeSidebar()
+        }
     }
 
     // MARK: - 提示

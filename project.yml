@@ -11,6 +11,11 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
+packages:
+  DSHKit:
+    path: Packages/DSHKit
+  DSHSidebarUI:
+    path: Packages/DSHSidebarUI
 targets:
   DSHarness:
     type: application
@@ -23,7 +28,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness
-        PRODUCT_NAME: DSHarness
+        PRODUCT_NAME: DeepSeek Harness
         INFOPLIST_FILE: DSHarness/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: NO
@@ -36,6 +41,9 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
+    dependencies:
+      - package: DSHKit
+      - package: DSHSidebarUI
     entitlements:
       path: DSHarness/DSHarness.entitlements
       properties:
