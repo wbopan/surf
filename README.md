@@ -1,13 +1,13 @@
-# DSHarness —— DeepSeek Harness 的 macOS 原生壳应用
+# DeepSeek Harness —— dsh 的 macOS 原生壳应用
 
 Swift/AppKit + WKWebView 的 macOS 应用，把 [`dsh`](https://github.com/deepseek-ai/deepseek-harness)（`@deepseek-ai/dsh`）的 Web UI 包进原生窗口：系统通知（UNUserNotificationCenter）+ 透明 vibrancy 侧边栏（NSVisualEffectView）。
 
 **核心架构决策**：签名后的 .app bundle 只读（改动即破坏签名），所以 harness 装在 **bundle 外**，由 npm 管理；壳应用与 harness 走两条独立更新通道。壳 = 重新 build；harness = npm 版本目录 + 符号链接原子切换（可回滚）。
 
 ```
-DSHarness.app（Swift/AppKit，ad-hoc 签名，不可变）
+DeepSeek Harness.app（Swift/AppKit，ad-hoc 签名，不可变）
  ├─ 窗口: transparent titlebar + fullSizeContentView
- │    ├─ 左: NSVisualEffectView(.sidebar) —— vibrancy 层
+ │    ├─ 左: NSGlassEffectView —— Liquid Glass 层（macOS 26+）
  │    ├─ 顶: 28pt 透明拖拽条（WindowDragRegionView）
  │    └─ WKWebView(透明) → http://127.0.0.1:<port>
  ├─ HarnessManager: npm 管理的 dsh 安装 + 自更新
@@ -28,13 +28,19 @@ DSHarness.app（Swift/AppKit，ad-hoc 签名，不可变）
 前置：Xcode 27+、Node.js `^22.19.0 || >=24.0.0`（本机 Homebrew `/opt/homebrew/bin/node`）、XcodeGen（本机 brew 目录属主异常，可从 [GitHub Releases](https://github.com/yonaskolb/XcodeGen/releases) 下载 zip 放入 `tools/`）。
 
 ```bash
-# 生成 .xcodeproj + 构建（产物在 build/Build/Products/Debug/DSHarness.app）
+# 生成 .xcodeproj + 构建（产物在 build/Build/Products/Debug/DeepSeek Harness.app）
 ./tools/xcodegen generate
 xcodebuild -project DSHarness.xcodeproj -scheme DSHarness \
   -configuration Debug -derivedDataPath build build
 
 # 运行
-open build/Build/Products/Debug/DSHarness.app
+open "build/Build/Products/Debug/DeepSeek Harness.app"
+```
+
+Release 构建 + 安装到 /Applications（生成工程 → Release 编译 → 退出运行中实例 → `ditto` 复制；`--keep-open` 装完自动启动）：
+
+```bash
+scripts/build.sh [--keep-open]
 ```
 
 签名：ad-hoc（`CODE_SIGN_IDENTITY: "-"`，无 Team），不开启沙盒（需要 spawn Node 子进程 + 写 Application Support）。如需分发/公证，在 `project.yml` 换成自己的开发证书并调整 entitlements。
@@ -61,6 +67,26 @@ DSHarness/
 - **事件流走 WebSocket**（`dsh-client-connection` 对外提供；普通 GET `/api/events.mux` 返回 426 "upgrade required"，进程内 apiproxy 的 SSE 是另一条路径）：`ws://127.0.0.1:<port>/api/events.mux` 与 `ws://.../api/events.host`。每帧一个 JSON 文本消息 `{type:"server-request", rpcId, method, payload}`；纯下行，客户端发消息会被 1008 "downlink only" 关闭。`host/agent-error`、`host/session-status` 只在 host 流；`approval/requested`、`question/requested`、`session/event` 在 mux 流。重连后服务端会重放 pending 的批准/问题（通知侧有 60s 去重）。
 - `/api/respond` 服务端应答表在 preview 期仍是 stub → 通知只做「点击唤起窗口」，不做通知内批准。
 - loopback 无鉴权（仅需 `Content-Type: application/json` + loopback Host），壳应用零凭据接入。
+
+## 原生侧边栏（阶段一）
+
+左侧为 **SwiftUI 原生侧边栏**（坐在 NSGlassEffectView 上），WebView 只渲染 conversation + details：
+
+```
+dsh server
+   ↑ POST /api（unary，朴素 JSON 包封，见 docs/wire-notes.md）
+   ↓ WS /api/events.mux、/api/events.host（只下行）
+DSHKit（Packages/DSHKit，仅 Foundation，iOS 就绪）
+   → DSHSidebarUI（Packages/DSHSidebarUI，仅 SwiftUI+DSHKit）
+   → Mac 壳（NSHostingView 承载）── WKWebView（网页侧边栏经插件隐藏）
+```
+
+- 状态经服务端收敛；唯一页内桥是 `window.__dsharness`（`plugins/dsharness-web-adapter` v2 提供：
+  `selectSession`/`startSession`/`openSettings` + `currentSession` 反向上报），门控 = UA 含
+  `DSHarness` **且** URL 带 `?dsharness-native-sidebar=1`。终端 `dsh web` / 普通浏览器零影响。
+- 会话列表/状态点由 DSHKit.SessionStore 镜像（事件流驱动增量）；「当前选中会话」为页面本地状态，经桥双向同步。
+- **逃生舱**：显示菜单「使用原生侧边栏」开关；页面加载 8s 未见桥 `ready`（插件被上游 breaking change 打坏）自动回退完整网页模式并记日志。
+- 插件改动经 `~/.dsh/profiles/web/node_modules/dsharness-web-adapter` 符号链接生效，改后需重启 harness（⌘⇧R）。验证于 harness 0.1.1-rc.2。
 
 ## 通知策略（EventsBridge）
 
@@ -91,4 +117,4 @@ DSHarness/
 - `⌘,` 设置（Node 路径、更新频率）；`⌘U` 检查 harness 更新；`⌘⇧R` 重启 Harness；`⌘R` 重载页面
 - `⌘W` 关闭窗口；`⌘M` 最小化；`⌘Q` 退出；`⌘H` 隐藏
 - 编辑快捷键（作用于 WebView 与设置窗口的文本框）：`⌘Z` 撤销 / `⌘⇧Z` 重做 / `⌘X` 剪切 / `⌘C` 拷贝 / `⌘V` 粘贴 / `⌘A` 全选
-- 「切换侧边栏 Vibrancy」在显示菜单内（无快捷键，避免占用 `⌘V` 粘贴）；「打开日志目录」在应用菜单内
+- 「切换侧边栏玻璃效果」在显示菜单内（无快捷键，避免占用 `⌘V` 粘贴）；「打开日志目录」在应用菜单内
