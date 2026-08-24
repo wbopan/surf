@@ -55,7 +55,6 @@ struct SessionRow: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 3)
     }
 }
 
@@ -92,7 +91,6 @@ struct GroupHeader: View {
             .fixedSize()
             .opacity(hovering ? 1 : 0)
         }
-        .padding(.vertical, 3)
         .onHover { hovering = $0 }
     }
 }
@@ -167,11 +165,10 @@ public struct SidebarView<Model: SidebarModel>: View {
                     } label: {
                         GroupHeader(group: group, surface: surface)
                     }
-                    .padding(.top, 6) // 组间呼吸
+                    .padding(.top, 4) // 组间呼吸
                 }
             }
             .listStyle(.sidebar)
-            .environment(\.defaultMinListRowHeight, 26)
         }
     }
 

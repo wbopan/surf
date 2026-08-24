@@ -198,7 +198,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         tb.delegate = self
         tb.displayMode = .iconOnly
         tb.allowsUserCustomization = false
-        window.toolbarStyle = .unifiedCompact
+        window.toolbarStyle = .unified // Mail 同款：红绿灯垂直居中、圆形玻璃按钮
         window.toolbar = tb
     }
 
@@ -718,8 +718,9 @@ extension NSToolbarItem.Identifier {
 
 extension MainWindowController: NSToolbarDelegate {
     // sidebarTrackingSeparator 之前的项落在侧边栏区域，之后的落在内容区域（留空）。
+    // 布局：红绿灯 | 新建会话 …弹性… 收起侧边栏 | 分隔线。
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .flexibleSpace, .newSession, .sidebarTrackingSeparator]
+        [.newSession, .flexibleSpace, .toggleSidebar, .sidebarTrackingSeparator]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
