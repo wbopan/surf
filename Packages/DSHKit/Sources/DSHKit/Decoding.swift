@@ -86,6 +86,16 @@ public enum DSHDecode {
         )
     }
 
+    /// Decode the `value` of `workspace.archiveSession`
+    /// (`{"archivedSessionIds":[...]}` — the full updated archive set).
+    public static func archivedSessionIds(fromValue data: Data) -> [String]? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = obj["archivedSessionIds"] as? [Any] else {
+            return nil
+        }
+        return raw.compactMap { $0 as? String }.map(normalizeSessionId)
+    }
+
     /// Decode the `value` of `session.create` (`{"sessionId": ...}`).
     public static func sessionId(fromValue data: Data) -> String? {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

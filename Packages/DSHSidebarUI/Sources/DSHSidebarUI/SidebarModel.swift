@@ -60,4 +60,7 @@ public protocol SidebarModel: ObservableObject {
     var selectedSessionId: String? { get }
     /// 用户点击原生行：更新选中并通过展示面切换 conversation。
     func activate(sessionId: String)
+    /// 归档会话（对齐 web 侧行菜单的 Archive：无确认、非破坏性，
+    /// 归档集合回包后行从所有分组消失）。blank 行不提供。
+    func archive(sessionId: String)
 }

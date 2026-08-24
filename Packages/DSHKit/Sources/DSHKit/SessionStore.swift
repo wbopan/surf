@@ -107,6 +107,22 @@ public final class SessionStore: ObservableObject {
         _ = try await call("session.cancel", ["sessionId": DSHDecode.normalizeSessionId(id)])
     }
 
+    /// Archive a session (`workspace.archiveSession`, mirrors the web sidebar's
+    /// row action). Non-destructive: the log stays; the row just disappears from
+    /// every grouping surface. The response echoes the full updated archive set,
+    /// which is applied locally for instant removal (same as the web echo path).
+    public func archiveSession(id: String) async throws {
+        let value = try await call("workspace.archiveSession",
+                                   ["sessionId": DSHDecode.normalizeSessionId(id)])
+        if let archived = DSHDecode.archivedSessionIds(fromValue: value) {
+            archivedIds = Set(archived)
+            rebuildGroups()
+        } else {
+            // Echo undecodable — fall back to a full list round.
+            scheduleRefetch(immediate: true)
+        }
+    }
+
     // MARK: - Fetching
 
     private func refreshAll() async {

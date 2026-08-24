@@ -63,6 +63,18 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
         surface.selectSession(id: sessionId)
     }
 
+    /// 归档（对齐 web：失败只记日志、列表不动）。store 收到归档集回包后
+    /// 即刻本地剔除该行，无确认弹窗。
+    func archive(sessionId: String) {
+        Task { [store, logURL] in
+            do {
+                try await store.archiveSession(id: sessionId)
+            } catch {
+                Log.write("归档会话 \(sessionId) 失败：\(error.localizedDescription)", to: logURL, tag: "sidebar")
+            }
+        }
+    }
+
     /// 页面反向上报当前会话变化（ConversationSurface 桥的 currentSession 消息）。
     func pageDidSelect(sessionId: String) {
         guard sessionId != selectedSessionId else { return }

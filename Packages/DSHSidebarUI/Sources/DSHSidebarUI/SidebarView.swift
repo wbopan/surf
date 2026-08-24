@@ -7,20 +7,10 @@ import SwiftUI
 // 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 // 顶部操作按钮（收起侧边栏 / 新建会话）在宿主的 NSToolbar，不在本视图。
 
-/// 相对时间，格式对齐 web 侧边栏（刚刚 / 18分钟 / 1小时 / 3天 / 日期）。
-func relativeTime(_ date: Date, now: Date = Date()) -> String {
-    let sec = now.timeIntervalSince(date)
-    if sec < 60 { return "刚刚" }
-    if sec < 3600 { return "\(Int(sec / 60))分钟" }
-    if sec < 86400 { return "\(Int(sec / 3600))小时" }
-    if sec < 86400 * 7 { return "\(Int(sec / 86400))天" }
-    let f = DateFormatter()
-    f.dateStyle = .short
-    f.timeStyle = .none
-    return f.string(from: date)
-}
+/// 相对时间已按需求移除（session 行不再显示时间戳）。
 
 /// 会话状态点（running/pending…/idle 的唯一自绘元素，其余交给系统）。
+/// running 用系统 ProgressView（macOS 原生小菊花），其余仍是彩色圆点（9pt）。
 struct StatusDot: View {
     let status: SidebarSessionStatus
 
@@ -34,20 +24,31 @@ struct StatusDot: View {
     }
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
+        if status == .running {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            Circle()
+                .fill(color)
+                .frame(width: 9, height: 9)
+        }
     }
 }
 
-/// 会话行：状态点 + 标题 + 相对时间；选中/高亮/键盘导航由 List 提供，
-/// 缩进用 leading padding 手动对齐分组头（无 DisclosureGroup 后自管）。
+/// 会话行：状态点 + 标题；选中/高亮/键盘导航由 List 提供。
+/// 对齐规则：状态点槽位宽度 = 分组头图标槽位（20pt，均 leading 对齐），
+/// 行内 spacing 同为 6 —— 状态点与文件夹图标对齐、标题与分组名对齐。
+/// hover 时行尾显示归档按钮（对齐 web 行菜单的 Archive 动作）。
 struct SessionRow: View {
     let session: SidebarSession
+    let onArchive: () -> Void
+
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            // 固定宽度槽位保证标题对齐；idle 不显示点（对齐 web）。
+        HStack(spacing: 6) {
+            // 固定宽度槽位与 GroupHeader 的图标槽位一致（20pt、居中对齐），
+            // 圆点/菊花与文件夹图标光学中心重合；idle 不显示点（对齐 web）。
             Group {
                 if session.status != .idle {
                     StatusDot(status: session.status)
@@ -55,16 +56,27 @@ struct SessionRow: View {
                     Color.clear
                 }
             }
-            .frame(width: 7, height: 7)
+            .frame(width: 20, height: 16, alignment: .center)
             Text(session.displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
-            Text(relativeTime(session.updatedAt))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            // hover 且非 blank（对齐 web：空 New Session 行无归档）时，
+            // 时间标签让位给归档按钮；点击即归档、无确认。
+            if hovering && !session.blank {
+                Button(action: onArchive) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("归档会话")
+                .accessibilityLabel(Text("归档会话"))
+            }
         }
-        .padding(.leading, 18)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -107,19 +119,17 @@ struct GroupHeader: View {
             .buttonStyle(.plain)
             .help(expanded ? "收起分组" : "展开分组")
             .accessibilityLabel(Text(group.title))
-            Menu {
-                Button("在此工作区新建会话") {
-                    surface.startSession(workspaceId: group.workspaceId)
-                }
+            Button {
+                surface.startSession(workspaceId: group.workspaceId)
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .help("在此工作区新建会话")
             .fixedSize()
             .opacity(hovering ? 1 : 0)
         }
@@ -206,15 +216,57 @@ public struct SidebarView<Model: SidebarModel>: View {
                         .padding(.top, 4) // 组间呼吸
                     if isExpanded(group.id) {
                         ForEach(group.sessions) { session in
-                            SessionRow(session: session)
+                            SessionRow(session: session,
+                                       onArchive: { model.archive(sessionId: session.id) })
                                 .tag(session.id)
                         }
                     }
                 }
             }
             .listStyle(.sidebar)
+            #if DEBUG
+            devFooter
+            #endif
         }
     }
+
+    #if DEBUG
+    /// Dev 构建专属：侧边栏底部橙色 DEV 状态条（含构建时间戳），
+    /// 一眼区分 Debug/Release，并确认跑的是哪次构建。
+    private var devFooter: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 7, height: 7)
+            Text("DEV BUILD")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+                .tracking(0.8)
+            Spacer()
+            if !buildTimestamp.isEmpty {
+                Text(buildTimestamp)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.orange.opacity(0.8))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.orange.opacity(0.08))
+    }
+
+    /// 构建时间戳：主 App prebuild 脚本写入 Resources/BuildTimestamp.txt。
+    private var buildTimestamp: String { Self.readBuildTimestamp() }
+    #endif
+
+    #if DEBUG
+    private static func readBuildTimestamp() -> String {
+        guard let url = Bundle.main.url(forResource: "BuildTimestamp", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
+        else { return "" }
+        return text
+    }
+    #endif
 
     private var searchField: some View {
         HStack(spacing: 5) {
