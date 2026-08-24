@@ -40,7 +40,7 @@ private final class WKScriptMessageHandlerProxy: NSObject, WKScriptMessageHandle
 final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
 
     /// 侧边栏首次显示的默认宽度（之后由 NSSplitViewItem autosave 记忆）。
-    static let sidebarDefaultWidth: CGFloat = 232
+    static let sidebarDefaultWidth: CGFloat = 280
 
     // 供 SettingsWindowController 使用
     let harnessManager: HarnessManager
@@ -177,8 +177,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         hosting.preferredContentSize = NSSize(width: MainWindowController.sidebarDefaultWidth,
                                               height: 0)
         let item = NSSplitViewItem(sidebarWithViewController: hosting)
-        splitViewController.splitView.autosaveName = "MainSidebar" // 宽度记忆（系统级）
-        item.minimumThickness = 180
+        // 宽度记忆（系统级）。默认宽度调整时换 key，否则旧记忆盖住新默认值。
+        splitViewController.splitView.autosaveName = "MainSidebar.v2"
+        item.minimumThickness = 200
         item.maximumThickness = 420
         item.canCollapse = true
         splitViewController.insertSplitViewItem(item, at: 0)
@@ -718,9 +719,9 @@ extension NSToolbarItem.Identifier {
 
 extension MainWindowController: NSToolbarDelegate {
     // sidebarTrackingSeparator 之前的项落在侧边栏区域，之后的落在内容区域（留空）。
-    // 布局：红绿灯 | 新建会话 …弹性… 收起侧边栏 | 分隔线。
+    // 布局：红绿灯 …弹性… 新建会话 收起侧边栏 | 分隔线（按钮组右对齐贴 divider）。
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.newSession, .flexibleSpace, .toggleSidebar, .sidebarTrackingSeparator]
+        [.flexibleSpace, .newSession, .toggleSidebar, .sidebarTrackingSeparator]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
