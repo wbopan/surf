@@ -260,7 +260,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let store = SessionStore(transport: DSHTransportFactory.live(
             baseURL: URL(string: "http://127.0.0.1:\(harnessProcess.port)")!))
         sessionStore = store
-        let model = AppSidebarModel(store: store, surface: conversationSurface!)
+        let model = AppSidebarModel(store: store, surface: conversationSurface!,
+                                    logURL: harnessManager.logURL)
         sidebarModel = model
 
         let rootView = AnyView(SidebarView(
