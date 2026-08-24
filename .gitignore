@@ -20,3 +20,4 @@ plugins/node_modules/
 # Swift Package Manager (unused so far)
 .build/
 .swiftpm/
+skills/
