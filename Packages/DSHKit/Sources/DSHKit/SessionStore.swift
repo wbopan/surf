@@ -118,17 +118,32 @@ public final class SessionStore: ObservableObject {
         lastFullRefresh = Date()
     }
 
+    /// Retry budget for one refetch round. Health-check passing does not imply
+    /// `/api` is serving yet right after harness boot, so a failed round retries
+    /// with exponential backoff (0.3s..2.4s, ~4.5s total) instead of going
+    /// silently stale until the next stream event.
+    private let refetchAttempts = 5
+
     private func refetchLists() async {
-        guard let sessionsValue = try? await call("session.list", [:]),
-              let workspacesValue = try? await call("workspace.list", [:]) else {
+        var delay: Duration = .milliseconds(300)
+        for attempt in 0..<refetchAttempts {
+            if attempt > 0 {
+                try? await Task.sleep(for: delay)
+                delay *= 2
+                if Task.isCancelled { return }
+            }
+            guard let sessionsValue = try? await call("session.list", [:]),
+                  let workspacesValue = try? await call("workspace.list", [:]) else {
+                continue
+            }
+            let sessions = DSHDecode.sessions(fromValue: sessionsValue)
+            let (wsItems, archived) = DSHDecode.workspaces(fromValue: workspacesValue)
+            sessionsById = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            workspaces = wsItems
+            archivedIds = Set(archived)
+            rebuildGroups()
             return
         }
-        let sessions = DSHDecode.sessions(fromValue: sessionsValue)
-        let (wsItems, archived) = DSHDecode.workspaces(fromValue: workspacesValue)
-        sessionsById = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        workspaces = wsItems
-        archivedIds = Set(archived)
-        rebuildGroups()
     }
 
     /// Debounced refetch: any session/event marks data dirty; one network

@@ -1,7 +1,9 @@
 import SwiftUI
 
-// 原生侧边栏（阶段一）：信息架构与交互语义 1:1 对齐 web 侧边栏，
-// 视觉遵循 macOS 原生风格——透明背景，坐在宿主的玻璃层上（壳负责背景）。
+// 原生侧边栏（阶段二·Mail 风格）：交给系统。
+// List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航，
+// 宿主把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
+// 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 
 /// 相对时间（几分钟前 / 几小时前 / 几天前 / 日期）。
 func relativeTime(_ date: Date, now: Date = Date()) -> String {
@@ -16,6 +18,7 @@ func relativeTime(_ date: Date, now: Date = Date()) -> String {
     return f.string(from: date)
 }
 
+/// 会话状态点（running/pending…/idle 的唯一自绘元素，其余交给系统）。
 struct StatusDot: View {
     let status: SidebarSessionStatus
 
@@ -35,142 +38,43 @@ struct StatusDot: View {
     }
 }
 
-/// 会话行：状态点 + 标题 + 相对时间；点击 → model.activate（模型负责桥接与高亮）。
+/// 会话行：状态点 + 标题 + 相对时间；选中/高亮/键盘导航由 List 提供。
 struct SessionRow: View {
     let session: SidebarSession
-    let selected: Bool
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                StatusDot(status: session.status)
-                Text(session.displayTitle)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.85))
-                Spacer(minLength: 0)
-                Text(relativeTime(session.updatedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
+        HStack(spacing: 6) {
+            StatusDot(status: session.status)
+            Text(session.displayTitle)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            Text(relativeTime(session.updatedAt))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(selected ? Color.accentColor.opacity(0.22) : Color.clear)
-        )
-        .hoverHighlight(selected: selected)
     }
 }
 
-/// Workspace 分组头（可展开/收起）+ 会话行；展开默认 5 条 + “显示更多”。
-struct GroupSection: View {
-    let group: SidebarGroup
-    let selectedSessionId: String?
-    let onSelect: (String) -> Void
-
-    @State private var expanded = true
-    @State private var showAll = false
-    private let previewCount = 5
-
-    var visibleSessions: [SidebarSession] {
-        showAll ? group.sessions : Array(group.sessions.prefix(previewCount))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                    Text(group.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-
-            if expanded {
-                ForEach(visibleSessions) { session in
-                    SessionRow(session: session,
-                               selected: session.id == selectedSessionId) {
-                        onSelect(session.id)
-                    }
-                }
-                if group.sessions.count > previewCount && !showAll {
-                    Button {
-                        withAnimation { showAll = true }
-                    } label: {
-                        Text("显示更多（\(group.sessions.count - previewCount)）")
-                            .font(.caption)
-                            .foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 21)
-                    .padding(.vertical, 2)
-                }
-            }
-        }
-        .padding(.bottom, 6)
-    }
-}
-
-/// 收起态 rail（56pt 宽）：展开、New Session、添加、搜索 四个 36pt 控件。
-struct CollapsedRail: View {
-    let onExpand: () -> Void
-    let onNewSession: () -> Void
-    let onAddWorkspace: () -> Void
-    let onSearch: () -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            railButton("sidebar.left", onExpand)
-            railButton("plus.square", onNewSession)
-            railButton("folder.badge.plus", onAddWorkspace)
-            Spacer()
-            railButton("magnifyingglass", onSearch)
-        }
-        .padding(.top, 56)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func railButton(_ systemName: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 14))
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .hoverHighlight(selected: false)
-    }
-}
-
-/// 主视图。
+/// 主视图：Mail 式侧边栏列表。
 public struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
     let surface: ConversationSurface
-    /// 顶部让位（红绿灯/拖拽条），由壳传入。
-    var topInset: CGFloat = 40
-    /// 收起/展开（宽度联动由壳管理）。
-    var collapsed: Bool = false
-    var onToggleCollapse: (() -> Void)?
 
     @State private var searchText = ""
-    @State private var railSearchWish: Bool = false
+
+    public init(model: Model, surface: ConversationSurface) {
+        self.model = model
+        self.surface = surface
+    }
+
+    /// List 双向选择绑定：读真源；写（用户点选）走 activate。
+    private var selection: Binding<String?> {
+        Binding(
+            get: { model.selectedSessionId },
+            set: { if let id = $0 { model.activate(sessionId: id) } }
+        )
+    }
 
     /// 客户端过滤：标题 / 组名子串，大小写不敏感、即时。
     var filteredGroups: [SidebarGroup] {
@@ -192,137 +96,44 @@ public struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    public init(model: Model, surface: ConversationSurface,
-                topInset: CGFloat = 40, collapsed: Bool = false,
-                onToggleCollapse: (() -> Void)? = nil) {
-        self.model = model
-        self.surface = surface
-        self.topInset = topInset
-        self.collapsed = collapsed
-        self.onToggleCollapse = onToggleCollapse
-    }
-
     public var body: some View {
-        Group {
-            if collapsed {
-                CollapsedRail(
-                    onExpand: { onToggleCollapse?() },
-                    onNewSession: { surface.startSession(workspaceId: nil) },
-                    onAddWorkspace: { surface.openSettings() }, // 阶段一：添加流后置，落到设置面
-                    onSearch: {
-                        onToggleCollapse?()
-                        railSearchWish = true
-                    })
-            } else {
-                expandedBody
+        List(selection: selection) {
+            ForEach(filteredGroups) { group in
+                Section(group.title) {
+                    ForEach(group.sessions) { session in
+                        SessionRow(session: session)
+                            .tag(session.id)
+                    }
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.clear)
+        .listStyle(.sidebar)
+        .searchable(text: $searchText, prompt: "搜索会话")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            bottomBar
+        }
     }
 
-    private var expandedBody: some View {
-        VStack(spacing: 0) {
-            // 品牌行（上游是 slot，默认鱼形 mark；这里文本占位）
-            HStack(spacing: 8) {
-                Image(systemName: "fish.fill")
-                    .foregroundStyle(.tint)
-                Text("DeepSeek")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    onToggleCollapse?()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("收起侧边栏")
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, topInset)
-            .padding(.bottom, 10)
-
-            // New Session
+    /// 底部固定操作区（Mail 工具栏位置）：New Session + 设置。
+    private var bottomBar: some View {
+        HStack(spacing: 4) {
             Button {
                 surface.startSession(workspaceId: nil)
             } label: {
-                HStack {
-                    Image(systemName: "plus")
-                    Text("New Session")
-                        .fontWeight(.medium)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.accentColor.opacity(0.18))
-                )
+                Label("New Session", systemImage: "plus")
             }
-            .buttonStyle(.plain)
-            .hoverHighlight(selected: false)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
-
-            // 搜索（阶段一：客户端标题过滤）
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                TextField("搜索会话", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.callout)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.06))
-            )
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
-
-            // 会话浏览器
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredGroups) { group in
-                        GroupSection(group: group,
-                                     selectedSessionId: model.selectedSessionId) { id in
-                            model.activate(sessionId: id)
-                        }
-                    }
-                }
-                .padding(.horizontal, 6)
-            }
-
-            // 底部固定：设置
-            Divider()
+            .help("新建会话")
+            Spacer(minLength: 0)
             Button {
                 surface.openSettings()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "gearshape")
-                    Text("设置")
-                    Spacer()
-                }
-                .contentShape(Rectangle())
+                Image(systemName: "gearshape")
             }
-            .buttonStyle(.plain)
-            .hoverHighlight(selected: false)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .help("设置")
         }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 }
