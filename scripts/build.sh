@@ -31,11 +31,14 @@ echo "==> Installing to ${INSTALL_DIR}..."
 # guessing with a fixed sleep -- deleting a bundle still in use breaks the
 # running instance.
 osascript -e "tell application \"${APP_NAME}\" to quit" >/dev/null 2>&1 || true
+# 只等 /Applications 里的 Release 实例退出；Debug 版（DSHarness Dev.app，
+# bundle id io.wenbo.dsharness.dev）名字不同，不会被误杀，可继续运行。
+RUNNING="${INSTALL_DIR}/${APP_NAME}.app/Contents/MacOS/"
 for _ in $(seq 1 30); do
-  pgrep -f "${APP_NAME}.app/Contents/MacOS/" >/dev/null || break
+  pgrep -f "${RUNNING}" >/dev/null || break
   sleep 0.5
 done
-if pgrep -f "${APP_NAME}.app/Contents/MacOS/" >/dev/null; then
+if pgrep -f "${RUNNING}" >/dev/null; then
   echo "error: ${APP_NAME} still running after quit; close it and re-run" >&2
   exit 1
 fi

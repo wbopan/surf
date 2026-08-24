@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .critical
             alert.messageText = "未找到可用的 Node.js"
             alert.informativeText = error.localizedDescription
-                + "\n\nDeepSeek Harness 需要 Node.js ^22.19.0 或 >=24.0.0 来运行。"
+                + "\n\n\(AppInfo.displayName) 需要 Node.js ^22.19.0 或 >=24.0.0 来运行。"
                 + "\n\n安装方式：brew install node"
             alert.addButton(withTitle: "退出")
             alert.runModal()

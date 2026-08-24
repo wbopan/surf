@@ -11,6 +11,16 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
+  configs:
+    # Debug 产物与 Release 区分：不同名字/bundle id/图标，两版本可并存。
+    Debug:
+      PRODUCT_NAME: DSHarness Dev
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness.dev
+      APP_ICON_NAME: AppIconDev
+    Release:
+      PRODUCT_NAME: DeepSeek Harness
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness
+      APP_ICON_NAME: AppIcon
 packages:
   DSHKit:
     path: Packages/DSHKit
@@ -27,8 +37,6 @@ targets:
           - "DSHarness.entitlements"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness
-        PRODUCT_NAME: DeepSeek Harness
         INFOPLIST_FILE: DSHarness/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: NO
@@ -41,6 +49,9 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
+    preBuildScripts:
+      # 构建时间戳写入 Resources/BuildTimestamp.txt，Dev UI 显示用。
+      - script: scripts/write-build-timestamp.sh
     dependencies:
       - package: DSHKit
       - package: DSHSidebarUI
