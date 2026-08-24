@@ -185,7 +185,25 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         sidebarSplitItem = item
         sessionStorePort = harnessProcess.port
 
+        installToolbar()
         Task { await store.start() }
+    }
+
+    /// 左上角工具栏（红绿灯同排）：收起侧边栏 + 新建会话。
+    /// 依赖 sidebar split item 已就位（tracking separator 需要 divider 0），
+    /// 因此在 installSidebar 尾部调用；重复调用幂等。
+    private func installToolbar() {
+        guard let window, window.toolbar == nil else { return }
+        let tb = NSToolbar(identifier: "MainToolbar")
+        tb.delegate = self
+        tb.displayMode = .iconOnly
+        tb.allowsUserCustomization = false
+        window.toolbarStyle = .unifiedCompact
+        window.toolbar = tb
+    }
+
+    @objc private func newSessionFromToolbar() {
+        conversationSurface?.startSession(workspaceId: nil)
     }
 
     /// 卸载侧边栏（harness 重启换端口时整件重装镜像）。
@@ -688,6 +706,48 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 self?.webView.reload()
             }
+        }
+    }
+}
+
+// MARK: - 工具栏
+
+extension NSToolbarItem.Identifier {
+    static let newSession = NSToolbarItem.Identifier("dsharness.newSession")
+}
+
+extension MainWindowController: NSToolbarDelegate {
+    // sidebarTrackingSeparator 之前的项落在侧边栏区域，之后的落在内容区域（留空）。
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.toggleSidebar, .flexibleSpace, .newSession, .sidebarTrackingSeparator]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(_ toolbar: NSToolbar,
+                 itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case .newSession:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.image = NSImage(systemSymbolName: "square.and.pencil",
+                                 accessibilityDescription: "新建会话")
+            item.label = "新建会话"
+            item.toolTip = "新建会话"
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(newSessionFromToolbar)
+            return item
+        case .sidebarTrackingSeparator:
+            // 让分隔线在标题栏内跟随 split divider（全高侧边栏观感）。
+            return NSTrackingSeparatorToolbarItem(identifier: itemIdentifier,
+                                                  splitView: splitViewController.splitView,
+                                                  dividerIndex: 0)
+        default:
+            // .toggleSidebar / .flexibleSpace 等系统项由 AppKit 提供行为。
+            return NSToolbarItem(itemIdentifier: itemIdentifier)
         }
     }
 }
