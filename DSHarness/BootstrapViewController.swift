@@ -12,8 +12,58 @@ final class BootstrapViewController: NSViewController {
         let view = NSView()
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        #if DEBUG
+        // Dev 构建：背景加淡橙色斜纹水印，启动页即区分 Debug/Release。
+        if let stripe = makeDevStripes() {
+            stripe.frame = view.bounds
+            stripe.autoresizingMask = [.width, .height]
+            view.addSubview(stripe)
+        }
+        #endif
         self.view = view
     }
+
+    #if DEBUG
+    /// 淡橙色斜纹平铺层，铺满 bootstrap 背景。
+    private func makeDevStripes() -> NSView? {
+        final class StripeView: NSView {
+            override func draw(_ dirtyRect: NSRect) {
+                guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+                let tile = CGSize(width: 12, height: 12)
+                let image = NSImage(size: tile)
+                image.lockFocusFlipped(false)
+                NSColor.systemOrange.withAlphaComponent(0.10).setFill()
+                for offset in [CGFloat(-6), 0] {
+                    let p = NSBezierPath()
+                    p.move(to: NSPoint(x: offset, y: 0))
+                    p.line(to: NSPoint(x: offset + 6, y: 12))
+                    p.line(to: NSPoint(x: offset + 12, y: 12))
+                    p.line(to: NSPoint(x: offset + 6, y: 0))
+                    p.close()
+                    p.fill()
+                }
+                image.unlockFocus()
+                guard let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let cg = rep.cgImage else { return }
+                ctx.saveGState()
+                ctx.setFillColor(CGColor(pattern: CGPattern(
+                    image: cg,
+                    contentRect: CGRect(origin: .zero, size: tile),
+                    matrix: CGAffineTransform.identity,
+                    xStep: tile.width, yStep: tile.height,
+                    tiling: .constantSpacingMinimalDistortion,
+                    isColored: true)!,
+                    colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    components: [1, 1, 1, 1]))
+                ctx.fill(bounds)
+                ctx.restoreGState()
+            }
+        }
+        let v = StripeView()
+        return v
+    }
+    #endif
 
     override func viewDidLoad() {
         super.viewDidLoad()
