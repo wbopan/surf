@@ -1,10 +1,10 @@
 import SwiftUI
 
 // 原生侧边栏（阶段二·Mail 风格）：交给系统。
-// List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航，
-// DisclosureGroup 提供分组折叠与子行缩进；宿主把本视图装进
-// NSSplitViewItem(sidebarWithViewController:)，材质、分隔条、拖拽调宽、
-// 收起动画、宽度记忆全部由系统处理。
+// List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航；
+// 分组头自绘（无 chevron，点击图标/标题开合，折叠时 folder 变实心），
+// 宿主把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
+// 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 // 顶部操作按钮（收起侧边栏 / 新建会话）在宿主的 NSToolbar，不在本视图。
 
 /// 相对时间（几分钟前 / 几小时前 / 几天前 / 日期）。
@@ -40,7 +40,8 @@ struct StatusDot: View {
     }
 }
 
-/// 会话行：状态点 + 标题 + 相对时间；选中/高亮/键盘导航/缩进由 List 提供。
+/// 会话行：状态点 + 标题 + 相对时间；选中/高亮/键盘导航由 List 提供，
+/// 缩进用 leading padding 手动对齐分组头（无 DisclosureGroup 后自管）。
 struct SessionRow: View {
     let session: SidebarSession
 
@@ -55,26 +56,46 @@ struct SessionRow: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
+        .padding(.leading, 18)
     }
 }
 
-/// Workspace 分组头：图标 + 名称 + hover 显示的 … 菜单（对齐 dsh 原版语义）。
+/// Workspace 分组头：文件夹图标 + 名称（整体可点开合，折叠时图标变实心）
+/// + hover 显示的 … 菜单。不用 DisclosureGroup——去掉 chevron。
 struct GroupHeader: View {
     let group: SidebarGroup
+    let expanded: Bool
+    let onToggle: () -> Void
     let surface: ConversationSurface
 
     @State private var hovering = false
 
+    private var iconName: String {
+        if group.workspaceId == nil {
+            return expanded ? "tray" : "tray.fill"
+        }
+        return expanded ? "folder" : "folder.fill"
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: group.workspaceId == nil ? "tray" : "folder")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Text(group.title)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+            Button(action: onToggle) {
+                HStack(spacing: 6) {
+                    Image(systemName: iconName)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, alignment: .leading)
+                    Text(group.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(expanded ? "收起分组" : "展开分组")
+            .accessibilityLabel(Text(group.title))
             Menu {
                 Button("在此工作区新建会话") {
                     surface.startSession(workspaceId: group.workspaceId)
@@ -121,15 +142,18 @@ public struct SidebarView<Model: SidebarModel>: View {
         !searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    private func expandedBinding(_ groupId: String) -> Binding<Bool> {
-        guard !searching else { return .constant(true) }
-        return Binding(
-            get: { !collapsedGroups.contains(groupId) },
-            set: { expanded in
-                if expanded { collapsedGroups.remove(groupId) }
-                else { collapsedGroups.insert(groupId) }
+    private func isExpanded(_ groupId: String) -> Bool {
+        searching || !collapsedGroups.contains(groupId)
+    }
+
+    private func toggleGroup(_ groupId: String) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if collapsedGroups.contains(groupId) {
+                collapsedGroups.remove(groupId)
+            } else {
+                collapsedGroups.insert(groupId)
             }
-        )
+        }
     }
 
     /// 客户端过滤：标题 / 组名子串，大小写不敏感、即时。
@@ -157,15 +181,17 @@ public struct SidebarView<Model: SidebarModel>: View {
             searchField
             List(selection: selection) {
                 ForEach(filteredGroups) { group in
-                    DisclosureGroup(isExpanded: expandedBinding(group.id)) {
+                    GroupHeader(group: group,
+                                expanded: isExpanded(group.id),
+                                onToggle: { toggleGroup(group.id) },
+                                surface: surface)
+                        .padding(.top, 4) // 组间呼吸
+                    if isExpanded(group.id) {
                         ForEach(group.sessions) { session in
                             SessionRow(session: session)
                                 .tag(session.id)
                         }
-                    } label: {
-                        GroupHeader(group: group, surface: surface)
                     }
-                    .padding(.top, 4) // 组间呼吸
                 }
             }
             .listStyle(.sidebar)
