@@ -13,9 +13,9 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleName</key>
-	<string>DSHarness</string>
+	<string>DeepSeek Harness</string>
 	<key>CFBundleDisplayName</key>
-	<string>DSHarness</string>
+	<string>DeepSeek Harness</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -34,7 +34,7 @@
 		<true/>
 	</dict>
 	<key>NSUserNotificationUsageDescription</key>
-	<string>DSHarness 在 Harness 需要批准、需要回答或任务完成时发送本地通知。</string>
+	<string>DeepSeek Harness 在 Harness 需要批准、需要回答或任务完成时发送本地通知。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

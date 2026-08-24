@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .critical
             alert.messageText = "未找到可用的 Node.js"
             alert.informativeText = error.localizedDescription
-                + "\n\nDSHarness 需要 Node.js ^22.19.0 或 >=24.0.0 来运行 DeepSeek Harness。"
+                + "\n\nDeepSeek Harness 需要 Node.js ^22.19.0 或 >=24.0.0 来运行。"
                 + "\n\n安装方式：brew install node"
             alert.addButton(withTitle: "退出")
             alert.runModal()
@@ -39,8 +39,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        windowController?.shutdown()
+    /// 收 harness 要 SIGTERM 整个进程组再轮询等它退（MCP 子进程未必秒退，
+    /// 最长 5s + 1s）。在主线程等会冻住 UI，所以走 .terminateLater：
+    /// 后台收完再放行退出，退出期间窗口和 Dock 保持响应。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let windowController else { return .terminateNow }
+        windowController.shutdown {
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// macOS 14+ 要求显式声明安全的状态恢复，否则启动时打 Secure coding 警告。
