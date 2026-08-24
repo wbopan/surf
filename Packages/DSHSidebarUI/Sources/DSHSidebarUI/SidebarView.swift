@@ -7,13 +7,13 @@ import SwiftUI
 // 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 // 顶部操作按钮（收起侧边栏 / 新建会话）在宿主的 NSToolbar，不在本视图。
 
-/// 相对时间（几分钟前 / 几小时前 / 几天前 / 日期）。
+/// 相对时间，格式对齐 web 侧边栏（刚刚 / 18分钟 / 1小时 / 3天 / 日期）。
 func relativeTime(_ date: Date, now: Date = Date()) -> String {
     let sec = now.timeIntervalSince(date)
     if sec < 60 { return "刚刚" }
-    if sec < 3600 { return "\(Int(sec / 60)) 分钟前" }
-    if sec < 86400 { return "\(Int(sec / 3600)) 小时前" }
-    if sec < 86400 * 7 { return "\(Int(sec / 86400)) 天前" }
+    if sec < 3600 { return "\(Int(sec / 60))分钟" }
+    if sec < 86400 { return "\(Int(sec / 3600))小时" }
+    if sec < 86400 * 7 { return "\(Int(sec / 86400))天" }
     let f = DateFormatter()
     f.dateStyle = .short
     f.timeStyle = .none
@@ -47,7 +47,15 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            StatusDot(status: session.status)
+            // 固定宽度槽位保证标题对齐；idle 不显示点（对齐 web）。
+            Group {
+                if session.status != .idle {
+                    StatusDot(status: session.status)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 7, height: 7)
             Text(session.displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -65,6 +73,8 @@ struct SessionRow: View {
 struct GroupHeader: View {
     let group: SidebarGroup
     let expanded: Bool
+    /// 组内含当前会话时文件夹染 accent 色（对齐 web 的 folderActive）。
+    let containsCurrent: Bool
     let onToggle: () -> Void
     let surface: ConversationSurface
 
@@ -83,7 +93,8 @@ struct GroupHeader: View {
                 HStack(spacing: 6) {
                     Image(systemName: iconName)
                         .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(containsCurrent ? AnyShapeStyle(Color.accentColor)
+                                                         : AnyShapeStyle(.secondary))
                         .frame(width: 20, alignment: .leading)
                     Text(group.title)
                         .font(.system(size: 13, weight: .medium))
@@ -123,7 +134,12 @@ public struct SidebarView<Model: SidebarModel>: View {
 
     @State private var searchText = ""
     /// 收起的分组（默认全部展开；搜索时强制展开命中组）。
-    @State private var collapsedGroups: Set<String> = []
+    /// 逗号拼接持久化（对齐 web 的 groupExpansion 记忆；组 id 无逗号）。
+    @AppStorage("sidebar.collapsedGroups") private var collapsedGroupsCSV = ""
+
+    private var collapsedGroups: Set<String> {
+        Set(collapsedGroupsCSV.split(separator: ",").map(String.init))
+    }
 
     public init(model: Model, surface: ConversationSurface) {
         self.model = model
@@ -148,11 +164,9 @@ public struct SidebarView<Model: SidebarModel>: View {
 
     private func toggleGroup(_ groupId: String) {
         withAnimation(.easeInOut(duration: 0.15)) {
-            if collapsedGroups.contains(groupId) {
-                collapsedGroups.remove(groupId)
-            } else {
-                collapsedGroups.insert(groupId)
-            }
+            var set = collapsedGroups
+            if set.contains(groupId) { set.remove(groupId) } else { set.insert(groupId) }
+            collapsedGroupsCSV = set.sorted().joined(separator: ",")
         }
     }
 
@@ -162,8 +176,9 @@ public struct SidebarView<Model: SidebarModel>: View {
         guard !q.isEmpty else { return model.groups }
         let lower = q.lowercased()
         return model.groups.compactMap { group in
+            // blank（临时 New Session 行）不参与搜索（对齐 web）。
             let hitSessions = group.sessions.filter {
-                $0.displayTitle.lowercased().contains(lower)
+                !$0.blank && $0.displayTitle.lowercased().contains(lower)
             }
             if !hitSessions.isEmpty {
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
@@ -183,6 +198,9 @@ public struct SidebarView<Model: SidebarModel>: View {
                 ForEach(filteredGroups) { group in
                     GroupHeader(group: group,
                                 expanded: isExpanded(group.id),
+                                containsCurrent: group.sessions.contains {
+                                    $0.id == model.selectedSessionId
+                                },
                                 onToggle: { toggleGroup(group.id) },
                                 surface: surface)
                         .padding(.top, 4) // 组间呼吸

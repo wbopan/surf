@@ -46,9 +46,16 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
                 id: group.id,
                 workspaceId: group.workspaceId,
                 title: group.title,
-                sessions: group.sessions.map(sessionRow)
+                sessions: group.sessions.filter(visible).map(sessionRow)
             )
         }
+    }
+
+    /// 与 web 侧边栏同一条可见性规则（dsh-client-ui-workspace sessionVisible）：
+    /// subagent 子会话永不显示；blank 会话仅在是当前选中（临时 New Session 行）
+    /// 时显示。归档已在 SessionStore 镜像层滤除。
+    private func visible(_ s: SessionSummary) -> Bool {
+        !s.isSubagent && (!s.blank || s.id == selectedSessionId)
     }
 
     func activate(sessionId: String) {
