@@ -349,7 +349,23 @@ window.__ModuleLoader__.load({
 						// --dsharness-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
 						// 会话列从窗口左缘起排。frame 自带 overflow:hidden，不会外溢。
 						":root { --dsharness-sidebar-occupancy: " + RAIL_PX + "px; }",
-						"html[data-dsharness-native-sidebar], html[data-dsharness-native-sidebar] body { overflow: hidden !important; }",
+						// 整页滚动 + 橡皮筋：overflow:hidden 在 WebKit 里不禁用 elastic
+						// 滚动——内层滚动容器（[data-conversation-scroll] 等）滚到底后
+						// 惯性仍会链到 document，把整页（conversation+details）拉走。
+						// overscroll-behavior:none 禁 document 橡皮筋；内层所有元素
+						// contain 切断滚动链（自身仍可滚、自身边界仍有原生回弹）。
+						"html[data-dsharness-native-sidebar], html[data-dsharness-native-sidebar] body { overflow: hidden !important; overscroll-behavior: none !important; }",
+						"html[data-dsharness-native-sidebar] body * { overscroll-behavior: contain !important; }",
+						// UI 文本不可选中（壳应用观感）：全局关掉 user-select，
+						// 输入类控件（composer 输入框等）恢复可选以便编辑。
+						"html[data-dsharness-native-sidebar] body { -webkit-user-select: none !important; user-select: none !important; }",
+						"html[data-dsharness-native-sidebar] input, html[data-dsharness-native-sidebar] textarea, html[data-dsharness-native-sidebar] [contenteditable] { -webkit-user-select: text !important; user-select: text !important; }",
+						// 对话历史必须可复制：放开会话消息流与右侧 details 内容区。
+						// _flowItem = ui-conversation 每条消息的容器（用户气泡/助手
+						// markdown/思考/错误行全在其子树内；user-select 的 auto 随父
+						// 生效，整棵子树一起放开）；_contentColumn = ui-trajectory 的
+						// 工具调用详情内容列；pre/code 兜底放开所有代码块。
+						'html[data-dsharness-native-sidebar] [class*="_flowItem"], html[data-dsharness-native-sidebar] [class*="_contentColumn"], html[data-dsharness-native-sidebar] pre, html[data-dsharness-native-sidebar] code { -webkit-user-select: text !important; user-select: text !important; }',
 						'html[data-dsharness-native-sidebar] [class*="_frame"] {',
 						"  margin-left: calc(-1 * var(--dsharness-sidebar-occupancy)) !important;",
 						"  width: calc(100% + var(--dsharness-sidebar-occupancy)) !important;",
