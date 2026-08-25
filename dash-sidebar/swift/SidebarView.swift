@@ -10,6 +10,25 @@ import SwiftUI
 
 /// 相对时间已按需求移除（session 行不再显示时间戳）。
 
+// MARK: - 自动化标识符
+//
+// 本视图给关键元素挂了 `.accessibilityIdentifier`，供 scripts/shot.sh 之外的
+// GUI 自动化（peekaboo 等走 Accessibility API 的工具）按稳定 ID 定位，
+// 而不是靠中文文案模糊匹配——文案一改匹配就断。命名规范：
+//
+//   sidebar.search                     搜索框
+//   sidebar.search.clear               搜索清除按钮
+//   sidebar.list                       会话列表
+//   sidebar.group.<groupId>            分组头
+//   sidebar.group.<groupId>.new        分组头的「新建会话」（hover 才可见）
+//   sidebar.group.<groupId>.toggle     分组头的开合 chevron（hover 才可见）
+//   sidebar.session.<sessionId>        会话行
+//   sidebar.session.<sessionId>.archive 会话行的归档按钮（hover 才可见）
+//   sidebar.devFooter                  Dev 构建底部状态条
+//
+// 顶部工具栏的「新建会话」「边栏」是 NSToolbarItem / 系统标准项，不在这里，
+// 按它们的 Title 定位即可（系统项文案由 AppKit 提供，不会随业务改动）。
+
 /// 会话状态点（running/pending…/idle 的唯一自绘元素，其余交给系统）。
 /// running 用系统 ProgressView（macOS 原生小菊花），其余仍是彩色圆点（9pt）。
 struct StatusDot: View {
@@ -75,9 +94,11 @@ struct SessionRow: View {
                 .buttonStyle(.plain)
                 .help("归档会话")
                 .accessibilityLabel(Text("归档会话"))
+                .accessibilityIdentifier("sidebar.session.\(session.id).archive")
             }
         }
         .onHover { hovering = $0 }
+        .accessibilityIdentifier("sidebar.session.\(session.id)")
     }
 }
 
@@ -115,7 +136,13 @@ struct GroupHeader: View {
                 Spacer(minLength: 0)
             }
             .help(group.title)
+            // .ignore 显式收口：不加的话 SwiftUI 会把图标/标题各算一个 AX 元素
+            // 再合并，label 和 identifier 都被拼两遍（Description 变
+            // "X、X"、Identifier 变 "sidebar.group.X-sidebar.group.X"），
+            // 精确匹配落空。label 下面显式给了，不依赖子元素推断。
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(group.title))
+            .accessibilityIdentifier("sidebar.group.\(group.id)")
             // hover 时加号出现在 chevron 左侧，占位固定避免标题跳动。
             Button {
                 surface.startSession(workspaceId: group.workspaceId)
@@ -128,15 +155,18 @@ struct GroupHeader: View {
             }
             .buttonStyle(.plain)
             .help("在此工作区新建会话")
+            .accessibilityIdentifier("sidebar.group.\(group.id).new")
             .fixedSize()
             .opacity(hovering ? 1 : 0)
             // 右缘 chevron：唯一的开合开关（点击展开/收起），hover 才显示；
             // 展开时旋转 90°（朝下）。固定槽位保证旋转/显隐不改变布局宽度。
+            // 槽位宽度 = SessionRow 归档按钮的 24pt，两者同为居中对齐，
+            // 于是 chevron 与行尾归档图标的光学中心竖直对齐。
             Button(action: onToggle) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 20, alignment: .center)
+                    .frame(width: 24, height: 20, alignment: .center)
                     .contentShape(Rectangle())
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .animation(.easeInOut(duration: 0.15), value: expanded)
@@ -144,9 +174,13 @@ struct GroupHeader: View {
             .buttonStyle(.plain)
             .help(expanded ? "收起分组" : "展开分组")
             .accessibilityLabel(Text(expanded ? "收起分组" : "展开分组"))
+            .accessibilityIdentifier("sidebar.group.\(group.id).toggle")
             .fixedSize()
             .opacity(hovering ? 1 : 0)
         }
+        // sidebar List 给 Section header 的右侧 inset 比普通行少 14pt（实测），
+        // 补回来，chevron 槽位才真的落在 SessionRow 归档按钮槽位的正上方。
+        .padding(.trailing, 14)
         .onHover { hovering = $0 }
     }
 }
@@ -247,6 +281,7 @@ public struct SidebarView<Model: SidebarModel>: View {
                 }
             }
             .listStyle(.sidebar)
+            .accessibilityIdentifier("sidebar.list")
             if isDevBuild { devFooter }
         }
     }
@@ -279,6 +314,7 @@ public struct SidebarView<Model: SidebarModel>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(Color.orange.opacity(0.08))
+        .accessibilityIdentifier("sidebar.devFooter")
     }
 
     /// 构建时间戳：主 App prebuild 脚本写入 Resources/BuildTimestamp.txt。
@@ -300,6 +336,7 @@ public struct SidebarView<Model: SidebarModel>: View {
             TextField("搜索会话", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .accessibilityIdentifier("sidebar.search")
             if !searchText.isEmpty {
                 Button {
                     searchText = ""
@@ -309,6 +346,7 @@ public struct SidebarView<Model: SidebarModel>: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("sidebar.search.clear")
             }
         }
         .padding(.horizontal, 7)

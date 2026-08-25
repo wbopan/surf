@@ -89,6 +89,58 @@ Swift 里名字统一走 `AppInfo.displayName`（读 Info.plist，随 PRODUCT_NA
 **壳的 Debug/Release 差异用 `#if DEBUG`；插件里不行**——插件由壳在运行时用命令行 swiftc
 编译，没有 `-DDEBUG`，要判 Dev 就看 `Bundle.main.bundleIdentifier` 的 `.dev` 后缀。
 
+## 看界面 / 驱动界面
+
+**给 dash 窗口截图**（不需要它在前台，也不怕被别的窗口盖住）：
+
+```bash
+dash-app/host/scripts/shot.sh build/shot.png   # --list 看有哪些窗口
+                                               # --app 换目标，--scale 2 出 Retina
+```
+
+首次运行编译 `scripts/shot.swift`（约 1s），之后源码没变直接跑缓存二进制。
+WKWebView 的内容照样截得到。三条实测硬事实（都写在源码注释里了）：
+
+1. **`screencapture -l <windowID>` 在 macOS 26 上已经废了**，只会返回
+   "could not create image from window"——老的 CGWindowListCreateImage 取图
+   路径被移除。按窗口取图的唯一正路是 ScreenCaptureKit。
+2. 命令行工具调 SCContentFilter 前**必须先碰一下 `NSApplication.shared`**，
+   否则撞 `CGS_REQUIRE_INIT` 断言直接崩。
+3. `SCScreenshotManager.captureImage` 的 completionHandler 是 nullable，Swift
+   因此保留了"省略 handler"的 Void 重载，直接 `await` 会选中它拿到 Void——
+   用 `withCheckedThrowingContinuation` 显式包一层。
+
+**点界面**（peekaboo，`brew install steipete/tap/peekaboo`，需要屏幕录制 +
+辅助功能权限）：
+
+```bash
+PID=$(pgrep -f "dash Dev.app/Contents/MacOS" | head -1)
+peekaboo see   --pid "$PID" --json      # 元素树，JSON 里带 identifier 字段
+peekaboo click --pid "$PID" --on elem_140
+```
+
+**一定要用 `--pid` 而不是 `--app "dash Dev"`**：按名字解析会撞
+"Application inventory was incomplete"（某些进程缺 process-generation
+identity），`--pid` 没这问题。点击默认走后台投递，**不抢焦点、不动光标**，
+dash 全程不会被拉到前台。
+
+AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 web 元素树，
+所以侧边栏和 dsh Web UI 用同一套 AX 就能驱动，不必为 WebView 另走 JS 注入。
+
+插件的 `swift/` 存盘后热替换一完成，AX 树立刻反映新的 identifier，
+所以"改 → 存 → dump AX / 截图"是个几秒级的闭环，不用重启任何东西。
+
+### accessibilityIdentifier
+
+侧边栏关键元素挂了稳定 ID，别靠中文文案模糊匹配（文案一改就断）。命名见
+`dash-sidebar/swift/SidebarView.swift` 顶部注释，形如 `sidebar.search`、
+`sidebar.list`、`sidebar.group.<groupId>`、`sidebar.session.<sessionId>`。
+
+**SwiftUI 的坑**：identifier 挂在会被合并的容器上会被拼两遍
+（`sidebar.group.X-sidebar.group.X`），精确匹配就落空。分组头是靠
+`.accessibilityElement(children: .ignore)` + 显式 label 收口的；
+加新 identifier 后**务必 dump 一次 AX 确认没被拼重**。
+
 ## 共享 module（DashSDK / DSHKit）
 
 这两个 module 必须**全进程只有一份**：壳链接它们，运行时编出来的插件 dylib 也链接同一份
