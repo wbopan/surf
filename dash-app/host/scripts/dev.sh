@@ -1,15 +1,15 @@
 #!/bin/bash
 # Debug build: generate project, build Debug config, restart the Dev app.
-# Never touches the installed Release app (DeepSeek Harness) — Dev/Release are
+# Never touches the installed Release app (dash) — Dev/Release are
 # separate apps meant to run side by side. Pass --quit-release only if you
 # explicitly want the Release app quit first.
 # Usage: scripts/dev.sh [--quit-release]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="DSHarness Dev"          # Debug product name (project.yml configs.Debug)
-RELEASE_NAME="DeepSeek Harness"   # installed Release app name
-TARGET_NAME="DSHarness"
+APP_NAME="dash Dev"               # Debug product name (project.yml configs.Debug)
+RELEASE_NAME="dash"               # installed Release app name
+TARGET_NAME="dash"
 CONFIGURATION="Debug"
 DERIVED_DATA="build"
 PRODUCT_PATH="build/Build/Products/${CONFIGURATION}/${APP_NAME}.app"

@@ -1,4 +1,4 @@
-name: DSHarness
+name: dash
 options:
   bundleIdPrefix: io.wenbo
   deploymentTarget:
@@ -14,12 +14,12 @@ settings:
   configs:
     # Debug 产物与 Release 区分：不同名字/bundle id/图标，两版本可并存。
     Debug:
-      PRODUCT_NAME: DSHarness Dev
-      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness.dev
+      PRODUCT_NAME: dash Dev
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash.dev
       APP_ICON_NAME: AppIconDev
     Release:
-      PRODUCT_NAME: DeepSeek Harness
-      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dsharness
+      PRODUCT_NAME: dash
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash
       APP_ICON_NAME: AppIcon
 packages:
   DSHKit:
@@ -27,14 +27,14 @@ packages:
   DSHSidebarUI:
     path: Packages/DSHSidebarUI
 targets:
-  DSHarness:
+  dash:
     type: application
     platform: macOS
     sources:
       - path: Sources
         excludes:
           - "Info.plist"
-          - "DSHarness.entitlements"
+          - "dash.entitlements"
     settings:
       base:
         INFOPLIST_FILE: Sources/Info.plist
@@ -56,6 +56,6 @@ targets:
       - package: DSHKit
       - package: DSHSidebarUI
     entitlements:
-      path: Sources/DSHarness.entitlements
+      path: Sources/dash.entitlements
       properties:
         com.apple.security.app-sandbox: false

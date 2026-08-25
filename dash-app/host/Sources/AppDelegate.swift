@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func appSupportURL() -> URL {
         let fm = FileManager.default
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("io.wenbo.dsharness", isDirectory: true)
+            .appendingPathComponent("io.wenbo.dash", isDirectory: true)
         try? fm.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }

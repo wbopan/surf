@@ -9,7 +9,7 @@ enum Log {
         return f
     }()
 
-    static func write(_ message: String, to url: URL? = nil, tag: String = "dsharness") {
+    static func write(_ message: String, to url: URL? = nil, tag: String = "dash") {
         let line = "\(formatter.string(from: Date())) [\(tag)] \(message)\n"
         print(line, terminator: "")
         guard let url else { return }

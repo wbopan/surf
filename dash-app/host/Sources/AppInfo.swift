@@ -1,13 +1,13 @@
 import Foundation
 
-/// App 身份信息统一入口：名字跟随 PRODUCT_NAME（Debug=DSHarness Dev，
-/// Release=DeepSeek Harness），避免 Swift 里散落硬编码。
+/// App 身份信息统一入口：名字跟随 PRODUCT_NAME（Debug=dash Dev，
+/// Release=dash），避免 Swift 里散落硬编码。
 enum AppInfo {
     /// 显示名（窗口标题、菜单、“关于”等）。
     static let displayName: String =
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
         ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)
-        ?? "DeepSeek Harness"
+        ?? "dash"
 
     /// 构建时间戳（prebuild 脚本写入 Resources/BuildTimestamp.txt）。
     static let buildTimestamp: String = {

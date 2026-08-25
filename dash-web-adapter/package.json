@@ -1,8 +1,8 @@
 {
-  "name": "dsharness-web-adapter",
+  "name": "dash-web-adapter",
   "version": "0.1.0",
   "private": true,
-  "description": "DSHarness macOS 壳适配插件：仅在 DSHarness WKWebView 内生效的 dsh Web UI 调整（bundle + 浏览器插件双面包）",
+  "description": "dash macOS 壳适配插件：仅在 dash WKWebView 内生效的 dsh Web UI 调整（bundle + 浏览器插件双面包）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="DeepSeek Harness"      # product/bundle display name (PRODUCT_NAME)
-TARGET_NAME="DSHarness"          # target / scheme / .xcodeproj name
+APP_NAME="dash"                  # product/bundle display name (PRODUCT_NAME)
+TARGET_NAME="dash"               # target / scheme / .xcodeproj name
 INSTALL_DIR="/Applications"
 CONFIGURATION="Release"
 DERIVED_DATA="build"
@@ -34,8 +34,8 @@ echo "==> Installing to ${INSTALL_DIR}..."
 # guessing with a fixed sleep -- deleting a bundle still in use breaks the
 # running instance.
 osascript -e "tell application \"${APP_NAME}\" to quit" >/dev/null 2>&1 || true
-# 只等 /Applications 里的 Release 实例退出；Debug 版（DSHarness Dev.app，
-# bundle id io.wenbo.dsharness.dev）名字不同，不会被误杀，可继续运行。
+# 只等 /Applications 里的 Release 实例退出；Debug 版（dash Dev.app，
+# bundle id io.wenbo.dash.dev）名字不同，不会被误杀，可继续运行。
 RUNNING="${INSTALL_DIR}/${APP_NAME}.app/Contents/MacOS/"
 for _ in $(seq 1 30); do
   pgrep -f "${RUNNING}" >/dev/null || break
@@ -46,8 +46,8 @@ if pgrep -f "${RUNNING}" >/dev/null; then
   exit 1
 fi
 
-# Remove the old-name install from before the rename
-rm -rf "${INSTALL_DIR}/DSHarness.app"
+# 清掉历次改名前的旧安装（DSHarness → DeepSeek Harness → dash）
+rm -rf "${INSTALL_DIR}/DSHarness.app" "${INSTALL_DIR}/DeepSeek Harness.app"
 
 DEST="${INSTALL_DIR}/${APP_NAME}.app"
 rm -rf "${DEST}"

@@ -51,8 +51,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 窗口 frame / 分隔条宽度的 autosave key。AppKit 的记忆会盖住代码里的
     /// 默认值，调整默认值时需换 key 才能对已有用户生效。
-    private static let windowAutosaveName = "MainWindow.v3"
-    private static let sidebarAutosaveName = "MainSidebar.v3"
+    private static let windowAutosaveName = "DashMainWindow.v1"
+    private static let sidebarAutosaveName = "DashMainSidebar.v1"
 
     /// 启动时的目标窗口 frame（默认或 autosave 恢复值）。赋
     /// contentViewController / 插入侧边栏项时 AppKit 会把窗口收缩成内容
@@ -113,12 +113,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
-        // UA 追加 "DSHarness/<version>"：dsharness-web-adapter 插件以此判断
-        // 页面运行在壳内（终端 dsh web / 普通浏览器共用同一 profile，不受影响）。
+        // UA 追加 "Dash/<version>"（带斜杠，防 "dash" 作为普通子串误命中）：
+        // dash-web-adapter 插件以此判断页面运行在壳内（终端 dsh web /
+        // 普通浏览器共用同一 profile，不受影响）。
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        config.applicationNameForUserAgent = "DSHarness/\(shortVersion)"
+        config.applicationNameForUserAgent = "Dash/\(shortVersion)"
         // 网页 → 原生通道：插件 v2 桥（ready / currentSession 上报）
-        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "dsharness")
+        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "dash")
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
@@ -413,7 +414,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private func loadWebUI() {
         var components = URLComponents(string: "http://127.0.0.1:\(harnessProcess.port)/")!
         // 插件门控参数：网页侧边栏永久隐藏，原生侧边栏接管。
-        components.queryItems = [URLQueryItem(name: "dsharness-native-sidebar", value: "1")]
+        components.queryItems = [URLQueryItem(name: "dash-native-sidebar", value: "1")]
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
         // harness 重启后端口可能变：镜像 transport 持旧端口时整件重装。
@@ -702,7 +703,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     func handleBridgeMessage(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         switch message.name {
-        case "dsharness":
+        case "dash":
             guard let type = body["type"] as? String else { return }
             switch type {
             case "ready":
@@ -841,7 +842,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 // MARK: - 工具栏
 
 extension NSToolbarItem.Identifier {
-    static let newSession = NSToolbarItem.Identifier("dsharness.newSession")
+    static let newSession = NSToolbarItem.Identifier("dash.newSession")
 }
 
 extension MainWindowController: NSToolbarDelegate {

@@ -1,5 +1,8 @@
 // WS 事件流协议探针：连接 mux + host，打印前几帧的 method，验证帧格式
-const ws = require("/Users/wenbopan/Library/Application Support/io.wenbo.dsharness/harness/versions/0.1.1-rc.2/node_modules/ws");
+// 从全局安装的 dsh（npm i -g @deepseek-ai/dsh）里借 ws；壳不再自带 harness。
+const { execSync } = require("child_process");
+const dshRoot = execSync("npm root -g", { encoding: "utf8" }).trim() + "/@deepseek-ai/dsh";
+const ws = require(require.resolve("ws", { paths: [dshRoot] }));
 
 const port = process.argv[2];
 const out = [];

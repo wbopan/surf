@@ -2,7 +2,7 @@ import Foundation
 
 /// 原生侧边栏 → 会话展示面（conversation/details）的唯一动作通道。
 /// 协议定义在本包（平台无关）；Mac 壳用 WKWebView 实现（evaluateJavaScript
-/// 调用 dsharness-web-adapter 插件暴露的 `window.__dsharness`），
+/// 调用 dash-web-adapter 插件暴露的 `window.__dash`），
 /// 未来 iOS 壳对远程会话展示面另行实现。
 @MainActor
 public protocol ConversationSurface: AnyObject {

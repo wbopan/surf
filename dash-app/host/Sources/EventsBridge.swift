@@ -185,7 +185,7 @@ final class EventsBridge: NSObject, UNUserNotificationCenterDelegate {
         content.title = title
         content.body = body
         content.sound = .default
-        content.threadIdentifier = "dsharness"
+        content.threadIdentifier = "dash"
         let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { error in
             if let error {

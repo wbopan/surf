@@ -1,62 +1,62 @@
 /*
- * DSHarness 适配插件，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
+ * dash 适配插件，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
- * v2 功能（均 UA 门控：仅当页面运行在 DSHarness 的 WKWebView 内、UA 含
- * "DSHarness" 时生效；终端 `dsh web` / 普通浏览器打开同一 profile 不受影响）：
+ * v2 功能（均 UA 门控：仅当页面运行在 dash 的 WKWebView 内、UA 含
+ * "Dash/" 时生效；终端 `dsh web` / 普通浏览器打开同一 profile 不受影响）：
  *
  * 1. （v1）侧边栏顶部让位 + 透出原生玻璃（topInset）。
- * 2. （v2，额外需 URL 参数 dsharness-native-sidebar=1）「隐藏侧边栏」模式：
+ * 2. （v2，额外需 URL 参数 dash-native-sidebar=1）「隐藏侧边栏」模式：
  *    经 ui-layout 的公开服务 ctx.layout.toggleSidebar() 把侧边栏收起，
  *    再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口左缘起排；
  *    此模式下停用 v1 的玻璃宽度 ResizeObserver 上报（原生侧边栏自管宽度）。
- * 3. （v2）页内动作桥 window.__dsharness：
+ * 3. （v2）页内动作桥 window.__dash：
  *    selectSession / startSession / openSettings + 当前会话反向回报
- *    （window.webkit.messageHandlers.dsharness.postMessage）。
+ *    （window.webkit.messageHandlers.dash.postMessage）。
  *
  * 选择器说明：dsh Web UI 的类名是 hash 化 CSS module（如 pI_x6G_sidebarCol），
  * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中
  * ui-layout AppFrame 的侧边栏列。升级 dsh 后若失效，优先核对该语义名。
  */
 window.__ModuleLoader__.load({
-	id: "dsharness-web-adapter",
+	id: "dash-web-adapter",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-		const STYLE_ID = "dsharness-web-adapter-style";
+		const STYLE_ID = "dash-web-adapter-style";
 		// ui-layout computeColumns：折叠（sidebar 偏好为 0）时轨道仍占 56px rail。
 		const RAIL_PX = 56;
 
-		function insideDSHarness() {
+		function insideDash() {
 			try {
-				return navigator.userAgent.includes("DSHarness");
+				return navigator.userAgent.includes("Dash/");
 			} catch {
 				return false;
 			}
 		}
 
-		/** 原生侧边栏模式：UA 门控之上再要求 URL 查询参数 dsharness-native-sidebar=1。 */
+		/** 原生侧边栏模式：UA 门控之上再要求 URL 查询参数 dash-native-sidebar=1。 */
 		function nativeSidebarMode() {
 			try {
-				return insideDSHarness() && new URLSearchParams(window.location.search).get("dsharness-native-sidebar") === "1";
+				return insideDash() && new URLSearchParams(window.location.search).get("dash-native-sidebar") === "1";
 			} catch {
 				return false;
 			}
 		}
 
 		/* ------------------------------------------------------------------ *
-		 * A2：页内动作桥 window.__dsharness（仅 DSHarness UA；防御式，绝不抛）。
+		 * A2：页内动作桥 window.__dash（仅 dash UA；防御式，绝不抛）。
 		 * ------------------------------------------------------------------ */
 
 		/**
-		 * 经 window.webkit.messageHandlers.dsharness 向壳应用发消息；
+		 * 经 window.webkit.messageHandlers.dash 向壳应用发消息；
 		 * 普通浏览器（无该 handler）静默跳过。
 		 * @param {Record<string, unknown>} msg
 		 */
 		function postToShell(msg) {
 			try {
-				const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dsharness;
+				const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dash;
 				if (handler && typeof handler.postMessage === "function") handler.postMessage(msg);
 			} catch { /* 上报失败静默 */ }
 		}
@@ -73,7 +73,7 @@ window.__ModuleLoader__.load({
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 */
 		function installBridge(ctx) {
-			if (typeof window.__dsharness !== "undefined") return; // 幂等（HMR 重载）
+			if (typeof window.__dash !== "undefined") return; // 幂等（HMR 重载）
 			const bridge = {
 				selectSession: null,
 				startSession: null,
@@ -112,7 +112,7 @@ window.__ModuleLoader__.load({
 								} catch { /* 读取失败静默 */ }
 							};
 							report();
-							sctx.effect(() => sessions.list.subscribe(report), "dsharness-adapter: currentSession channel");
+							sctx.effect(() => sessions.list.subscribe(report), "dash-adapter: currentSession channel");
 						}
 					} catch { /* 服务形状不符静默 */ }
 				});
@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
 			const delegate = (name) => (...args) => {
 				try { bridge[name]?.(...args); } catch { /* 静默 */ }
 			};
-			window.__dsharness = {
+			window.__dash = {
 				selectSession: delegate("selectSession"),
 				startSession: delegate("startSession"),
 				openSettings: delegate("openSettings"),
@@ -263,7 +263,7 @@ window.__ModuleLoader__.load({
 			try {
 				const root = document.documentElement;
 				const setVar = (px) => {
-					try { root.style.setProperty("--dsharness-sidebar-occupancy", Math.max(0, Math.round(px)) + "px"); } catch { /* 静默 */ }
+					try { root.style.setProperty("--dash-sidebar-occupancy", Math.max(0, Math.round(px)) + "px"); } catch { /* 静默 */ }
 				};
 				const attach = () => {
 					const col = document.querySelector('[class*="_sidebarCol"]');
@@ -289,7 +289,7 @@ window.__ModuleLoader__.load({
 		 * @param {{ topInset?: number }} [config]
 		 */
 		function apply(ctx, config) {
-			if (!insideDSHarness()) return;
+			if (!insideDash()) return;
 			const native = nativeSidebarMode();
 			const raw = config && typeof config.topInset === "number" ? config.topInset : 24;
 			const topInset = Math.min(Math.max(raw, 0), 200);
@@ -298,7 +298,7 @@ window.__ModuleLoader__.load({
 				const style = document.createElement("style");
 				style.id = STYLE_ID;
 				const rules = [
-					":root { --dsharness-titlebar-inset: " + topInset + "px; }",
+					":root { --dash-titlebar-inset: " + topInset + "px; }",
 					// 壳应用左栏是原生 NSGlassEffectView（Liquid Glass）。
 					// dsh UI 有多层不透明背景会把它盖住：
 					//   1. 整窗框架 _frame 画 --dsw-alias-bg-base（覆盖整窗，含侧边栏）
@@ -316,7 +316,7 @@ window.__ModuleLoader__.load({
 					"}",
 					'[class*="_sidebarCol"] {',
 					"  box-sizing: border-box;",
-					"  padding-top: var(--dsharness-titlebar-inset);",
+					"  padding-top: var(--dash-titlebar-inset);",
 					"  background: transparent !important;",
 					// sidebarCol 自带 border-right（--dsw-alias-border-l1），
 					// 在实体背景上不显眼、贴着玻璃时成了一条突兀的黑白分隔线，去掉。
@@ -342,41 +342,41 @@ window.__ModuleLoader__.load({
 				];
 				if (native) {
 					rules.push(
-						// ===== 原生侧边栏模式（dsharness-native-sidebar=1）=====
+						// ===== 原生侧边栏模式（dash-native-sidebar=1）=====
 						// 折叠后 computeColumns 仍给 sidebar 轨道保留 56px rail。
 						// grid 轨道宽度由 AppFrame 的内联 gridTemplate-columns 决定、
 						// 无法部分覆盖，因此整体把 frame 向左平移 rail 宽（实时测量入
-						// --dsharness-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
+						// --dash-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
 						// 会话列从窗口左缘起排。frame 自带 overflow:hidden，不会外溢。
-						":root { --dsharness-sidebar-occupancy: " + RAIL_PX + "px; }",
+						":root { --dash-sidebar-occupancy: " + RAIL_PX + "px; }",
 						// 整页滚动 + 橡皮筋：overflow:hidden 在 WebKit 里不禁用 elastic
 						// 滚动——内层滚动容器（[data-conversation-scroll] 等）滚到底后
 						// 惯性仍会链到 document，把整页（conversation+details）拉走。
 						// overscroll-behavior:none 禁 document 橡皮筋；内层所有元素
 						// contain 切断滚动链（自身仍可滚、自身边界仍有原生回弹）。
-						"html[data-dsharness-native-sidebar], html[data-dsharness-native-sidebar] body { overflow: hidden !important; overscroll-behavior: none !important; }",
-						"html[data-dsharness-native-sidebar] body * { overscroll-behavior: contain !important; }",
+						"html[data-dash-native-sidebar], html[data-dash-native-sidebar] body { overflow: hidden !important; overscroll-behavior: none !important; }",
+						"html[data-dash-native-sidebar] body * { overscroll-behavior: contain !important; }",
 						// UI 文本不可选中（壳应用观感）：全局关掉 user-select，
 						// 输入类控件（composer 输入框等）恢复可选以便编辑。
-						"html[data-dsharness-native-sidebar] body { -webkit-user-select: none !important; user-select: none !important; }",
-						"html[data-dsharness-native-sidebar] input, html[data-dsharness-native-sidebar] textarea, html[data-dsharness-native-sidebar] [contenteditable] { -webkit-user-select: text !important; user-select: text !important; }",
+						"html[data-dash-native-sidebar] body { -webkit-user-select: none !important; user-select: none !important; }",
+						"html[data-dash-native-sidebar] input, html[data-dash-native-sidebar] textarea, html[data-dash-native-sidebar] [contenteditable] { -webkit-user-select: text !important; user-select: text !important; }",
 						// 对话历史必须可复制：放开会话消息流与右侧 details 内容区。
 						// _flowItem = ui-conversation 每条消息的容器（用户气泡/助手
 						// markdown/思考/错误行全在其子树内；user-select 的 auto 随父
 						// 生效，整棵子树一起放开）；_contentColumn = ui-trajectory 的
 						// 工具调用详情内容列；pre/code 兜底放开所有代码块。
-						'html[data-dsharness-native-sidebar] [class*="_flowItem"], html[data-dsharness-native-sidebar] [class*="_contentColumn"], html[data-dsharness-native-sidebar] pre, html[data-dsharness-native-sidebar] code { -webkit-user-select: text !important; user-select: text !important; }',
-						'html[data-dsharness-native-sidebar] [class*="_frame"] {',
-						"  margin-left: calc(-1 * var(--dsharness-sidebar-occupancy)) !important;",
-						"  width: calc(100% + var(--dsharness-sidebar-occupancy)) !important;",
+						'html[data-dash-native-sidebar] [class*="_flowItem"], html[data-dash-native-sidebar] [class*="_contentColumn"], html[data-dash-native-sidebar] pre, html[data-dash-native-sidebar] code { -webkit-user-select: text !important; user-select: text !important; }',
+						'html[data-dash-native-sidebar] [class*="_frame"] {',
+						"  margin-left: calc(-1 * var(--dash-sidebar-occupancy)) !important;",
+						"  width: calc(100% + var(--dash-sidebar-occupancy)) !important;",
 						"}",
 						// 双保险：侧边栏列内容（rail 图标等）不可交互、不绘制。
-						'html[data-dsharness-native-sidebar] [class*="_sidebarCol"] {',
+						'html[data-dash-native-sidebar] [class*="_sidebarCol"] {',
 						"  visibility: hidden !important;",
 						"  pointer-events: none !important;",
 						"}",
 					);
-					try { document.documentElement.setAttribute("data-dsharness-native-sidebar", ""); } catch { /* 静默 */ }
+					try { document.documentElement.setAttribute("data-dash-native-sidebar", ""); } catch { /* 静默 */ }
 				}
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
@@ -412,34 +412,6 @@ window.__ModuleLoader__.load({
 						document.body.insertBefore(d, document.body.firstChild);
 					} catch (e) { /* 诊断失败静默 */ }
 				}, 2500);
-				// 玻璃宽度跟随：ResizeObserver 监听侧边栏列宽度，经
-				// window.webkit.messageHandlers.dsharnessSidebar postMessage
-				// 上报壳应用，原生 NSGlassEffectView 同步改宽。
-				// 仅壳内 WKWebView 存在 window.webkit.messageHandlers；普通浏览器跳过。
-				// 原生侧边栏模式下停用——宽度由原生侧边栏自管。
-				// 注：SPA 挂载晚于插件执行，col 可能暂不存在——轮询到首次命中。
-				let observer = null;
-				let pollTimer = null;
-				if (!native) {
-					try {
-						const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dsharnessSidebar;
-						if (handler && typeof ResizeObserver !== "undefined") {
-							const attach = () => {
-								const col = document.querySelector('[class*="_sidebarCol"]');
-								if (!col) return false;
-								const report = () => handler.postMessage({ width: col.getBoundingClientRect().width });
-								observer = new ResizeObserver(report);
-								observer.observe(col);
-								report();
-								return true;
-							};
-							if (!attach()) {
-								pollTimer = setInterval(() => { if (attach()) clearInterval(pollTimer); }, 500);
-								setTimeout(() => clearInterval(pollTimer), 30000);
-							}
-						}
-					} catch (e) { /* 上报失败静默 */ }
-				}
 				// 原生侧边栏模式的动态部分：强制收起 + rail 占位测量。
 				let cleanupCollapse = () => {};
 				let cleanupOccupancy = () => {};
@@ -447,14 +419,14 @@ window.__ModuleLoader__.load({
 					cleanupCollapse = forceSidebarCollapsed(ctx);
 					cleanupOccupancy = trackSidebarOccupancy();
 				}
-				// A2：动作桥（与原生侧边栏模式无关，凡 DSHarness UA 即装）。
+				// A2：动作桥（与原生侧边栏模式无关，凡 Dash/ UA 即装）。
 				installBridge(ctx);
 				return () => {
-					clearTimeout(diagTimer); clearInterval(pollTimer); observer?.disconnect(); style.remove();
+					clearTimeout(diagTimer); style.remove();
 					cleanupCollapse(); cleanupOccupancy();
-					try { document.documentElement.removeAttribute("data-dsharness-native-sidebar"); } catch { /* 静默 */ }
-					try { document.documentElement.style.removeProperty("--dsharness-sidebar-occupancy"); } catch { /* 静默 */ }
-					try { delete window.__dsharness; } catch { try { window.__dsharness = undefined; } catch { /* 静默 */ } }
+					try { document.documentElement.removeAttribute("data-dash-native-sidebar"); } catch { /* 静默 */ }
+					try { document.documentElement.style.removeProperty("--dash-sidebar-occupancy"); } catch { /* 静默 */ }
+					try { delete window.__dash; } catch { try { window.__dash = undefined; } catch { /* 静默 */ } }
 				};
 			});
 		}
