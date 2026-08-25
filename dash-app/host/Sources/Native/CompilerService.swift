@@ -10,6 +10,9 @@ struct PluginSource {
     let files: [String: String]
     /// Swift module 依赖（插件名），按拓扑序已排在本插件之前。
     let deps: [String]
+    /// 本插件声明用到的共享 module（`DSHKit` 等，桥已排序去重）。
+    /// **不含 `DashSDK`**——那是无条件的 ABI，见 `CompilerService`。
+    let sharedModules: [String]
     /// 桥算的内容 hash（**已折进依赖的 hash**，级联重编靠它）。
     let bridgeHash: String
     let schemaVersion: Int
@@ -43,6 +46,10 @@ enum CompileError: Error {
 /// - 上游变了 → 桥算的 hash 已折进上游 hash → 下游 hash 必变 → 强制级联重编
 ///   （M2 断言 6 的沉默认知分裂由此杜绝）。
 actor CompilerService {
+    /// ABI module：每个插件无条件链接、变了所有插件都必须重编的那一个。
+    /// 其余共享 module 一律按 `PluginSource.sharedModules` 声明处理。
+    static let abiModule = "DashSDK"
+
     /// 共享 module 的 `.swiftmodule`/`.swiftinterface`（bundle 内）。
     private let modulesDir: URL
     /// 共享 module 的 dylib（bundle 内 Contents/Frameworks）。
@@ -51,6 +58,7 @@ actor CompilerService {
     private let generationsDir: URL
 
     private var toolchainFingerprintCache: String?
+    private var sharedModuleFingerprintCache: [String: String] = [:]
     private var targetTripleCache: String?
 
     init(modulesDir: URL, frameworksDir: URL, generationsDir: URL) {
@@ -61,14 +69,21 @@ actor CompilerService {
 
     // MARK: - 内容寻址
 
-    /// 完整内容 hash = 桥的 hash（源码 + 依赖）+ 本机工具链与 SDK 指纹。
+    /// 完整内容 hash = 桥的 hash（源码 + 依赖 + 共享 module 声明）
+    /// + 本机工具链基线 + **本插件声明用到的**共享 module 的接口摘要。
+    ///
     /// 换 Xcode 或重编 DashSDK 之后必须全量重编，否则 `.swiftmodule` 会对不上。
+    /// 但重编 DSHKit 只该波及 `import DSHKit` 的插件——所以共享 module 的摘要
+    /// 按声明逐个折进来，而不是把 `DashModules/` 里的东西一股脑算成一个数。
     func contentHash(for source: PluginSource) async -> String {
         var hasher = SHA256Hasher()
         hasher.update(source.module)
         hasher.update(source.bridgeHash)
         hasher.update(String(source.schemaVersion))
         hasher.update(await toolchainFingerprint())
+        for module in source.sharedModules where module != Self.abiModule {
+            hasher.update("shared:\(module)=\(sharedModuleFingerprint(module))")
+        }
         return hasher.finalizeHex()
     }
 
@@ -117,7 +132,13 @@ actor CompilerService {
                  dir.appendingPathComponent("\(module).swiftmodule").path]
         // 共享 module：编译期 -I 找 .swiftmodule，链接期 -L 找 bundle 里的 dylib，
         // 运行期靠 -rpath 落到同一个文件上（同一份 image = 类型身份一致）。
-        args += ["-I", modulesDir.path, "-L", frameworksDir.path, "-lDashSDK", "-lDSHKit"]
+        // DashSDK 无条件（它是 ABI 本身）；其余按插件声明加，没声明的不链接
+        // ——写 `import DSHKit` 却忘了声明 sharedModules，swiftc 会带行号报错，
+        // 比默认全给更早暴露问题。
+        args += ["-I", modulesDir.path, "-L", frameworksDir.path, "-l\(Self.abiModule)"]
+        for module in source.sharedModules where module != Self.abiModule {
+            args += ["-l\(module)"]
+        }
         args += ["-Xlinker", "-rpath", "-Xlinker", frameworksDir.path]
         // 插件间依赖：源码里写 `import DashLayout`，这里用 -module-alias 绑到
         // 具体世代，世代号对插件作者完全透明（M2 §2 定稿）。
@@ -164,7 +185,7 @@ actor CompilerService {
     private func targetTriple() async -> String {
         if let cached = targetTripleCache { return cached }
         let fallback = "arm64-apple-macos26.0"
-        let interface = modulesDir.appendingPathComponent("DashSDK.swiftinterface")
+        let interface = modulesDir.appendingPathComponent("\(Self.abiModule).swiftinterface")
         guard let text = try? String(contentsOf: interface, encoding: .utf8) else {
             targetTripleCache = fallback
             return fallback
@@ -181,22 +202,38 @@ actor CompilerService {
         return fallback
     }
 
-    /// swiftc 版本 + 共享 module 接口的内容摘要。
+    /// **所有**插件共享的编译基线：ABI 版本 + swiftc 版本 + DashSDK 的接口。
+    ///
+    /// 只有 DashSDK 在这里。它是壳↔插件的 ABI 本身，每个插件都链接它，变了谁都得重编。
+    /// 其余共享 module（DSHKit…）按插件声明单独折进 `contentHash`
+    /// ——把整个 `DashModules/` 一股脑算进来，就等于让改一行 DSHKit 把从不 import 它的
+    /// 插件也全量重编一遍。
     private func toolchainFingerprint() async -> String {
         if let cached = toolchainFingerprintCache { return cached }
         var hasher = SHA256Hasher()
         hasher.update(String(dashABIVersionForFingerprint))
         if let version = try? runSwiftc(["--version"]).output { hasher.update(version) }
-        let fm = FileManager.default
-        let names = (try? fm.contentsOfDirectory(atPath: modulesDir.path))?.sorted() ?? []
-        for name in names where name.hasSuffix(".swiftinterface") {
-            hasher.update(name)
-            if let data = try? Data(contentsOf: modulesDir.appendingPathComponent(name)) {
-                hasher.update(data)
-            }
-        }
+        hasher.update(sharedModuleFingerprint(Self.abiModule))
         let value = hasher.finalizeHex()
         toolchainFingerprintCache = value
+        return value
+    }
+
+    /// 单个共享 module 的接口摘要（`.swiftinterface` 内容；缺文件时是稳定的 `missing`
+    /// ——这样声明了一个 bundle 里没有的 module 不会让 hash 每次都变，
+    /// 而 swiftc 会在编译时带行号报出 "no such module"）。
+    private func sharedModuleFingerprint(_ module: String) -> String {
+        if let cached = sharedModuleFingerprintCache[module] { return cached }
+        let url = modulesDir.appendingPathComponent("\(module).swiftinterface")
+        var hasher = SHA256Hasher()
+        hasher.update(module)
+        if let data = try? Data(contentsOf: url) {
+            hasher.update(data)
+        } else {
+            hasher.update("missing")
+        }
+        let value = hasher.finalizeHex()
+        sharedModuleFingerprintCache[module] = value
         return value
     }
 

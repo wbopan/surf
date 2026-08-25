@@ -183,6 +183,7 @@ final class NativePluginHost {
                   let hash = row["contentHash"] as? String else { return nil }
             return PluginSource(name: name, module: module, files: files,
                                 deps: row["swiftDeps"] as? [String] ?? [],
+                                sharedModules: row["sharedModules"] as? [String] ?? [],
                                 bridgeHash: hash,
                                 schemaVersion: row["schemaVersion"] as? Int ?? 1)
         }

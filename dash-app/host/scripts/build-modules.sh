@@ -57,6 +57,8 @@ build_module() { # build_module <module 名> <源码目录...>
   printf '%s' "$hash" > "$marker"
 }
 
-echo "==> 共享 module（$OUT）"
+# ${OUT} 的花括号不是风格问题：bash 3.2（macOS 自带）在 UTF-8 locale 下会把
+# 紧跟其后的全角字符吞进变量名，配上 set -u 就是 "OUT\357: unbound variable"。
+echo "==> 共享 module（${OUT}）"
 build_module DSHKit  Packages/DSHKit/Sources/DSHKit
 build_module DashSDK Sources/DashSDK

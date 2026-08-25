@@ -19,4 +19,7 @@ export default createSwiftPlugin({
 	inject: ["dash-layout"],
 	swiftDir: new URL("../swift/", import.meta.url),
 	swiftDeps: ["dash-layout"],
+	// Swift 侧 `import DSHKit`（SessionStore / DSHTransport）。本仓库里唯一的
+	// DSHKit 消费者——声明出来，别的插件才不会因为 DSHKit 变动而白白全量重编。
+	sharedModules: ["DSHKit"],
 });
