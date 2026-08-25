@@ -9,10 +9,14 @@
  *   2. 源码 hash 变了或产物缺失 → xcodegen + xcodebuild（无 Xcode 则降级为只探测既有产物）。
  *   3. 产物存在且 app 尚未运行 → `open --args --dash-endpoint …` 拉起。
  *
- * 全程"优雅缺席"：构建失败、没有 Xcode、连既有产物都没有，都只在终端留一句话，
- * dsh 照常服务浏览器。失败不重试、不成环——防的是构建风暴。
+ * 起来之后还盯着壳源码（v1，§7.5）：变了就后台重建，经桥播报
+ * `app-build`；壳把它变成一条"有新版，重启生效"的横幅。**重建不等于重启**——
+ * 壳重启是重循环（进程退出、页面状态丢失），时机归用户，默认只提示。
+ * 运行中的 app bundle 被覆盖在 macOS 上是安全的（旧进程继续跑旧映像）。
  *
- * 桥（WS 双向通信）是 dash-bridge 的事，M4 再加；本插件只管把壳弄出来并告诉它 dsh 在哪。
+ * 全程"优雅缺席"：构建失败、没有 Xcode、连既有产物都没有，都只在终端留一句话，
+ * dsh 照常服务浏览器。首次构建失败不重试、不成环——防的是构建风暴；
+ * 盯文件的重建则由"源码又变了"驱动，天然不会自己转圈。
  *
  * @module dash-app
  */
@@ -36,6 +40,12 @@ export const Config = z.object({
 		.description("源码 hash 变化或产物缺失时自动 xcodebuild；关掉则只探测既有产物。"),
 	launch: z.boolean().default(true)
 		.description("产物就绪且 app 尚未运行时自动拉起。"),
+	watch: z.boolean().default(true)
+		.description("dsh 运行期间盯着壳源码，变了就后台重建并经桥提示「有新版」。需要 build 也开着。"),
+	watchIntervalMs: z.number().step(1).min(300).default(2000)
+		.description("盯壳源码的轮询间隔。先比 mtime/size 签名，签名变了才读内容算 hash。"),
+	restartOnRebuild: z.boolean().default(false)
+		.description("重建成功后不等用户点，直接让壳退出并重拉（开发期方便，会丢页面状态）。"),
 });
 
 /** 壳的 Application Support 根目录，与 Swift 侧 `DashPaths.appSupport` 必须一致。 */
@@ -138,8 +148,99 @@ async function bootstrap({ ctx, config, logger, httpBase, isDisposed }) {
 		bridgePath: BRIDGE_PATH,
 	});
 
-	if (!config.launch) return;
-	await launch({ appPath: built.appPath, httpBase, logger });
+	if (config.launch) await launch({ appPath: built.appPath, httpBase, logger });
+
+	// v1：起来之后继续盯着壳源码。只在"真的构建过"时才盯——没有 Xcode、
+	// 或 build 关掉时，重建无从谈起，盯了也只会白读文件。
+	if (config.build && config.watch && built.freshness !== "prebuilt") {
+		watchSources({ ctx, config, logger, httpBase, isDisposed, configuration });
+	}
+}
+
+/**
+ * 盯壳源码（§7.5 v1）。与桥盯 `swift/` 同款的廉价轮询：先比 mtime/size 签名，
+ * 签名变了才读内容算 hash——hash 才是"要不要重建"的判据（换 git 分支不算改过）。
+ *
+ * 播报走 `ctx.inject`：dash-bridge 在就播，不在就只写终端。壳没连上来时
+ * 重建照做——下次它连上来握手，桥会把最后一次播报补给它。
+ */
+function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration }) {
+	/** @type {{announce: (status: string, detail?: object) => void}} */
+	const channel = { announce: () => {} };
+
+	ctx.inject(["dashBridge"], (scoped) => {
+		const app = scoped.dashBridge.app;
+		channel.announce = (status, detail) => app.announce(status, detail);
+		scoped.effect(() => {
+			// 壳自己要重启：它发完帧就退出，我们等它死透再按新产物拉起来。
+			const off = app.onRestartRequest(() => restartApp({ configuration, httpBase, logger }));
+			return () => { off(); channel.announce = () => {}; };
+		}, "dash-app 壳重启请求");
+	});
+
+	let building = false;
+	let pending = false;
+	let signature = signatureSources();
+	let builtHash = readTextOrUndefined(hashMarkerPath(configuration));
+
+	const tick = async () => {
+		if (isDisposed() || building) { if (building) pending = true; return; }
+		const next = signatureSources();
+		if (next === signature) return;
+		signature = next;
+		const hash = hashSources();
+		if (hash === undefined || hash === builtHash) return;
+
+		building = true;
+		logger.info("壳源码有变动，后台重建中…");
+		channel.announce("building", {});
+		const startedAt = Date.now();
+		const result = await runBuild({ configuration, logger, isDisposed });
+		building = false;
+		if (isDisposed()) return;
+
+		if (result.ok) {
+			builtHash = hash;
+			writeFileSync(hashMarkerPath(configuration), hash);
+			const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+			logger.info(`壳已重建（${seconds}s）。${config.restartOnRebuild
+				? "按配置立即重启壳。" : "重启 dash 生效——窗口里有提示。"}`);
+			channel.announce("ready", {
+				hash: hash.slice(0, 12),
+				durationMs: Date.now() - startedAt,
+				autoRestart: config.restartOnRebuild,
+			});
+		} else {
+			// 失败不回滚 builtHash：源码再变一次就会再试，用户改对了自然就好。
+			logger.error(`壳重建失败。完整日志：${result.logPath}\n${tail(result.log, 20)}`);
+			channel.announce("failed", { log: tail(result.log, 40) });
+		}
+
+		if (pending) { pending = false; signature = ""; }
+	};
+
+	const timer = setInterval(() => { tick().catch(() => {}); }, config.watchIntervalMs);
+	timer.unref?.();
+	ctx.effect(() => () => clearInterval(timer), "dash-app 壳源码轮询");
+	logger.info(`盯着壳源码（每 ${config.watchIntervalMs}ms），改了会自动重建。`);
+}
+
+/**
+ * 壳自请重启：它发完 `app-restart` 帧就 terminate，这里等进程真的消失再拉起——
+ * 拉早了 `open` 只会把正在退出的旧实例带到前台。等不到就照拉，最坏也不过是
+ * 把旧窗口前置一下。
+ */
+async function restartApp({ configuration, httpBase, logger }) {
+	const appPath = productPath(configuration);
+	const deadline = Date.now() + 15000;
+	while (Date.now() < deadline) {
+		if (!(await isRunning(appPath))) break;
+		await delay(300);
+	}
+	if (await isRunning(appPath)) {
+		logger.warn("壳说要重启，但 15s 后进程仍在；照常拉起（可能只是把旧窗口前置）。");
+	}
+	await launch({ appPath, httpBase, logger });
 }
 
 /**
@@ -163,33 +264,12 @@ async function ensureBuilt({ configuration, logger, isDisposed }) {
 
 	logger.info(`壳源码有变动，开始构建 ${configuration}（首次约需分钟级）…`);
 	const startedAt = Date.now();
-	const buildLog = join(APP_SUPPORT, "logs", `dash-app-build.${configuration}.log`);
-	mkdirSync(dirname(buildLog), { recursive: true });
-
-	try {
-		// dev.sh 的同一套步骤：时间戳文件不入库，须在 generate 扫描目录前落地。
-		await run(join(HOST_DIR, "scripts", "write-build-timestamp.sh"), [], HOST_DIR);
-		if (isDisposed()) return { appPath: undefined, freshness: "missing" };
-		await run(join(HOST_DIR, "tools", "xcodegen"), ["generate"], HOST_DIR);
-		if (isDisposed()) return { appPath: undefined, freshness: "missing" };
-		// -derivedDataPath build 是硬约束：产物必须落在 build/Build/Products/，
-		// 换位置会造成“BUILD SUCCEEDED 但改动永不生效”。
-		const result = await run("xcodebuild", [
-			"-project", join(HOST_DIR, "dash.xcodeproj"),
-			"-scheme", "dash",
-			"-configuration", configuration,
-			"-derivedDataPath", "build",
-			"build",
-		], HOST_DIR, { maxBuffer: 64 * 1024 * 1024 });
-		writeFileSync(buildLog, result.stdout + result.stderr);
-	} catch (error) {
-		// 完整日志落文件，终端只留结论 + 尾巴几行——xcodebuild 的输出淹没 dsh 终端没有意义。
-		const detail = `${error?.stdout ?? ""}${error?.stderr ?? ""}` || errorText(error);
-		writeFileSync(buildLog, detail);
-		logger.error(`构建 ${configuration} 失败（不重试）。完整日志：${buildLog}\n${tail(detail, 20)}`);
+	const result = await runBuild({ configuration, logger, isDisposed });
+	if (isDisposed()) return { appPath: undefined, freshness: "missing" };
+	if (!result.ok) {
+		logger.error(`构建 ${configuration} 失败（不重试）。完整日志：${result.logPath}\n${tail(result.log, 20)}`);
 		return locateExistingProduct(configuration);
 	}
-
 	if (!existsSync(product)) {
 		logger.error(`xcodebuild 报成功但产物不在 ${product}，放弃（不重试）。`);
 		return locateExistingProduct(configuration);
@@ -197,6 +277,39 @@ async function ensureBuilt({ configuration, logger, isDisposed }) {
 	if (hash !== undefined) writeFileSync(marker, hash);
 	logger.info(`${configuration} 构建完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s：${product}`);
 	return { appPath: product, freshness: "fresh" };
+}
+
+/**
+ * 跑一遍 `dev.sh` 的构建三步。完整日志落文件（xcodebuild 的输出淹没 dsh 终端
+ * 没有意义），返回值只带日志文本供调用方掐个尾巴。**不抛异常**：失败是预期内的
+ * 一种结果，调用方各有各的善后。
+ */
+async function runBuild({ configuration, logger, isDisposed }) {
+	const logPath = join(APP_SUPPORT, "logs", `dash-app-build.${configuration}.log`);
+	mkdirSync(dirname(logPath), { recursive: true });
+	try {
+		// 时间戳文件不入库，须在 generate 扫描目录前落地。
+		await run(join(HOST_DIR, "scripts", "write-build-timestamp.sh"), [], HOST_DIR);
+		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
+		await run(join(HOST_DIR, "tools", "xcodegen"), ["generate"], HOST_DIR);
+		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
+		// -derivedDataPath build 是硬约束：产物必须落在 build/Build/Products/，
+		// 换位置会造成"BUILD SUCCEEDED 但改动永不生效"。
+		const result = await run("xcodebuild", [
+			"-project", join(HOST_DIR, "dash.xcodeproj"),
+			"-scheme", "dash",
+			"-configuration", configuration,
+			"-derivedDataPath", "build",
+			"build",
+		], HOST_DIR, { maxBuffer: 64 * 1024 * 1024 });
+		const log = result.stdout + result.stderr;
+		writeFileSync(logPath, log);
+		return { ok: true, log, logPath };
+	} catch (error) {
+		const log = `${error?.stdout ?? ""}${error?.stderr ?? ""}` || errorText(error);
+		writeFileSync(logPath, log);
+		return { ok: false, log, logPath };
+	}
 }
 
 /** 不构建时的产物探测：先本地 build/，再 /Applications 的 Release 安装。 */
@@ -305,6 +418,28 @@ function hashSources() {
 	}
 }
 
+/**
+ * 廉价签名：只 stat 不读内容。轮询每一拍都跑它，签名没变就省下整棵树的 readFile。
+ * 与 `hashSources` 用同一套根与排除项——两者对"什么算源码"的看法必须一致。
+ */
+function signatureSources() {
+	try {
+		const parts = [];
+		for (const root of HASHED_ROOTS) {
+			for (const file of walk(join(HOST_DIR, root))) {
+				const rel = relative(HOST_DIR, file);
+				if (HASH_EXCLUDED.has(rel)) continue;
+				const stats = statSync(file);
+				parts.push(`${rel}:${stats.mtimeMs}:${stats.size}`);
+			}
+		}
+		return parts.join("|");
+	} catch {
+		// 扫描出错就返回空串：与"上一次的签名"必然不同，退化为多算一次 hash。
+		return "";
+	}
+}
+
 /** 确定序遍历（readdirSync 已按名排序，逐层排序保证跨机一致）。 */
 function* walk(path) {
 	let stats;
@@ -372,6 +507,10 @@ function readTextOrUndefined(path) {
 
 function tail(text, lines) {
 	return text.trimEnd().split("\n").slice(-lines).join("\n");
+}
+
+function delay(ms) {
+	return new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
 }
 
 function errorText(error) {

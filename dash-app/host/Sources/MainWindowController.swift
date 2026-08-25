@@ -90,6 +90,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private var bootstrapVC: BootstrapViewController?
 
+    /// 壳有新版时右下角那条浮动提示（dash-app v1 播报，§7.5）。
+    /// 用户点"稍后"就收起，直到下一次播报——不缠人。
+    private var updateBanner: ShellUpdateBanner?
+
     // MARK: - WebView
 
     private lazy var webView: WKWebView = {
@@ -122,6 +126,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
         nativeHost.objects.setObject(DashObjects.Key.webView, webView)
         nativeHost.onUpdate = { [weak self] in self?.syncNativeSidebarGate() }
+        nativeHost.onAppBuild = { [weak self] state in self?.applyAppBuild(state) }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -401,6 +406,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private func showBootstrap(_ text: String) {
         guideShown = false
+        dismissUpdateBanner()
         mountBootstrap().setBusy(text)
     }
 
@@ -408,6 +414,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 重试只是催一次探测——轮询本来就会自己接回来。
     private func showBootstrapGuide(title: String, detail: String) {
         guideShown = true
+        dismissUpdateBanner()
         mountBootstrap().setGuide(title: title, detail: detail, command: "dsh web",
                                   retryTitle: "立即重试") { [weak self] in
             self?.showBootstrap("正在寻找 dsh…")
@@ -419,6 +426,67 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guideShown = false
         bootstrapVC?.view.removeFromSuperview()
         bootstrapVC = nil
+    }
+
+    // MARK: - 壳自身的构建（dash-app v1）
+
+    /// 壳重建不是插件热替换那个档位：它要重启进程、丢页面状态。所以默认只提示，
+    /// 动手归用户（dash-app 配了 `restartOnRebuild` 才自动走）。
+    private func applyAppBuild(_ state: AppBuildState) {
+        // 引导页在场 = 此刻连 dsh 都没有，"壳有新版"不是当下该操心的事。
+        guard bootstrapVC == nil else { return }
+        switch state.status {
+        case "building":
+            mountUpdateBanner().show(.building)
+        case "ready":
+            guard !state.autoRestart else {
+                Log.write("壳有新版且配置了自动重启，立即重启", to: DashPaths.logURL, tag: "app-build")
+                nativeHost.requestRestartApp()
+                return
+            }
+            var parts: [String] = []
+            if let hash = state.hash { parts.append(hash) }
+            if let ms = state.durationMs { parts.append(String(format: "%.1fs", Double(ms) / 1000)) }
+            mountUpdateBanner().show(.ready(detail: parts.joined(separator: " · ")))
+        case "failed":
+            mountUpdateBanner().show(.failed)
+        default:
+            dismissUpdateBanner()
+        }
+    }
+
+    private func mountUpdateBanner() -> ShellUpdateBanner {
+        if let banner = updateBanner { return banner }
+        let banner = ShellUpdateBanner(
+            onPrimary: { [weak self] kind in
+                guard let self else { return }
+                switch kind {
+                case .ready:
+                    self.dismissUpdateBanner()
+                    self.nativeHost.requestRestartApp()
+                case .failed:
+                    NSWorkspace.shared.open(DashPaths.logsDir)
+                case .building:
+                    break
+                }
+            },
+            onDismiss: { [weak self] in self?.dismissUpdateBanner() })
+        updateBanner = banner
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        let content = containerController.view
+        content.addSubview(banner, positioned: .above, relativeTo: nil)
+        // 右上角、贴着拖拽条下沿：底部是网页的输入框与发送按钮，盖不得。
+        NSLayoutConstraint.activate([
+            banner.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            banner.topAnchor.constraint(equalTo: content.topAnchor,
+                                        constant: MainWindowController.titleBarHeight + 8),
+        ])
+        return banner
+    }
+
+    private func dismissUpdateBanner() {
+        updateBanner?.removeFromSuperview()
+        updateBanner = nil
     }
 
     // MARK: - 菜单
@@ -598,36 +666,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
     }
 
-    // MARK: - WKNavigationDelegate（防御式：注入失败不影响功能）
+    // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: DashPaths.logURL, tag: "web")
         // 页面就绪后把键盘焦点交给 WebView，快捷键/输入立即可用
         if let window, window.firstResponder === window || window.firstResponder === window.contentView {
             window.makeFirstResponder(webView)
-        }
-        // 诊断：SPA 异步挂载，延迟再查一次 DOM（仅日志，不影响功能）
-        let script = """
-        JSON.stringify({
-            title: document.title,
-            rootChildren: (document.getElementById('root') ? document.getElementById('root').children.length : -1),
-            bodyTextLen: document.body ? document.body.innerText.length : -1,
-            bodyText: document.body ? document.body.innerText.slice(0, 400) : '',
-            interactiveEls: document.querySelectorAll('button,a,input,textarea,[role]').length,
-            url: location.href
-        })
-        """
-        webView.evaluateJavaScript(script) { result, _ in
-            if let s = result as? String {
-                Log.write("WebView DOM(0s)：\(s)", to: DashPaths.logURL, tag: "web")
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            webView.evaluateJavaScript(script) { result, _ in
-                if let s = result as? String {
-                    Log.write("WebView DOM(3s)：\(s)", to: DashPaths.logURL, tag: "web")
-                }
-            }
         }
     }
 

@@ -54,6 +54,8 @@ export function apply(ctx, config) {
 	const registry = new Map();
 	/** @type {Set<Client>} 已握手的壳客户端 */
 	const clients = new Set();
+	/** dash-app 登记的"壳请求重启自己"处理器（§7.5 v1）。 */
+	let appRestartHandler;
 	/** 登记表版本：全表 hash 的短前缀 + 单调计数，方便人眼比对。 */
 	let version = 0;
 	let tableHash = "";
@@ -91,6 +93,29 @@ export function apply(ctx, config) {
 					}
 				},
 			};
+		},
+
+		/**
+		 * dash-app 专用通道（§7.5 v1）。壳的构建不是插件热替换那个档位——
+		 * 它要重启进程，所以走一条自己的帧，不混进 push/invoke 的插件信封。
+		 */
+		app: {
+			/**
+			 * 播报壳构建进度：`building` / `ready` / `failed`。
+			 *
+			 * **只播给此刻连着的壳，不为后来者留底。** "你手上的壳过期了"这句话
+			 * 只对构建发生时正在运行的那个进程成立；新连上来的壳跑的必然是磁盘上
+			 * 最新的产物，补发给它就是撒谎——实测会让 `restartOnRebuild` 的壳
+			 * 退出、重拉、握手、又收到同一句话，无限重启。
+			 */
+			announce(status, detail = {}) {
+				broadcast({ type: "app-build", status, ...detail });
+			},
+			/** 登记"壳请求重启自己"的处理器；返回撤销函数。 */
+			onRestartRequest(handler) {
+				appRestartHandler = handler;
+				return () => { if (appRestartHandler === handler) appRestartHandler = undefined; };
+			},
 		},
 	});
 
@@ -172,6 +197,17 @@ export function apply(ctx, config) {
 						`${frame.plugin}.${frame.action} 抛错：${errorText(error)}`));
 				break;
 			}
+
+			case "app-restart":
+				// 壳即将自己退出，让 dash-app 等它死透再拉起新产物（§7.5 v1）。
+				if (appRestartHandler === undefined) {
+					logger.warn("壳请求重启自己，但没有 dash-app 接管——它退出后不会被拉回来。");
+					return;
+				}
+				logger.info("壳请求重启自己 —— 交给 dash-app 等待并重拉。");
+				Promise.resolve().then(() => appRestartHandler())
+					.catch((error) => logger.warn(`重拉壳失败：${errorText(error)}`));
+				break;
 
 			case "restart-dsh":
 				// 前台跑 dsh 时退出即止，由用户在终端重启（计划 §10-R10）。

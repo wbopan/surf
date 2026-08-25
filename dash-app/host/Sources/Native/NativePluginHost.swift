@@ -1,5 +1,19 @@
+import AppKit
 import DashSDK
 import Foundation
+
+/// dash-app 播报的壳构建状态（`app-build` 帧，计划 §5.4/§7.5）。
+struct AppBuildState {
+    /// `building` / `ready` / `failed`；未知值一律当作"没什么可说的"。
+    let status: String
+    /// 新产物的源码 hash 短前缀，纯给人看。
+    let hash: String?
+    let durationMs: Int?
+    /// dash-app 配了 `restartOnRebuild`：不必问用户，直接重启。
+    let autoRestart: Bool
+    /// 失败时的日志尾巴。
+    let log: String?
+}
 
 /// 插件 dylib 的 C 入口签名（M2 定稿，见 `docs/native-abi.md` §1）。
 private typealias DashPluginEntry = @convention(c) () -> UnsafeMutableRawPointer
@@ -36,6 +50,10 @@ final class NativePluginHost {
 
     /// 首次 snapshot 处理完毕（成功或失败都算）。boot 门控等的就是它。
     private(set) var didSettle = false
+    /// 壳自身的构建状态（dash-app v1 经桥播报，§7.5）。壳自己看，不给插件。
+    private(set) var appBuild: AppBuildState?
+    /// 壳构建状态有变时调用。与 `onUpdate` 分开：这条线跟 registry 没关系。
+    var onAppBuild: ((AppBuildState) -> Void)?
     /// registry 有变动 / 门控状态变化时调用（壳据此刷新 root 挂载）。
     var onUpdate: (() -> Void)?
 
@@ -96,6 +114,26 @@ final class NativePluginHost {
         bridge.send(["type": "restart-dsh"])
     }
 
+    /// 一个进程只自己重启一次。这是断环的保险丝：任何"重启后又被告知该重启"的
+    /// 情形（补发、串台、时序意外）最多多转一圈，不会变成开机-退出的死循环。
+    private var didRequestRestart = false
+
+    /// 告诉 dash-app"我这就退出，等我死透了按新产物把我拉回来"，然后退出。
+    /// 顺序不能反：先退出就没人发这一帧了。
+    func requestRestartApp() {
+        guard !didRequestRestart else {
+            Log.write("已经请求过一次重启，忽略重复请求（防重启环）",
+                      to: DashPaths.logURL, tag: "app-build")
+            return
+        }
+        didRequestRestart = true
+        bridge.send(["type": "app-restart"])
+        // 给 WS 一拍把帧真正写出去；桥收不到这帧的话，退出后就没人拉我们了。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NSApp.terminate(nil)
+        }
+    }
+
     // MARK: - 帧处理
 
     private func handle(_ frame: [String: Any]) {
@@ -111,6 +149,18 @@ final class NativePluginHost {
             let version = frame["version"] as? Int ?? -1
             guard version != lastVersion else { return }
             bridge.send(["type": "snapshot"])
+
+        case "app-build":
+            let state = AppBuildState(
+                status: frame["status"] as? String ?? "?",
+                hash: frame["hash"] as? String,
+                durationMs: frame["durationMs"] as? Int,
+                autoRestart: frame["autoRestart"] as? Bool ?? false,
+                log: frame["log"] as? String)
+            appBuild = state
+            Log.write("壳构建：\(state.status)\(state.hash.map { " \($0)" } ?? "")",
+                      to: DashPaths.logURL, tag: "app-build")
+            onAppBuild?(state)
 
         case "push":
             guard let plugin = frame["plugin"] as? String,
