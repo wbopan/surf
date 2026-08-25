@@ -1,29 +1,33 @@
-import Foundation
 import Combine
-import Observation
 import DSHKit
-import DSHSidebarUI
+import DashLayout
+import Foundation
+import Observation
 
-/// Mac 壳的侧边栏模型：把 DSHKit.SessionStore（协议客户端镜像）适配成
-/// DSHSidebarUI 需要的 SidebarModel（窄 UI 协议）。
+/// 侧边栏模型：把 DSHKit.SessionStore（协议客户端镜像）适配成
+/// SidebarView 需要的 SidebarModel（窄 UI 协议）。
 /// 选中状态在此收敛：原生点击与页面上报都汇到 selectedSessionId。
+/// （M6 前住在壳里叫同一个名字，随插件化整体迁入。）
 @MainActor
 final class AppSidebarModel: ObservableObject, SidebarModel {
     @Published var selectedSessionId: String?
 
     private let store: SessionStore
-    private let surface: ConversationSurface
+    private let surface: DashConversationSurface
     /// 数据真源在 store（另一个 ObservableObject）；SidebarView 观察的是本模型，
     /// 必须把 store 的 objectWillChange 转发过来，否则列表永远不刷新（首帧为空）。
     private var storeChangeForwarder: AnyCancellable?
     private var lastLoggedCount = -1
-    /// 诊断日志落点（harness.log），nil 则只 print。
-    private let logURL: URL?
+    /// 写一行进壳的日志（`host.log`）。
+    private let log: (String) -> Void
+    /// 选中会话变化时的回调（插件用它落 DashStore，热替换后能还原高亮）。
+    var onSelectionChange: ((String?) -> Void)?
 
-    init(store: SessionStore, surface: ConversationSurface, logURL: URL? = nil) {
+    init(store: SessionStore, surface: DashConversationSurface,
+         log: @escaping (String) -> Void) {
         self.store = store
         self.surface = surface
-        self.logURL = logURL
+        self.log = log
         storeChangeForwarder = store.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -33,7 +37,7 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
                 let count = self.store.groups.reduce(0) { $0 + $1.sessions.count }
                 if count != self.lastLoggedCount {
                     self.lastLoggedCount = count
-                    Log.write("侧边栏镜像更新：\(count) 条会话", to: self.logURL, tag: "sidebar")
+                    self.log("侧边栏镜像更新：\(count) 条会话")
                 }
             }
     }
@@ -60,17 +64,18 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
 
     func activate(sessionId: String) {
         selectedSessionId = sessionId
+        onSelectionChange?(sessionId)
         surface.selectSession(id: sessionId)
     }
 
     /// 归档（对齐 web：失败只记日志、列表不动）。store 收到归档集回包后
     /// 即刻本地剔除该行，无确认弹窗。
     func archive(sessionId: String) {
-        Task { [store, logURL] in
+        Task { [store, log] in
             do {
                 try await store.archiveSession(id: sessionId)
             } catch {
-                Log.write("归档会话 \(sessionId) 失败：\(error.localizedDescription)", to: logURL, tag: "sidebar")
+                log("归档会话 \(sessionId) 失败：\(error.localizedDescription)")
             }
         }
     }
@@ -79,6 +84,7 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     func pageDidSelect(sessionId: String) {
         guard sessionId != selectedSessionId else { return }
         selectedSessionId = sessionId
+        onSelectionChange?(sessionId)
     }
 
     // MARK: - 转换

@@ -8,6 +8,9 @@ xcuserdata/
 # 构建时间戳（prebuild 脚本每次生成，入库只会让工作区永远脏）
 dash-app/host/Sources/Resources/BuildTimestamp.txt
 
+# 共享 module 编译产物（scripts/build-modules.sh 每次构建重生成）
+dash-app/host/build-sdk/
+
 # 本地构建工具（从 GitHub Releases 下载，见 README）
 tools/
 

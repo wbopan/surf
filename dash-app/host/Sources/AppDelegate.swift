@@ -1,5 +1,4 @@
 import AppKit
-import UserNotifications
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -14,7 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
-        requestNotificationAuthorization()
 
         // M1 起壳不再探测 Node、不再 spawn dsh：dsh 先于 App 存在，
         // 窗口起来后自己去找它（flag → 发现文件 → 引导页）。
@@ -25,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wc.start()
     }
 
-    /// 收尾只剩壳自己这一侧（停轮询、停事件流、停会话镜像），
+    /// 收尾只剩壳自己这一侧（停轮询、停桥、停会话镜像），
     /// 都是同步的——dsh 是别人的进程，不归我们杀，也不必等。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         windowController?.shutdown()
@@ -50,15 +48,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowController?.showWindow(nil)
         }
         return true
-    }
-
-    private func requestNotificationAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error {
-                Log.write("通知授权失败：\(error.localizedDescription)", tag: "notify")
-            } else if !granted {
-                Log.write("通知权限未授予", tag: "notify")
-            }
-        }
     }
 }

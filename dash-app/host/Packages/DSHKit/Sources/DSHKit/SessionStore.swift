@@ -1,4 +1,7 @@
 import Foundation
+// Swift 6 起 @Published/ObservableObject 必须显式 import Combine
+// （以前靠 Foundation 的隐式重导出）。
+import Combine
 
 /// MainActor mirror of the harness session/workspace state, kept fresh via the
 /// two downlink event streams. iOS-ready: only Foundation + Combine-free

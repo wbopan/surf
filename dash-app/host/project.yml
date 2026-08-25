@@ -21,11 +21,9 @@ settings:
       PRODUCT_NAME: dash
       PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash
       APP_ICON_NAME: AppIcon
-packages:
-  DSHKit:
-    path: Packages/DSHKit
-  DSHSidebarUI:
-    path: Packages/DSHSidebarUI
+# 没有 SwiftPM 包了：DSHKit 与 DashSDK 由 scripts/build-modules.sh 编成共享 dylib
+# 随 bundle 分发（壳和插件链接同一份，类型身份才对得上）；DSHSidebarUI 随 M6
+# 整体迁进 dash-sidebar/swift/。
 targets:
   dash:
     type: application
@@ -35,6 +33,9 @@ targets:
         excludes:
           - "Info.plist"
           - "dash.entitlements"
+          # DashSDK 单独编成共享 dylib（见 scripts/build-modules.sh），
+          # 不能同时被编进 app module，否则类型身份一分为二。
+          - "DashSDK"
     settings:
       base:
         INFOPLIST_FILE: Sources/Info.plist
@@ -46,15 +47,24 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "26.0"
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        # 共享 module（DashSDK / DSHKit）：编译期找 .swiftmodule，链接期找 dylib，
+        # 运行期按 @rpath 落到 Contents/Frameworks/ 里 embed-modules.sh 摆好的那一份。
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/build-sdk"
+        OTHER_LDFLAGS: "$(inherited) -L$(SRCROOT)/build-sdk -lDashSDK -lDSHKit"
         SWIFT_STRICT_CONCURRENCY: minimal
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
     preBuildScripts:
       # 构建时间戳写入 Resources/BuildTimestamp.txt，Dev UI 显示用。
       - script: scripts/write-build-timestamp.sh
-    dependencies:
-      - package: DSHKit
-      - package: DSHSidebarUI
+        name: Write build timestamp
+      # 共享 module（源码没变则秒过）。必须早于壳源码编译。
+      - script: scripts/build-modules.sh
+        name: Build shared modules (DashSDK/DSHKit)
+    postBuildScripts:
+      # 把共享 module 摆进 bundle 并重新签名（拷贝晚于 Xcode 的签名步骤）。
+      - script: scripts/embed-modules.sh
+        name: Embed shared modules
     entitlements:
       path: Sources/dash.entitlements
       properties:

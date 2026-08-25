@@ -1,0 +1,9 @@
+# dash-bridge 的 bundle patch 层：插入桥自己的 row。
+# 它必须先于任何带 Swift 载荷的插件挂载——那些插件 inject 'dashBridge'，
+# cordis 的依赖解析会自动保证顺序，这里的位置只影响诊断树的可读性。
+- insert:
+    - id: dash-bridge
+      name: dash-bridge
+      config:
+        path: /dash/bridge
+        pollIntervalMs: 500
