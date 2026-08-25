@@ -54,8 +54,13 @@ const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.
 /** endpoint 发现文件；Swift 侧 `DashPaths.endpointURL`。 */
 const ENDPOINT_FILE = join(APP_SUPPORT, "endpoint.json");
 
-/** M4 的桥路径。M1 只写进发现文件、随 flag 透传，两侧都还没挂载它。 */
-const BRIDGE_PATH = "/dash/bridge";
+/**
+ * 桥路径的兜底值。**真相在 dash-bridge 的 config.path**——它才是挂 WS 的那一方，
+ * 而且那是个用户可覆写的配置项。本插件经 `dashBridge.path` 取当前值（见 `apply`），
+ * 只在桥缺席时用这个默认；写死一份自己的会让"改了桥的 path 壳就静默连不上"。
+ * 与 Swift 侧 `DashEndpoint.defaultBridgePath` 是同一个默认。
+ */
+const DEFAULT_BRIDGE_PATH = "/dash/bridge";
 
 /** Xcode 工程载荷根（本包的 `host/`）。 */
 const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
@@ -88,19 +93,52 @@ export function apply(ctx, config) {
 	// 先登记服务名，让下游 inject 能等；产物定下来后再 set 值。
 	ctx.provide("dashApp", undefined);
 
+	// 桥的当前状态。**可变引用，不是快照**：桥可以晚于本插件挂载、也可以中途卸载，
+	// 而 endpoint 文件与 `open --args` 都要用它此刻的值。
+	const bridge = { path: DEFAULT_BRIDGE_PATH, announce: () => {} };
+
 	// 发现文件先于构建落地：一个手动启动的 app 立刻就能接入，
-	// 不必等分钟级的首次构建。
+	// 不必等分钟级的首次构建。桥若带来不同的 path，下面的 inject 回调会重写它。
 	ctx.effect(() => {
-		writeEndpointFile({ httpBase, logger });
+		writeEndpointFile({ httpBase, bridgePath: bridge.path, logger });
 		return () => removeEndpointFile(logger);
 	}, "dash-app endpoint 发现文件");
+
+	// 与桥的全部往来收在这一处：路径、播报、重启请求。
+	// 仍是局部 inject 而非顶层依赖——桥缺席时壳照样该起来（WebView 全出血兜底），
+	// 只是没有任何原生插件。
+	ctx.inject(["dashBridge"], (scoped) => {
+		const app = scoped.dashBridge.app;
+		scoped.effect(() => {
+			const path = typeof scoped.dashBridge.path === "string"
+				? scoped.dashBridge.path : DEFAULT_BRIDGE_PATH;
+			if (path !== bridge.path) {
+				bridge.path = path;
+				logger.info(`桥路径取自 dash-bridge 的配置：${path}`);
+				writeEndpointFile({ httpBase, bridgePath: path, logger });
+			}
+			bridge.announce = (status, detail) => app.announce(status, detail);
+			// 壳自己要重启：它发完帧就退出，我们等它死透再按新产物拉起来。
+			const off = app.onRestartRequest(() =>
+				restartApp({ configuration: config.configuration, httpBase, bridge, logger }));
+			return () => {
+				off();
+				bridge.announce = () => {};
+				// 桥卸载了，发现文件里的 path 也就不再有依据——退回默认。
+				if (bridge.path !== DEFAULT_BRIDGE_PATH) {
+					bridge.path = DEFAULT_BRIDGE_PATH;
+					writeEndpointFile({ httpBase, bridgePath: DEFAULT_BRIDGE_PATH, logger });
+				}
+			};
+		}, "dash-app ↔ dash-bridge");
+	});
 
 	// 构建与拉起是长活，不能挂在 apply 的返回值上——那会把 dsh 的启动
 	// 一起拖住（首次构建分钟级，浏览器这段时间将无人应答）。
 	let disposed = false;
 	ctx.effect(() => () => { disposed = true; }, "dash-app 构建/拉起");
 
-	bootstrap({ ctx, config, logger, httpBase, isDisposed: () => disposed })
+	bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed: () => disposed })
 		.catch((error) => {
 			// 到这儿说明是意料之外的异常（预期内的失败都已在内部记过日志并返回）。
 			logger.warn(`dash-app 启动流程异常：${errorText(error)}`);
@@ -126,7 +164,7 @@ function reporter(logger) {
 
 // ---------------------------------------------------------------- 主流程
 
-async function bootstrap({ ctx, config, logger, httpBase, isDisposed }) {
+async function bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed }) {
 	const { configuration } = config;
 	const built = config.build
 		? await ensureBuilt({ configuration, logger, isDisposed })
@@ -145,15 +183,18 @@ async function bootstrap({ ctx, config, logger, httpBase, isDisposed }) {
 		freshness: built.freshness,
 		configuration,
 		httpBase,
-		bridgePath: BRIDGE_PATH,
+		// getter：桥可能晚于这里挂载，快照会把兜底值冻住。
+		get bridgePath() { return bridge.path; },
 	});
 
-	if (config.launch) await launch({ appPath: built.appPath, httpBase, logger });
+	if (config.launch) {
+		await launch({ appPath: built.appPath, httpBase, bridgePath: bridge.path, logger });
+	}
 
 	// v1：起来之后继续盯着壳源码。只在"真的构建过"时才盯——没有 Xcode、
 	// 或 build 关掉时，重建无从谈起，盯了也只会白读文件。
 	if (config.build && config.watch && built.freshness !== "prebuilt") {
-		watchSources({ ctx, config, logger, httpBase, isDisposed, configuration });
+		watchSources({ ctx, config, logger, bridge, isDisposed, configuration });
 	}
 }
 
@@ -161,23 +202,10 @@ async function bootstrap({ ctx, config, logger, httpBase, isDisposed }) {
  * 盯壳源码（§7.5 v1）。与桥盯 `swift/` 同款的廉价轮询：先比 mtime/size 签名，
  * 签名变了才读内容算 hash——hash 才是"要不要重建"的判据（换 git 分支不算改过）。
  *
- * 播报走 `ctx.inject`：dash-bridge 在就播，不在就只写终端。壳没连上来时
- * 重建照做——下次它连上来握手，桥会把最后一次播报补给它。
+ * 播报走 `apply` 里那一处 `ctx.inject` 攒下的 `bridge.announce`：dash-bridge 在
+ * 就播，不在就只写终端。壳没连上来时重建照做。
  */
-function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration }) {
-	/** @type {{announce: (status: string, detail?: object) => void}} */
-	const channel = { announce: () => {} };
-
-	ctx.inject(["dashBridge"], (scoped) => {
-		const app = scoped.dashBridge.app;
-		channel.announce = (status, detail) => app.announce(status, detail);
-		scoped.effect(() => {
-			// 壳自己要重启：它发完帧就退出，我们等它死透再按新产物拉起来。
-			const off = app.onRestartRequest(() => restartApp({ configuration, httpBase, logger }));
-			return () => { off(); channel.announce = () => {}; };
-		}, "dash-app 壳重启请求");
-	});
-
+function watchSources({ ctx, config, logger, bridge, isDisposed, configuration }) {
 	let building = false;
 	let pending = false;
 	let signature = signatureSources();
@@ -193,7 +221,7 @@ function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration
 
 		building = true;
 		logger.info("壳源码有变动，后台重建中…");
-		channel.announce("building", {});
+		bridge.announce("building", {});
 		const startedAt = Date.now();
 		const result = await runBuild({ configuration, logger, isDisposed });
 		building = false;
@@ -205,7 +233,7 @@ function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration
 			const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 			logger.info(`壳已重建（${seconds}s）。${config.restartOnRebuild
 				? "按配置立即重启壳。" : "重启 dash 生效——窗口里有提示。"}`);
-			channel.announce("ready", {
+			bridge.announce("ready", {
 				hash: hash.slice(0, 12),
 				durationMs: Date.now() - startedAt,
 				autoRestart: config.restartOnRebuild,
@@ -213,7 +241,7 @@ function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration
 		} else {
 			// 失败不回滚 builtHash：源码再变一次就会再试，用户改对了自然就好。
 			logger.error(`壳重建失败。完整日志：${result.logPath}\n${tail(result.log, 20)}`);
-			channel.announce("failed", { log: tail(result.log, 40) });
+			bridge.announce("failed", { log: tail(result.log, 40) });
 		}
 
 		if (pending) { pending = false; signature = ""; }
@@ -230,7 +258,7 @@ function watchSources({ ctx, config, logger, httpBase, isDisposed, configuration
  * 拉早了 `open` 只会把正在退出的旧实例带到前台。等不到就照拉，最坏也不过是
  * 把旧窗口前置一下。
  */
-async function restartApp({ configuration, httpBase, logger }) {
+async function restartApp({ configuration, httpBase, bridge, logger }) {
 	const appPath = productPath(configuration);
 	const deadline = Date.now() + 15000;
 	while (Date.now() < deadline) {
@@ -240,7 +268,7 @@ async function restartApp({ configuration, httpBase, logger }) {
 	if (await isRunning(appPath)) {
 		logger.warn("壳说要重启，但 15s 后进程仍在；照常拉起（可能只是把旧窗口前置）。");
 	}
-	await launch({ appPath, httpBase, logger });
+	await launch({ appPath, httpBase, bridgePath: bridge.path, logger });
 }
 
 /**
@@ -325,7 +353,7 @@ function locateExistingProduct(configuration) {
  * 已在运行则跳过——防双开；`open` 不带 `-n`，即使这里判断失误，
  * 最坏结果也只是把已有窗口带到前台，而不是开出第二个实例。
  */
-async function launch({ appPath, httpBase, logger }) {
+async function launch({ appPath, httpBase, bridgePath, logger }) {
 	if (await isRunning(appPath)) {
 		logger.info(`dash 已在运行（${appPath}），跳过拉起；它会自己从发现文件接入。`);
 		return;
@@ -333,7 +361,7 @@ async function launch({ appPath, httpBase, logger }) {
 	try {
 		await run("open", [appPath, "--args",
 			"--dash-endpoint", httpBase,
-			"--dash-bridge-path", BRIDGE_PATH], HOST_DIR);
+			"--dash-bridge-path", bridgePath], HOST_DIR);
 		logger.info(`已拉起 dash：${appPath} → ${httpBase}`);
 	} catch (error) {
 		logger.error(`拉起 dash 失败（不重试）：${errorText(error)}`);
@@ -349,10 +377,10 @@ function resolveHttpBase(webServer) {
 }
 
 /** 原子写：先写临时文件再 rename，app 永远读不到半截 JSON。 */
-function writeEndpointFile({ httpBase, logger }) {
+function writeEndpointFile({ httpBase, bridgePath, logger }) {
 	const payload = {
 		httpBase,
-		bridgePath: BRIDGE_PATH,
+		bridgePath,
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
 		profile: resolveProfileName(),

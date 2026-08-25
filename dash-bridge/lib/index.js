@@ -34,7 +34,7 @@ export const inject = ["webServer"];
 
 export const Config = z.object({
 	path: z.string().default("/dash/bridge")
-		.description("WebSocket 升级路径（与 dsh 同端口）。改这里必须同步壳侧的 endpoint 发现文件。"),
+		.description("WebSocket 升级路径（与 dsh 同端口）。dash-app 经 dashBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"),
 	pollIntervalMs: z.number().step(1).min(100).default(500)
 		.description("盯各插件 swift/ 目录的轮询间隔，与 dsh-client-hmr 同款做法。"),
 });
@@ -63,6 +63,12 @@ export function apply(ctx, config) {
 	// ---- 登记表 API（各插件经 createSwiftPlugin 调用） ----
 	ctx.provide("dashBridge", {
 		protocolVersion: PROTOCOL_VERSION,
+		/**
+		 * 本桥实际挂载的 WS 路径。**这是该路径的唯一真相**——挂 WS 的是这里，
+		 * 而 `path` 又是用户可覆写的配置项。dash-app 取它写进 endpoint 发现文件
+		 * 与 `--dash-bridge-path`，壳因此永远连得上，不管用户把它改成什么。
+		 */
+		path: config.path,
 		register(entry) {
 			if (registry.has(entry.plugin)) {
 				logger.warn(`插件 ${entry.plugin} 重复登记 Swift 载荷，后者覆盖前者。`);
@@ -72,6 +78,8 @@ export function apply(ctx, config) {
 				module: moduleName(entry.plugin),
 				swiftDir: entry.swiftDir,
 				swiftDeps: entry.swiftDeps ?? [],
+				// 排序落库：声明顺序不该影响 contentHash，也不该影响编译参数。
+				sharedModules: [...new Set(entry.sharedModules ?? [])].sort(),
 				schemaVersion: entry.schemaVersion ?? 1,
 				expose: entry.expose ?? {},
 				signature: undefined,
@@ -79,7 +87,8 @@ export function apply(ctx, config) {
 			};
 			registry.set(entry.plugin, record);
 			logger.info(`登记 Swift 载荷：${entry.plugin} → ${entry.swiftDir}`
-				+ (record.swiftDeps.length ? `（依赖 ${record.swiftDeps.join(", ")}）` : ""));
+				+ (record.swiftDeps.length ? `（依赖 ${record.swiftDeps.join(", ")}）` : "")
+				+ (record.sharedModules.length ? `（共享 module ${record.sharedModules.join(", ")}）` : ""));
 			rescan("登记");
 			return {
 				/** 把数据推给这个插件的 Swift 半身（下行 push 帧）。 */
@@ -240,6 +249,7 @@ export function apply(ctx, config) {
 				module: record.module,
 				files: record.files ?? {},
 				swiftDeps: record.swiftDeps,
+				sharedModules: record.sharedModules,
 				contentHash: record.contentHash,
 				schemaVersion: record.schemaVersion,
 			})),
@@ -279,6 +289,10 @@ export function apply(ctx, config) {
 			for (const dep of record.swiftDeps) {
 				hash.update(`dep:${dep}=${registry.get(dep)?.contentHash ?? "missing"}\0`);
 			}
+			// 共享 module 的**声明**进 hash（内容不进——桥看不见 bundle 里的
+			// .swiftinterface，那部分由壳的 CompilerService 折进去）。
+			// 加进来是因为改声明就改了编译参数，必须重编。
+			for (const module of record.sharedModules) hash.update(`shared:${module}\0`);
 			record.contentHash = hash.digest("hex");
 		}
 
