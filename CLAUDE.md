@@ -26,8 +26,9 @@ dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
 dash-hello/        原生插件流水线的冒烟样例（占 root 槽，与 layout 互斥，默认不注册）
-dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中
-                   （纯 client 半边、纯 CSS、零服务依赖，无构建步骤）
+dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
+                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
+                   （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```

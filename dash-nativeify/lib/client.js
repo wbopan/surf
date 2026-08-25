@@ -324,8 +324,65 @@ window.__ModuleLoader__.load({
 		 * 插件体：注入原生化样式；fiber 卸载（HMR/禁用）时移除。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 */
+		/**
+		 * 把承载窗口的激活态映射到 <html data-dash-blur>。
+		 *
+		 * 页面拿不到 AppKit 的窗口状态，但 WKWebView 会把承载窗口的激活/失活
+		 * 转成页面的 focus/blur 事件（Safari 里切 app 也是同一套）。这是本插件
+		 * 唯一一段 JS —— 其余全是 CSS。
+		 *
+		 * **刻意不走"让壳注入"那条路**：壳的窗口通知要经 dash-layout 的 Swift
+		 * 半边才够得着 WebView，那会给 dash-nativeify 添一条跨插件契约。收不到
+		 * 事件的后果只是永远停在激活态那套值 = 今天的行为，无害，所以宁可要
+		 * 零依赖。（普通浏览器里 focus/blur 照常工作，效果同样合理。）
+		 */
+		/**
+		 * 上下内侧发光的 8 条 box-shadow 层。
+		 *
+		 * 发光不能是一层。`inset 0 3px 0 白` 的 blur 是 0 = 一条纯白硬边直接盖住边缘；
+		 * 给它加 blur 也不行 —— inset 阴影的模糊核有一半落在元素外，**最外那一两像素
+		 * 反而最弱**，够不到系统的峰值。所以拿 4 条等宽硬边叠出几何衰减：第 k 条填最外
+		 * k 像素、alpha = peak × decay^(k-1)。box-shadow 先写的盖后写的，于是第 n 行的
+		 * 累积不透明度是第 n..4 层的合成 —— 天然单调递减，且只用两个旋钮：
+		 *
+		 *   --dash-glass-glow-t / -b   最外一像素的峰值（上下可以不等，深色下确实不等）
+		 *   --dash-glass-glow-d        每向内一像素乘的衰减系数，越小掉得越快
+		 *
+		 * 实测（浅色 peak .55 / decay .45，相对白底）：−1 → −3 → −4（本体）；decay 调到
+		 * .55 就摊成 −1 → −2 → −3 → −4。深色 peak .025 / decay .45：+8 → +4 → +2 → +1 → 0，
+		 * 标准的对半衰减。
+		 *
+		 * alpha 里的 calc 连乘（`rgb(255 255 255 / calc(var(--a)*var(--d)*var(--d)))`）
+		 * 在 WKWebView 里实测可用，三次连乘也对得上字面量。
+		 *
+		 * @returns {string[]} box-shadow 层，每行末尾带逗号
+		 */
+		function glowLayers() {
+			const out = [];
+			for (let k = 1; k <= 4; k++) {
+				const decay = "*var(--dash-glass-glow-d)".repeat(k - 1);
+				out.push(`    inset 0 ${k}px 0 rgb(var(--dash-glass-glow-c) / calc(var(--dash-glass-glow-t)${decay})),`);
+				out.push(`    inset 0 -${k}px 0 rgb(var(--dash-glass-glow-c) / calc(var(--dash-glass-glow-b)${decay})),`);
+			}
+			return out;
+		}
+
+		function watchWindowFocus() {
+			const root = document.documentElement;
+			const sync = () => root.toggleAttribute("data-dash-blur", !document.hasFocus());
+			addEventListener("focus", sync);
+			addEventListener("blur", sync);
+			sync();
+			return () => {
+				removeEventListener("focus", sync);
+				removeEventListener("blur", sync);
+				root.removeAttribute("data-dash-blur");
+			};
+		}
+
 		function apply(ctx) {
 			if (!insideDash()) return;
+			ctx.effect(watchWindowFocus);
 			ctx.effect(() => {
 				document.getElementById(STYLE_ID)?.remove();
 				const style = document.createElement("style");
@@ -393,33 +450,62 @@ window.__ModuleLoader__.load({
 					//   的按钮上，不需要换算。这也是为什么之前「blur 8px 在大胶囊上调好、
 					//   套到小按钮上糊成一片」——那次错的是**宽度**跟着尺寸走了。
 					//
-					// 落到 CSS 是四层（层序自上而下，box-shadow 里先写的盖后写的）：
-					//   描边 → 上下内侧亮边 → 上部加深层 → 铺满的本体底噪
+					// 落到 CSS 是六层（层序自上而下，box-shadow 里先写的盖后写的）：
+					//   描边 → 上下发光·硬边 → 上下发光·晕开 → 左右内侧阴影 → 铺满的本体底噪
 					// 本体用 `inset 0 0 0 100px`：spread 撑满即纯色填充，且不碰 background，
 					// 所以 dsh 自己的底色/渐变照常生效（换成 background-image 就会覆盖掉）。
 					//
-					// **必须拿窗口激活态的玻璃当基准。** 失活窗口里 macOS 把玻璃整个换成
-					// 一块 −12 的平灰：没有描边层次、没有上下渐变、没有边缘亮边，剖面从头到尾
-					// 就是 −12.0 一条直线。照它调，只会越调越灰——早先几版"偏深"的根源就在这。
-					// 探针默认后台起，截到的正是失活态；refs 探针加 --hold 反复抢回 key，
-					// 并把 NSApp.isActive / isKeyWindow 回显进窗口标题，截图里可直接验明。
+					// **必须拿窗口激活态的玻璃当基准。** 失活窗口里 macOS 把玻璃整个换成一块
+					// −12 的平灰：没有描边层次、没有渐变、没有边缘发光，剖面从头到尾一条直线。
+					// 照它调只会越调越灰。探针默认后台起，截到的正是失活态；refs 探针加 --hold
+					// 反复抢回 key，并把 NSApp.isActive / isKeyWindow 回显进窗口标题，可验明。
 					//
-					//     白底 255        ACTIVE     失活
-					//     描边            −12.4      −26.7
-					//     内 1~2px        −1.9       −15.7
-					//     上本体          −4.8       −12.0
-					//     下本体          −1.7       −12.0
-					//     上/下            2.8        1.0
+					// **上下和左右是正交的两回事，只量垂直剖面会整个漏掉水平维度。**
+					// 把整枚胶囊打成二维亮度图（相对白底 255）才看得出真实结构：
 					//
-					// 数值在真 WKWebView 里扫出来，逐项对表 ACTIVE 实测（括号内为目标）：
-					//     描边 −12.8（−12.4） 内1px −1.6（−1.9）
-					//     上本体 −4.5（−4.8） 下本体 −1.6（−1.7） 上/下 2.87（2.8）
-					"  --dash-glass-edge: rgba(0, 0, 0, 0.053);",
-					"  --dash-glass-spec-w: 1px;",
-					"  --dash-glass-specular: rgba(255, 255, 255, 0.75);",
-					"  --dash-glass-specular-b: rgba(255, 255, 255, 0.50);",
-					"  --dash-glass-top: rgba(0, 0, 0, 0.022);",
-					"  --dash-glass-body: rgba(0, 0, 0, 0.0067);",
+					//     y \ x     0pt    3     10    …    56    63    66
+					//      1pt              −1.6 一路平           ← 上内侧发光，最亮
+					//      5pt      −4.8  −4.8  −4.8   …  −4.8  −4.8  −4.4
+					//      8pt      −4.8  −4.8  −4.8   …  −4.8  −4.8  −4.8   ← 上部暗带横向贯通
+					//     11pt      −4.8  −4.0  −2.4   …  −2.4  −3.2  −4.0
+					//     15pt      −4.8  −2.4  −1.6   …  −1.6  −2.8  −4.8   ← 只剩两端暗
+					//     20pt      −2.4  −2.0  −1.6   …  −1.6  −1.6  −2.4
+					//
+					// 暗是**沿内缘走一圈的环带**：上半部横向贯通（整行 −4.8），下半部只剩左右
+					// 两端，中间回到底色 −1.6。上下边缘各 2px 的发光把边缘提回 −1.6。
+					// 左右端描边 −32.5，比上下的 −12.4 深得多（圆弧处抗锯齿叠上描边）。
+					//
+					// **最终值是肉眼在校准台上对着系统胶囊调的，不是扫描的最优解。** 扫描能把
+					// 六个特征点都压进 0.5 阶内，看着仍不对——因为特征点没覆盖到的地方（描边的
+					// 锐度、发光的宽窄）也在影响观感。定稿相对扫描结果有两处偏离，都是有意的：
+					//
+					//   描边   0.5px/.048 → **0.25px/.197**。等墨量下更窄更浓 = 更锐。
+					//          玻璃边缘要的是"实"，摊薄了就散成一圈灰雾。
+					//   暗带   **整层删掉**。上部暗带原是为复刻"上深下浅"，但发光加强后
+					//          它只让上半发浑；改用更深的底色（.0063 → .0147）整体压一档。
+					//          代价是放弃了系统那 2.8 倍的上下差 —— 肉眼比对下这样更像。
+					//
+					// **发光必须是两层，一层做不出来。** 单层 `inset 0 3px 0 白` 的 blur 是 0，
+					// 等于拿一条 3px 纯白硬边盖住边缘 —— 边缘被打成纯白（y1/y2 都是 0.0），
+					// 到 y3 又突然掉回本体 −3.2，是个白块不是发光。但**单纯给它加 blur 也不行**：
+					// inset 阴影带模糊后，模糊核有一半落在元素外，最边缘反而最弱，y1 怎么调都
+					// 够不到 −1.6。所以拆两层 —— 窄硬边（2px/.45）把最边缘定住，宽模糊层
+					// （4px 5px -1px / .30）做向内的过渡：
+					//
+					//     系统   y1 −1.6 · y2 −2.4 · y3 −3.0 · y5 −3.2
+					//     两层   y1 −1.6 · y2 −2.4 · y3 −2.4 · y5 −3.2   ← 差一个量化步长
+					//     单硬边 y1  0.0 · y2  0.0 · y3 −3.2 · y5 −3.2   ← 白块
+					"  --dash-glass-edge: rgba(0, 0, 0, 0.197);",
+					"  --dash-glass-edge-w: 0.25px;",
+					// 发光的颜色。无色玻璃是白的；**带色玻璃不是** —— 系统蓝键的峰值是 #00C0FF，
+					// R 通道从头到尾是 0，白色叠加会把 R 拉起来，对不上（红键同理，峰值 #FF5762）。
+					// 所以留成变量：真要给某个带色按钮上玻璃，换成同色系更亮的一档，别用白。
+					"  --dash-glass-glow-c: 255 255 255;",
+					"  --dash-glass-glow-t: 0.795;",
+					"  --dash-glass-glow-b: 0.795;",
+					"  --dash-glass-glow-d: 0.45;",
+					"  --dash-glass-side: rgba(0, 0, 0, 0.119);",
+					"  --dash-glass-body: rgba(252, 252, 252, 0.5272);",
 					"  --dash-glass-drop: rgba(0, 0, 0, 0.05);",
 					"}",
 					// dsh 的深色主题挂在 body[data-ds-dark-theme] 上（它自己的 --dsw-*
@@ -427,24 +513,65 @@ window.__ModuleLoader__.load({
 					// 反光，不是压暗）；暗带要加重才看得见；高光反过来要压住，否则像
 					// 镀了层塑料。
 					"body[data-ds-dark-theme] {",
-					// 深色下**结构本身就不一样**，不是把浅色那套翻个面。同一支探针在
-					// #1E1E20 上量 ACTIVE 态（背景实测 37.5）：
+					// 深色下**结构本身就不一样**，不是把浅色那套翻个面。同一支探针在 #1E1E20
+					// 上量 ACTIVE 态（背景实测 37.5），二维图横向**完全平**：
 					//
-					//     描边      +0.0   ← 根本没有暗描边
-					//     边缘 1~2px +70    ← 上下各一条亮边，等强
-					//     本体      +38    ← 比背景亮，不是压暗
-					//     上/下      1.03   ← 几乎对称，没有浅色那 2.8 倍的上下差
+					//     y \ x     0pt    3     10    …    56    63    66
+					//      1pt       0.0  42.0  43.1   …  41.8  43.1  42.0   ← 上发光 +4.7
+					//      5pt       0.0  37.3  37.3   …  37.3  37.3  37.3
+					//      8pt      −7.2  37.3  37.3   …  37.3  37.3  37.3   ← 整行一个值
+					//     13pt       0.0  37.3  37.4   …  37.4  37.4  37.3
+					//     20pt       0.0   0.0  46.3   …  45.3  46.3  53.9   ← 下发光 +8
 					//
-					// 所以深色下：描边归零、上部加深层归零、本体从"压暗"改成大幅提亮、
-					// 上下亮边等强且加宽到 2px。浅色那套"上深下浅"在这里不成立——
-					// 深色玻璃靠整体提亮和边缘亮边站住，不靠明暗渐变。
+					// 也就是：本体比背景**亮 +37.3**（不是压暗）· 没有暗描边 · **没有左右阴影**·
+					// **没有上部暗带** · 只有上下两条发光，且**下比上强**（+8 vs +4.7，与浅色反过来）。
+					// 深色玻璃靠整体提亮和边缘发光站住，不靠明暗渐变，所以 side / top 两层归零。
 					"  --dash-glass-edge: rgba(255, 255, 255, 0);",
-					"  --dash-glass-spec-w: 2px;",
-					"  --dash-glass-specular: rgba(255, 255, 255, 0.18);",
-					"  --dash-glass-specular-b: rgba(255, 255, 255, 0.18);",
-					"  --dash-glass-top: rgba(0, 0, 0, 0);",
-					"  --dash-glass-body: rgba(255, 255, 255, 0.176);",
+					"  --dash-glass-edge-w: 0.25px;",
+					// 系统在深色下上下**不等强**（+4.7 vs +8.0，与浅色反过来），但定稿在校准台上
+					// 眼调回了等强 —— 深色玻璃本体已经比背景亮 37，上下差那 3 级看不出来，
+					// 反倒是整体的发光强度和衰减速度更要紧。峰值分上下两个变量仍留着，随时能拆开。
+					"  --dash-glass-glow-t: 0.06;",
+					"  --dash-glass-glow-b: 0.06;",
+					"  --dash-glass-glow-d: 0.5;",
+					"  --dash-glass-side: rgba(0, 0, 0, 0);",
+					"  --dash-glass-body: rgba(255, 255, 255, 0.137);",
 					"  --dash-glass-drop: rgba(0, 0, 0, 0.25);",
+					"}",
+					
+					// ── 窗口失活 ──────────────────────────────────────────────────────
+					// **失活时 macOS 把玻璃整个换成一块平色，零结构。** 四格矩阵实测：
+					//
+					//              浅色              深色
+					//   ACTIVE     有描边/发光/      提亮 +37.3
+					//              左右阴影/渐变     + 上下发光
+					//   失活       整块 −12.0        整块 +25.7
+					//              描边 −34.8        无描边
+					//
+					// 失活那两格从头到尾一个值 —— 没有发光、没有左右阴影、没有明暗渐变。
+					// 所以这里不是"把值调淡"，是**把四层里的三层直接关掉**，只留底色
+					// （浅色再留一条更浓的描边：−34.8 对激活的 −16.0，浓 2.2 倍）。
+					//
+					// 触发靠 data-dash-blur，由下面 watchWindowFocus() 打在 <html> 上。
+					// 特异性：:root[…] body 是 (0,2,2)，稳压上面 body[data-ds-dark-theme] 的
+					// (0,1,1)；深色失活再多一个属性选择器，压住浅色失活。
+					":root[data-dash-blur] body {",
+					// 失活描边反过来走「更宽更淡」：0.6px/.095 的墨量（.057）比激活的
+					// 0.25px/.197（.049）略重，但摊开后是一圈灰雾而不是一道锐线 —— 正是
+					// 失活该有的"退到背景里"的样子。
+					"  --dash-glass-edge: rgba(0, 0, 0, 0.095);",
+					"  --dash-glass-edge-w: 0.6px;",
+					"  --dash-glass-glow-t: 0;",
+					"  --dash-glass-glow-b: 0;",
+					"  --dash-glass-side: transparent;",
+					"  --dash-glass-body: rgba(0, 0, 0, 0.059);",
+					"}",
+					":root[data-dash-blur] body[data-ds-dark-theme] {",
+					"  --dash-glass-edge: rgba(255, 255, 255, 0);",
+					"  --dash-glass-glow-t: 0;",
+					"  --dash-glass-glow-b: 0;",
+					"  --dash-glass-side: transparent;",
+					"  --dash-glass-body: rgba(255, 255, 255, 0.094);",
 					"}",
 
 					// 统一过渡。dsh 给按钮写的是 transition: all，会把 scale 一起卷进它
@@ -455,9 +582,9 @@ window.__ModuleLoader__.load({
 					// **这里不含描边**——自带 border 的那组就到此为止，由 dsh 自己那条
 					// border 充当玻璃边界，我们只补高光和暗带。
 					"  --dash-surface:",
-					"    inset 0 var(--dash-glass-spec-w) 0 var(--dash-glass-specular),",
-					"    inset 0 calc(-1 * var(--dash-glass-spec-w)) 0 var(--dash-glass-specular-b),",
-					"    inset 0 16px 14px -8px var(--dash-glass-top),",
+					...glowLayers(),
+					"    inset 14px 0 8px -15px var(--dash-glass-side),",
+					"    inset -14px 0 8px -15px var(--dash-glass-side),",
 					"    inset 0 0 0 100px var(--dash-glass-body);",
 					"  box-shadow: var(--dash-surface), 0 1px 2px var(--dash-glass-drop);",
 					"  transition:",
@@ -471,10 +598,10 @@ window.__ModuleLoader__.load({
 					// hover / active 引用的是同一个变量，所以那两态自动带上描边。
 					solidPlain + " {",
 					"  --dash-surface:",
-					"    inset 0 0 0 0.5px var(--dash-glass-edge),",
-					"    inset 0 var(--dash-glass-spec-w) 0 var(--dash-glass-specular),",
-					"    inset 0 calc(-1 * var(--dash-glass-spec-w)) 0 var(--dash-glass-specular-b),",
-					"    inset 0 16px 14px -8px var(--dash-glass-top),",
+					"    inset 0 0 0 var(--dash-glass-edge-w) var(--dash-glass-edge),",
+					...glowLayers(),
+					"    inset 14px 0 8px -15px var(--dash-glass-side),",
+					"    inset -14px 0 8px -15px var(--dash-glass-side),",
 					"    inset 0 0 0 100px var(--dash-glass-body);",
 					"}",
 					solidSvg + " {",
