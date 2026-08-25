@@ -97,6 +97,30 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 用户点"稍后"就收起，直到下一次播报——不缠人。
     private var updateBanner: ShellUpdateBanner?
 
+    /// 右上角提示区：壳更新提示条与一次性浮条竖着排，谁也别盖谁。
+    private lazy var bannerStack: NSStackView = {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .trailing
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let content = containerController.view
+        content.addSubview(stack, positioned: .above, relativeTo: nil)
+        // 贴着拖拽条下沿的右上角：底部是网页的输入框与发送按钮，盖不得。
+        NSLayoutConstraint.activate([
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: content.topAnchor,
+                                       constant: MainWindowController.titleBarHeight + 8),
+        ])
+        return stack
+    }()
+
+    /// 导航策略与下载（Native/WebPolicy.swift）。同源判定要现取 endpoint：
+    /// 壳会重连、会换端口，快照会把重连后的自家页面误判成外链。
+    private lazy var webPolicy = WebPolicy(
+        currentEndpoint: { [weak self] in self?.endpoint },
+        presentToast: { [weak self] content in self?.presentToast(content) })
+
     // MARK: - WebView
 
     private lazy var webView: WKWebView = {
@@ -112,6 +136,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
         wv.navigationDelegate = self
+        // 下载 / 外链 / 新窗口全在 uiDelegate 与导航策略里，不设 = WebKit 静默丢弃
+        // （详见 Native/WebPolicy.swift 顶注）。
+        wv.uiDelegate = webPolicy
         wv.allowsMagnification = true
         // 主 frame 橡皮筋不在原生侧处理：页面滚动由插件注入的
         // overflow:hidden + overscroll-behavior 控制（页面本就不可滚动，
@@ -476,20 +503,25 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             onDismiss: { [weak self] in self?.dismissUpdateBanner() })
         updateBanner = banner
         banner.translatesAutoresizingMaskIntoConstraints = false
-        let content = containerController.view
-        content.addSubview(banner, positioned: .above, relativeTo: nil)
-        // 右上角、贴着拖拽条下沿：底部是网页的输入框与发送按钮，盖不得。
-        NSLayoutConstraint.activate([
-            banner.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            banner.topAnchor.constraint(equalTo: content.topAnchor,
-                                        constant: MainWindowController.titleBarHeight + 8),
-        ])
+        bannerStack.insertArrangedSubview(banner, at: 0)  // 要决定的事排在"已发生"的浮条之上
         return banner
     }
 
     private func dismissUpdateBanner() {
-        updateBanner?.removeFromSuperview()
+        if let banner = updateBanner {
+            bannerStack.removeArrangedSubview(banner)
+            banner.removeFromSuperview()
+        }
         updateBanner = nil
+    }
+
+    /// 一次性浮条：下载完成/失败这类"已经发生了"的事，说完自己走。
+    private func presentToast(_ content: ShellToast.Content) {
+        let toast = ShellToast(content: content, onDismiss: { [weak self] view in
+            self?.bannerStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        })
+        bannerStack.addArrangedSubview(toast)
     }
 
     // MARK: - 菜单
@@ -730,6 +762,29 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     // MARK: - WKNavigationDelegate
+
+    // 策略判定转发给 WebPolicy（次级窗口的 WebView 整个归它，两条路同一套判定）。
+    // 壳这边留着 delegate 是因为下面几个回调还连着连接状态机与焦点。
+
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(webPolicy.decide(webView, action: navigationAction))
+    }
+
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        decisionHandler(webPolicy.decide(webView, response: navigationResponse))
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        webPolicy.adopt(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        webPolicy.adopt(download)
+    }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: DashPaths.logURL, tag: "web")

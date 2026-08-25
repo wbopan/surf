@@ -176,7 +176,8 @@ Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，�
 （插件拉起时传入）→ endpoint 发现文件（`<AppSupport>/io.wenbo.dash/endpoint.json`，
 插件写、退出删）→ 都没有 = 引导页。2s 轮询兼管断连发现与自动重连。
 
-**壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底。
+**壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底、
+替网页把下载与外链落地。
 
 - `dash-app/lib/index.js`：宿主插件。源码内容 hash 决定是否重建，marker 落
   `host/build/.dash-app-source-hash.<配置>`。
@@ -184,7 +185,14 @@ Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，�
   协议见证表；registry/objects/store/events/bridge 的实现都在 SDK dylib 里）。
 - `dash-app/host/Sources/Native/`：BridgeClient（WS）、CompilerService（内容寻址编译）、
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
-  全出血 WebView 兜底）。
+  全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）。
+- `dash-app/host/Sources/Native/WebPolicy.swift`：WKWebView 的导航策略与下载。
+  **不设它，网页里"能下载的按钮"和"能跳转的链接"全部静默失效**——WKWebView 默认
+  既不下载（`Content-Disposition: attachment` 的导航被 policy 中断）也不开新窗口
+  （没有 uiDelegate 时 `target="_blank"` / `window.open` 直接被丢弃）。dsh 两类都用：
+  会话导出 ZIP 走 `<a download>`，正文 Markdown 外链 / 搜索来源 / trajectory 的
+  "打开图片"都是 `target="_blank"`。归壳不归插件：逃生舱模式（layout 缺席）也得能下载。
+  隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
 - `dash-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
 - `dash-app/host/Sources/DiagnosticsPanel.swift`：⌥⌘D 的诊断面板（端点/桥/插件世代/
@@ -205,6 +213,13 @@ Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，�
 
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
+- **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现
+  `decidePolicyFor navigationResponse` 就没有下载，不设 `uiDelegate` 就没有新窗口，
+  两者都不给任何回调、日志或视觉反馈。所以"点了没反应"这类报告先查 delegate 是否齐
+  （见 `Native/WebPolicy.swift`），别去怀疑页面。
+- **页面里的链接等同不可信输入**（大半是 LLM 生成的）：scheme 走白名单
+  （http/https/mailto），下载目录固定 `~/Downloads` 且不采信页面给的路径分量。
+  `<a href="x-某app://…">` 静默唤起本机应用是真实攻击面。
 - macOS WKWebView 内部没有 NSScrollView（滚动在 Web 进程），别试图从 AppKit 层
   控制页面滚动；SPI `_setRubberBandingEnabled:` 会引发滚动闪动，已弃用——
   页面滚动全靠插件注入的 CSS。

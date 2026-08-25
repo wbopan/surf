@@ -598,6 +598,32 @@ xcrun swiftc \
   `@MainActor` 的 `SessionStore` 与 AppKit,不标就得到处写 `assumeIsolated`。
   类本身不能标——`dash_plugin_entry` 是 nonisolated 的 C 入口,构造不了隔离类型。
 
+#### 7.2.2 M11:与官方侧边栏的功能对齐(2026-08-25 起)
+
+差异清单见本次调研(web 侧 = `@deepseek-ai/dsh-client-ui-sidebar` 外壳 +
+`dsh-client-ui-workspace` 浏览器)。**注意 web 也没有"隐藏某个 Project"的开关**——
+它的模型是"工作区列表本身就是用户维护的账":增(选目录 adopt)、删(从列表移除,
+目录与会话都留着,会话回到未分组)、改名、拖排序。原生此前是只读镜像 `workspace.list`,
+所以这套维护动作一个都没有。
+
+四批分法与形态取舍(用户 2026-08-25 决定):
+
+- **形态**:操作一律走右键菜单(macOS Finder/Mail/Xcode 的老规矩),行上不挂常驻或
+  hover 的操作图标;列表级别的新增(添加工作区)落在列表区段头「工作区」那一行的
+  右端——与 web 的 `sectionHeader` 同位,新增什么就贴着什么的表头。
+  web 的 hover ⋯ 按钮不跟。
+- **明确不跟的展示细节**:会话相对时间、组内只显示 5 条 + "展开其余 n 个"、
+  工作区 hover 卡片、blank 新会话行。前两条是密度取舍,后两条原生当初就有意没做。
+- **wire 契约已核实**(`dsh-host-apiproxy/lib/types/api/*.schema.js`):
+  `workspace.create{path}` → `{workspace, created}`(选中已登记的目录不算错,
+  回 `created:false`)、`workspace.rename{workspaceId,title}`(拒空标题)、
+  `workspace.delete{workspaceId}`、`workspace.insertBefore`、
+  `workspace.insertSessionBefore`、`session.fork{sessionId,atSeq?}` → `{sessionId}`、
+  `session.search{query}` → `{items:[{sessionId,snippet}], hasMore}`(上限 20)。
+- **fork 的标题递增在数据层复刻**(`SessionStore.increasedForkTitle`,含单元测试):
+  上游把它放在 client runtime 的 `fork(increaseTitle:true)` 里,wire 上只有
+  `session.fork` + 一次 `session.rename`。两个界面分叉出来的会话必须同名。
+
 ### 7.3 ~~dash-notifications~~ —— 已放弃(2026-08-25)
 
 **决策**:通知这条线整体丢掉,不迁移、不重写。现有 `EventsBridge.swift`(235 行,两条
@@ -705,6 +731,7 @@ dash-layout 的 client 半边(Swift 侧 `WebViewConversationSurface` 是它们�
 | M8 | 壳收缩收尾 | ✅ **已完成** dash-app v1(盯壳源码 → 后台重建 → `app-build` 播报 → 提示条 + 一键重启);⌥⌘D 诊断面板;README/CLAUDE.md 重写;双侧 DOM DIAG 探针删除 | ✅ 改壳源码 → 2s 内发现、1.6~2.5s 重建、右上角提示;`restartOnRebuild` 打开时 pid 92151 → 92403 **一次干净的重启**(修掉补发导致的无限重启环);诊断面板内容经 System Events 读取核对 |
 | M9 | 治理硬化 | 审批+hash 审计;账本阈值+空闲自重启;协议 clientId/seat 字段 | 外来插件首编弹确认;账本可查;阈值触发自重启验证 |
 | M10+ | 后续(不阻塞收官) | sidebar 数据面迁 TS 半身、DSHKit 退役;`setNativeSidebar` 免重载;dash-app v2(编译期贡献接口,§7.5);launchd 化 dsh;iOS 远程线(复用桥协议) | 各自独立验收 |
+| M11 | 侧边栏与官方对齐(§7.2.2) | 分四批:①工作区增删改名 + 会话行右键菜单(重命名/分叉/归档) ②后端全文搜索 ③视图选项(分组/排序)+ 状态位补全 ④拖拽排序 | 每批独立验收;形态一律右键菜单 + 区段头 + 号(HIG),web 那些展示细节(相对时间/组内 5 条上限/hover 卡片/blank 行)明确不跟 |
 
 顺序:M0 → M1 → M2 → M3 → M4 → M5 → M6 → ~~M7~~ → M8 → M9;
 M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程碑单独提交(M0 可拆多个)。
@@ -770,3 +797,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | 2026-08-25 | ~~M7~~ 放弃 | (本次) | **通知线整体丢弃**(用户决策):`EventsBridge.swift` 235 行 + `AppDelegate` 授权请求 + Info.plist `NSUserNotificationUsageDescription` 全部删除,壳不再 import UserNotifications。就地更新:§7.3(改写成"已放弃",留下事件源与"app 未运行"两条事实备将来重做)、§0(概述/目录树/插件树/非目标)、§1.6、§8、§9(M7 行划掉 + M8 回归清单去掉"通知")、§10(R8/R10)、§11。下一个里程碑改为 M8。|
 | 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
 | 2026-08-25 | (重构) | (本次) | **dash-web-adapter 拆分改名**。按契约归属切开:动作桥/收侧边栏/rail 抵消 → dash-layout 的 client 半边(dash-layout 由此成为**首个双面包的 Swift 载荷插件**:`dsh.client` + `swift/` 并存);纯样式 → `dash-nativeify`,并删净网页侧边栏外观调整(topInset/玻璃透出)与 `ui-dash-adapter` row 的 config。研究结论:`dsh.client.inject` 在 0.1.1-rc.2 **无消费者**(node 侧塞进 `manifest.plugins[].inject`,web shell 的 `runPluginBoot` 只读 `id`、`prefetchImmediateTier` 只读 `immediately`),真正的 bundle 排序字段是 `dsh.client.external`;两个 client 半边的 `exports.inject` 都保持 `[]`,服务依赖一律走作用域 `ctx.inject`。就地更新:§7.4、CLAUDE.md、根 README。|
+| 2026-08-25 | (能力补齐) | (本次) | **WebView 的下载与外链**。壳只装了 `didFinish/didFail` 三个通知型回调,既没有导航策略也没有 `uiDelegate`,于是 dsh 的**导出 ZIP**(`<a download>` → `Content-Disposition: attachment` → 导航被 policy 中断)与**全部 `target="_blank"`**(正文 Markdown 外链、搜索来源、trajectory"打开图片")一律静默失效——前端还会弹"浏览器正在下载"的成功框,是假成功。新增 `Sources/Native/WebPolicy.swift`(策略 + WKDownloadDelegate + WKUIDelegate + 次级窗口)与 `Sources/ShellToast.swift`(一次性浮条,右上角与更新提示条共用一个竖直 stack)。要点:同源留在壳内、跨源交 `NSWorkspace`、scheme 白名单(http/https/mailto)、下载固定落 `~/Downloads` 并同名加 `-1`、完成后发 `com.apple.DownloadFileFinished` 让 Dock 弹跳;同源新窗口开一扇真窗而不是在主 WebView 里 load(否则会把会话页顶掉且无后退 UI)。防御性补齐 `runOpenPanelWith` 与三个 JS panel(dsh 当前不用,但缺了就是同一种沉默失败)。**归壳不归插件**:逃生舱模式也得能下载,且 delegate 归属已由 §7.1.1-5 定死。实测:导出 ZIP 端到端落盘并弹浮条、同名唯一化生效;外链/新窗口/非法 scheme 四条分支经 `docs/spikes/webpolicy/`(可复跑)全部按预期。就地更新:CLAUDE.md(壳职责一句话、Native 文件清单、两条踩坑)。|
