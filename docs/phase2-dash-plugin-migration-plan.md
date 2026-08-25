@@ -175,7 +175,7 @@ App 叫 **dash**。插件前缀 `dash-*`。Swift module 前缀 `Dash*`。改名�
 # 1. 确认干净后整体移动(新家即仓库根)
 mv ~/Repos/dsh-mac ~/.dsh/profiles/plugins
 # 2. 重布 profile 依赖(旧 link 指向已消失的 repo 路径)
-dsh plugin --profile web remove dsharness-web-adapter   # 具体子命令以 dsh plugin --help 为准
+dsh plugin --profile web remove dsharness-web-adapter   # 已实测：参数直接透传 pnpm
 dsh plugin --profile web add link:~/.dsh/profiles/plugins/dash-web-adapter
 ```
 
@@ -574,4 +574,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 | 日期 | 里程碑 | commit | 备注(与计划的偏差、更新了文档哪节) |
 |---|---|---|---|
-| | | | |
+| 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|

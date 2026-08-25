@@ -10,13 +10,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 每完成一个里程碑在计划 §12 追加一行执行日志；发现文档与 dsh 源码冲突，
 以源码为准并就地更新计划文档。
 
-**当前进度：M0（固化 + 搬家 + 改名）进行中。**
+**当前进度：M0（固化 + 搬家 + 改名）已完成，下一步 M1（启动反转）。**
+
+仓库根就是 `~/.dsh/profiles/plugins/`（这不是巧合，是 §1.4 布线硬约束的要求）。
 
 ```
 dash-app/          壳源码为载荷的插件（M1 起有 lib/index.js；现在只有 host/）
   host/            Xcode 工程：project.yml / Sources/ / Packages/ / scripts/ / tools/
 dash-web-adapter/  注入 dsh Web UI 的 cordis 插件（纯 client 半边，无构建步骤）
 docs/              计划与调研文档
+dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
 ## 构建与运行
