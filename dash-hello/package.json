@@ -1,0 +1,18 @@
+{
+	"name": "dash-hello",
+	"version": "0.1.0",
+	"private": true,
+	"description": "原生插件流水线的冒烟样例：最小的 Swift 载荷插件，占 root 槽。默认不注册进 profile。",
+	"type": "module",
+	"main": "lib/index.js",
+	"exports": {
+		".": "./lib/index.js",
+		"./cordis.patch.yml": "./cordis.patch.yml",
+		"./package.json": "./package.json"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		}
+	}
+}

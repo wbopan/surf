@@ -316,6 +316,29 @@ SDK 作为**概念**存在(壳↔插件的 ABI 词汇 + 插件作者的 TS 工�
 
 SDK module 以 `-enable-library-evolution` 编译进壳并随 bundle 分发 `.swiftinterface`;插件本身不必开 evolution(同机同 toolchain)。它与壳必须严格同版本(壳实现 `DashHost`),住在壳源码里让"SDK 版本 = 壳版本"成为结构事实而非纪律。**插件间协议不进 SDK**(如 `DashSidebarProvider` 住 dash-layout,随 `.swiftmodule` 传递):SDK 只是内核词汇,生态词汇由插件自带。
 
+#### 4.1.1 M3 实做与本节的偏差(已交付,以此段为准)
+
+- **SDK 不能编进壳的 app module**,必须是**独立 dylib**:壳与插件要共用同一份类型身份,
+  就得链接同一个文件。做法 = `scripts/build-modules.sh` 用 spike 那套 swiftc 命令把
+  `Sources/DashSDK/` 编成 `host/build-sdk/libDashSDK.dylib`,`postBuildScripts` 的
+  `embed-modules.sh` 摆进 `Contents/Frameworks/`(壳按 `@rpath` 加载)与
+  `Contents/Resources/DashModules/`(插件编译时 `-I` 的落点),然后重新 ad-hoc 签名
+  (拷贝晚于 Xcode 的签名步骤,不重签会破 CodeResources 封印)。
+  app target 的 `sources` 必须 `excludes: DashSDK`,否则类型身份一分为二。
+- **DSHKit 一并升为共享 module**(计划原本要它留在壳里当 SwiftPM 包)。理由是 §7.2 的
+  数据面方案要求 sidebar 插件能 `import DSHKit` 并从保管箱取壳造的 `SessionStore`——
+  跨 dylib 用同一个类型,就必须和 DashSDK 同等待遇。顺带删掉了 DSHSidebarUI 对 DSHKit
+  的 SwiftPM 依赖(M2 已确认源码层面根本没用),否则会静态链进来第二份。
+  `Packages/DSHKit/` 目录保留(它的单元测试还在),只是不再作为 SwiftPM 依赖进壳。
+- **`DashHost` 是 final class 不是协议**:壳只需要构造它、填好闭包。这样跨 dylib 的协议
+  见证表只剩 `DashPlugin` 一处,ABI 面越窄换代时越不容易出意外。
+  `DashRegistry`/`DashObjects`/`DashEventBus`/`DashStore`/`DashBridge` 的实现全在 SDK dylib 里,
+  壳不重复实现。
+- **不加 `@MainActor`**:M2 没有覆盖跨 dylib 的 actor 边界,少一个未验证的变量比多一层
+  静态保证划算。线程约定写在文档注释里(只在主线程用)。
+- `DashDisposable` 的撤销**带 token 校验**:旧世代析构时若槽已被新世代接管,撤销是空操作。
+  没有这一条,"新代先注册、壳再松手放旧代"的替换时序会被旧代的析构反手清掉。
+
 ### 4.2 TS 半:`createSwiftPlugin` 工厂,住 dash-bridge 的子出口 `dash-bridge/plugin`
 
 工厂做的事本就是与桥的登记表 API 对话——契约两端(服务实现与客户端工厂)同住一包,永不漂移;
@@ -335,9 +358,12 @@ export default createSwiftPlugin({
 工厂内部:`ctx.get('dashBridge')`(可选依赖姿势,桥缺席则本插件的 Swift 载荷优雅不登记)→ `ctx.effect` 登记
 `{plugin, swiftDir, swiftDeps, schemaVersion}`,卸载自动撤销;subscribe/expose 统一走桥信封,插件永不直接摸 WS。
 
-**解析注意**:`healProfilesModuleFallback` 只镜像 harness 闭包,不含用户插件——dash-\* 互相以
-包名 import 需在仓库根设 npm workspace(或退而用相对路径 import),M3 落地时定;
-不影响 dsh 对各插件本身的解析(那走 profile 的 `link:`)。
+**解析定案(M3)**:走**相对路径 import**——`import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js"`。
+`healProfilesModuleFallback` 只镜像 harness 闭包,不含用户插件;包名 import 要么靠仓库根的
+npm workspace、要么靠手工 symlink,两者都是**机器本地状态,新克隆的仓库拿不到**,
+与 §0.2 "把 dash-\* 放进 plugins/、逐个 add、跑 dsh web 就能用"的体验目标冲突。
+相对路径在"所有 dash-\* 是同一仓库里的兄弟目录"这个前提下永远成立,零配置。
+(不影响 dsh 对各插件本身的解析,那走 profile 的 `link:`。)
 
 ### 4.3 各插件为满足时序还需 provide 一个空标记服务
 
@@ -365,6 +391,23 @@ Cordis 依赖解析由此保证:layout 未挂好 sidebar 不挂载、layout 替�
   5. 写路径(上行信封 `{clientId, plugin, channel, payload}`):`compile-result`(成功/失败+日志,供诊断与 agent 迭代)、
      expose 动作转发、审批应答、`restart-dsh` 请求(转 `appExit`)。多客户端各自带 clientId;**单 active seat**语义后置(M9 只留字段)。
 - **不往 session 写任何自定义事件**(§0.5-6)。
+
+#### 5.1.1 M4 实做与本节的偏差(已交付,以此段为准)
+
+- **`ws` 可以直接用**:它是 dsh-client-connection 的依赖,已被
+  `healProfilesModuleFallback` 扁平 symlink 进 `~/.dsh/profiles/node_modules/ws`,
+  插件从真实路径向上遍历即可命中。写进 `peerDependencies`(同 `@deepseek-ai/*` 纪律),
+  不必手写 RFC 6455 握手与分帧。
+- **`createSwiftPlugin` 把 `dashBridge` 放进 `inject` 而不是 `ctx.get`**:本计划原文取的是
+  "可选依赖姿势",但各插件的 TS 半身除了登记 Swift 载荷之外无事可做,桥缺席时它们
+  本就该整体不挂载——这正是 cordis 对 inject 的处理(等着,不报错),已经是优雅缺席。
+  `swiftDeps` 会被自动并入 `inject`(编译拓扑序与挂载时序一份声明两层消费)。
+- **级联重编不需要专门的传播逻辑**:把上游的 `contentHash` 折进下游的 `contentHash` 即可
+  ——"内容没变就不重编"这一条判断自带级联。第 4 点原文说的"登记表版本 bump 必须传播
+  到下游"由此在数据结构层面自动成立,壳侧一行传播代码都不用写。
+- **`snapshot` 不做增量**(`sinceVersion` 字段未实现):`changed` 只发版本号,壳收到就重新拉
+  全量。桥对客户端零状态,全量是几十 KB 的文本,增量的复杂度换不来什么。
+- **握手前只放行 `hello` 帧**;升级请求的 Host 头必须是 loopback(自注册路由要自查,见 §1.5)。
 
 ### 5.2 Mac 半边(壳内 `BridgeClient`)
 
@@ -433,6 +476,18 @@ xcrun swiftc \
 
 `contentHash = H(源文件集 + 各依赖插件的 contentHash + DashSDK 版本 + swiftc --version)`。
 命中即跳过编译直接 dlopen(重启/重连后秒载,这也是启动门控能"等编译"的前提)。
+
+**M4 实做补充**:前半段(源文件集 + 依赖 hash)由桥算,后半段(工具链指纹 = swiftc 版本
++ bundle 内 `.swiftinterface` 的内容摘要 + ABI 版本)由壳算并折进去——换 Xcode 或重编 DashSDK
+之后必须全量重编,否则 `.swiftmodule` 会对不上。
+
+**module 名直接取自 contentHash**:`DashSidebar_h<hash 前 12 位>`。于是
+"内容寻址缓存"与"世代类型隔离"变成同一个事实的两面——内容一样就是同一个 module
+(缓存命中且不必重新装载),内容一变就是新 module(与旧代天然隔离)。
+省掉了单调计数器和随之而来的"缓存命中时旧世代号是多少"的账。
+`-module-alias DashLayout=DashLayout_h<上游 hash>` 让插件作者只写 `import DashLayout`。
+目标三元组从 `DashSDK.swiftinterface` 的 `// swift-module-flags:` 行抄,
+而不是写死常量(写死迟早与 build-modules.sh 漂移)。
 
 ### 6.3 世代替换时序
 
@@ -560,8 +615,8 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 | M0 | 固化+搬家+改名(§2) | 新仓库根 `~/.dsh/profiles/plugins/`;dash 命名全换;dsh 全局安装 | dev.sh 全流程可跑;终端 `dsh web` 起得来;web-adapter 功能不变;旧 repo 退役 |
 | M1 | 启动反转(§3) | ✅ **已完成** 壳退役 spawn 层(-867 行);三级 endpoint 定位;dash-app v0(壳源码入插件,构建+拉起) | ✅ 五条全过:`dsh web` → 构建 → app 自动弹出;已运行则跳过拉起;dsh 未起双击 app → 引导页;dsh 退出 → 断连不崩;dsh 换端口回来 → 自动重接且侧边栏镜像整件重装 |
 | M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ §6.5 十条断言全通过（runner 14 项检查）,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
-| M3 | SDK 骨架(§4) | DashSDK module(dash-app/host 内)+ `dash-bridge/plugin` 工厂 | 壳内 registry/store/EventBus 单元可用;工厂能被样例插件 import(dash-* 互引解析定案) |
-| M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | 桥 WS/登记表/snapshot/changed/轮询;CompilerService/Loader/账本/缓存;hello 插件 | 改 hello 源码 → ≤5s 界面更新不重启;编译失败可见不崩;重启缓存命中秒载 |
+| M3 | SDK 骨架(§4) | ✅ **已完成** DashSDK + DSHKit 升为随 bundle 分发的共享 dylib;`dash-bridge/plugin` 工厂 | ✅ registry/objects/store/EventBus/bridge 全部可用;dash-hello 经相对路径 import 工厂成功挂载 |
+| M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | ✅ **已完成** 桥 WS/登记表/snapshot/changed/500ms 轮询;CompilerService/装载器/账本/内容寻址缓存;dash-hello | ✅ 改 hello 源码 → **2.2s** 换代、界面更新不重启;编译失败带文件行号进 dsh 终端、旧代留任、壳不崩;重启缓存命中(0 编译);push/invoke 双向通 |
 | M5 | dash-layout 接管 root | layout 插件;壳收缩布局代码;门控/预热/fallback | disable dash-layout → 完整网页模式(网页 sidebar 回归);enable → 原生布局;页面在插件换代时不重载 |
 | M6 | dash-sidebar 迁移 | DSHSidebarUI→swift/;数据面保管箱方案;显隐联动 | 功能与现状等价;改 SidebarView.swift 热更新且选中高亮存活;disable → 优雅回退 |
 | M7 | dash-notifications 迁移 | TS 半身订宿主事件;EventsBridge 删除 | 四类通知等价(含冷却/前台规则);dsh 重启期间不崩、恢复后继续 |
@@ -586,8 +641,10 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
    回滚=`npm i -g` 装回旧版(npm cache 命中,分钟级),可接受。
 3. **R3 node 半边无 HMR**:TS 半身改动=重启 dsh。接受(低频);高频的 Swift 迭代由桥自盯文件,不受影响。
    反转后重启 dsh 也会经拉起逻辑"找回"app(app 已在则只重连),体验闭环。
-4. **R4 `registerUpgrade` 未实测**:M4 第一件事写最小 echo 验证;失败 fallback=桥自起端口
-   (endpoint 文件本就携带 bridgePath,天然兼容独立端口)。
+4. ~~**R4 `registerUpgrade` 未实测**~~ **已解除**(M4 实测):`registerUpgrade({path, handler(req, socket, head)})`
+   给的是**裸升级**,协议协商归自己;用 `ws` 的 `WebSocketServer({noServer:true}).handleUpgrade`
+   即可,壳侧 `URLSessionWebSocketTask` 直连同端口的 `/dash/bridge` 一次成功。
+   独立端口的 fallback 未启用(endpoint 文件仍携带 bridgePath,随时可切)。
 5. **R5 WKWebView 跨代细节**:navigationDelegate/uiDelegate 是插件对象(weak,旧代释放后自动 nil)——
    新世代 activate 时必须重设;进程池/inspectable 等配置归壳。写进 SDK 纪律。
 6. **R6 搬家断裂**:profile 布线校验(`dsh plugin list`);留一次性回滚指引(mv 回原路径 + 恢复 link)。
@@ -621,4 +678,6 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 |---|---|---|---|
 | 2026-08-25 | M2 | `5361621` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。§6.5 十条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|
+| 2026-08-25 | M3 | `2dc23d0` | SDK 骨架。就地更新:§4.1.1(五条实做偏差——SDK 必须是独立 dylib、DSHKit 一并升共享 module、DashHost 改 final class、不加 @MainActor、Disposable 带 token 校验)、§4.2(dash-* 互引定案走相对路径)、§9(M3 行)。|
+| 2026-08-25 | M4 | `7d37171` | 桥 + 编译机 + hello 世代循环,五条验收全过:改源码 **2.2s** 换代不重启;编译失败带文件行号进 dsh 终端、旧代留任、壳不崩;重启缓存命中 0 编译;push/invoke 双向通;**R4 解除**(`registerUpgrade` 是裸升级,用 `ws` 的 noServer 模式,`ws` 已在 profiles/node_modules 里)。就地更新:§5.1.1(四条偏差)、§6.2(module 名取自 contentHash,世代隔离与内容寻址合一)、§9(M4 行)、§10-R4。|
 | 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|

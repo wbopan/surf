@@ -1,4 +1,5 @@
 import AppKit
+import DashSDK
 import SwiftUI
 import WebKit
 import DSHKit
@@ -70,6 +71,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private var eventsBridge: EventsBridge?
 
+    /// 原生插件宿主：桥 ↔ 编译机 ↔ 装载器 ↔ registry。壳对插件世界的全部认知都在它那儿。
+    let nativeHost = NativePluginHost()
+    /// `root` 槽的挂载点。占了才挂——没占就露出底下的壳布局（M5 前是分栏，M5 后是全出血 WebView）。
+    private var rootSlotView: NSView?
+
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
     // 需与插件 cordis.patch.yml 的 topInset 保持一致，网页内容才不会钻到条底下。
     static let titleBarHeight: CGFloat = 40
@@ -136,6 +142,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         setupWindow()
         setupContentView()
         setupMenus()
+        // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
+        // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
+        nativeHost.objects.setObject(DashObjects.Key.webView, webView)
+        nativeHost.onUpdate = { [weak self] in self?.refreshRootSlot() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -366,6 +376,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         hideBootstrap()
         loadWebUI()
         startEventsBridge()
+        if let endpoint {
+            nativeHost.connect(baseURL: endpoint.httpBase, bridgePath: endpoint.bridgePath)
+        }
     }
 
     /// dsh 不见了：停桥、卸镜像、盖引导页。窗口与 WebView 都留着——
@@ -376,6 +389,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         endpoint = nil
         eventsBridge?.stop()
         eventsBridge = nil
+        nativeHost.disconnect()
         uninstallSidebar()
         webView.stopLoading()
         showBootstrapGuide(
@@ -434,6 +448,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     func reconnect() {
         eventsBridge?.stop()
         eventsBridge = nil
+        nativeHost.disconnect()
         uninstallSidebar()
         webView.stopLoading()
         endpoint = nil
@@ -448,7 +463,45 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         connectTimer = nil
         bridgeWarnWork?.cancel()
         eventsBridge?.stop()
+        nativeHost.disconnect()
         sessionStore?.stop()
+    }
+
+    // MARK: - root 槽
+
+    /// `root` 槽的占用状态变了就挂上/摘掉。槽内插件自己换代不走这里——
+    /// `ShellRootView` 观察 registry，版本号跳变时自己整棵重建。
+    private func refreshRootSlot() {
+        if nativeHost.registry.isOccupied("root") {
+            mountRootSlot()
+        } else {
+            unmountRootSlot()
+        }
+    }
+
+    private func mountRootSlot() {
+        guard rootSlotView == nil, let content = window?.contentView else { return }
+        let hosting = NSHostingView(rootView: ShellRootView(registry: nativeHost.registry))
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        // 盖在壳自己的布局之上。引导页比它更晚加入（同样 .above nil），
+        // 因此断连时引导页仍在最上层。
+        content.addSubview(hosting, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            hosting.topAnchor.constraint(equalTo: content.topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            hosting.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+        ])
+        rootSlotView = hosting
+        Log.write("root 槽已挂载（\(nativeHost.registry.owner(of: "root") ?? "?")）",
+                  to: DashPaths.logURL, tag: "plugin")
+    }
+
+    private func unmountRootSlot() {
+        guard let view = rootSlotView else { return }
+        view.removeFromSuperview()
+        rootSlotView = nil
+        Log.write("root 槽已摘除，回落壳布局", to: DashPaths.logURL, tag: "plugin")
     }
 
     // MARK: - 引导视图
@@ -630,9 +683,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                     diag = " diag=\(d)"
                 }
                 Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: DashPaths.logURL, tag: "bridge")
+                nativeHost.events.emit(DashEventBus.Topic.pageReady, ["capabilities": caps])
             case "currentSession":
                 if let id = body["id"] as? String {
                     sidebarModel?.pageDidSelect(sessionId: id)
+                    nativeHost.events.emit(DashEventBus.Topic.pageCurrentSession, ["id": id])
                 }
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
