@@ -18,7 +18,7 @@ public protocol DashConversationSurface: AnyObject {
     func openSettings()
 }
 
-/// WKWebView 实现：经 `evaluateJavaScript` 调用 dash-web-adapter 暴露的 `window.__dash`。
+/// WKWebView 实现：经 `evaluateJavaScript` 调用本包 client 半边（lib/client.js）装的 `window.__dash`。
 /// 全部防御式——桥不在（普通浏览器、页面还没加载完）时静默失败，不弹窗不报错。
 final class WebViewConversationSurface: DashConversationSurface {
     private weak var webView: WKWebView?

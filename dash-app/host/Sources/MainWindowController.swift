@@ -78,7 +78,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private var nativeSidebarParamInUse = MainWindowController.rememberedNativeSidebar
 
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
-    // 需与插件 cordis.patch.yml 的 topInset 保持一致，网页内容才不会钻到条底下。
+    // 只管拖拽，不再与网页内容对齐：原生分栏接管排版后，WebView 装在分栏右侧，
+    // 网页侧边栏够不着标题栏区域（旧的 dash-nativeify topInset 让位已随之删除）。
     static let titleBarHeight: CGFloat = 40
 
     private let titleBarDragView = WindowDragRegionView() // 顶部可拖拽条
@@ -101,7 +102,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
         // UA 追加 "Dash/<version>"（带斜杠，防 "dash" 作为普通子串误命中）：
-        // dash-web-adapter 插件以此判断页面运行在壳内（终端 dsh web /
+        // dash-nativeify / dash-layout 的 client 半边以此判断页面运行在壳内（终端 dsh web /
         // 普通浏览器共用同一 profile，不受影响）。
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         config.applicationNameForUserAgent = "Dash/\(shortVersion)"

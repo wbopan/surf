@@ -1,8 +1,8 @@
 {
-  "name": "dash-web-adapter",
+  "name": "dash-nativeify",
   "version": "0.1.0",
   "private": true,
-  "description": "dash macOS 壳适配插件：仅在 dash WKWebView 内生效的 dsh Web UI 调整（bundle + 浏览器插件双面包）",
+  "description": "让 dsh Web UI 摸起来像原生 macOS App：禁 document 橡皮筋、UI 文本不可选中（纯 CSS，零服务依赖）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

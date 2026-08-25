@@ -38,7 +38,7 @@ npm i -g @deepseek-ai/dsh@0.1.1-rc.2
 ```bash
 git clone <repo> ~/.dsh/profiles/plugins
 cd ~/.dsh/profiles/plugins
-for p in dash-app dash-bridge dash-layout dash-sidebar dash-web-adapter; do
+for p in dash-app dash-bridge dash-layout dash-sidebar dash-nativeify; do
   dsh plugin --profile web add "link:$PWD/$p"
 done
 dsh web --no-open
@@ -65,10 +65,11 @@ dsh web --no-open
 dash-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App + 盯壳源码
   host/            Xcode 工程（project.yml / Sources/ / Packages/DSHKit / scripts/）
 dash-bridge/       唯一的特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯 swift/ 目录
-dash-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具栏
+dash-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具栏；
+                   client 半边装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏
 dash-hello/        原生插件流水线的冒烟样例（与 layout 争 root 槽，默认不注册）
-dash-web-adapter/  注入 dsh Web UI 的插件（纯 client 半边，有 HMR）
+dash-nativeify/    让 dsh Web UI 摸起来像原生 App 的样式插件（纯 client 半边，有 HMR）
 docs/              迁移计划、ABI 实测结论、可复跑的 spike
 ```
 

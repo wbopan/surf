@@ -620,10 +620,16 @@ app 未运行时静默丢失),迁一份不好用的东西过去只是把债换�
 
 删除的代码在 git 历史里(`d4a1614` 及之前),需要时可捞。
 
-### 7.4 dash-web-adapter
+### 7.4 dash-web-adapter → dash-nativeify(M6 后拆分,见 §12 末行)
 
 M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 client 半边,无 Swift 载荷);
 `ready/currentSession/debug` 上行与 CSS 治理照旧。后续(M10+)可考虑并入 dash-layout 家族,本阶段不动。
+
+**已作废(2026-08-25)**:"后续可考虑并入 dash-layout"这条提前发生了,但不是整包并入,
+而是**按契约归属拆开**——`window.__dash` 动作桥 + 收起 web 侧边栏 + rail 抵消并入
+dash-layout 的 client 半边(Swift 侧 `WebViewConversationSurface` 是它们唯一调用方,
+协议两端同包);剩下的纯样式改名 `dash-nativeify`。同时删掉网页侧边栏的全部外观调整
+(topInset 让位、透出玻璃),因为原生侧边栏落地后"网页侧边栏打扮成原生"这个中间态不存在。
 
 ### 7.5 dash-app(壳源码与编译过程的插件化)
 
@@ -763,3 +769,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | 2026-08-25 | M8 | `fc48562` `6899096` (+文档) | 壳收缩收尾。dash-app v1 盯壳源码自动重建 + 右上角提示条 + 一键重启;⌥⌘D 诊断面板;双侧 DOM DIAG 探针删除;根 README 重写、wire-notes 标注漂移、CLAUDE.md 更新。就地更新:§7.5.1(六条偏差)、§8、§9(M8 行)、§10-R10、§11。**踩坑**:桥在 hello 时补发最后一次 `app-build` 会导致无限重启环(§7.5.1-3),两道闸修掉。|
 | 2026-08-25 | ~~M7~~ 放弃 | (本次) | **通知线整体丢弃**(用户决策):`EventsBridge.swift` 235 行 + `AppDelegate` 授权请求 + Info.plist `NSUserNotificationUsageDescription` 全部删除,壳不再 import UserNotifications。就地更新:§7.3(改写成"已放弃",留下事件源与"app 未运行"两条事实备将来重做)、§0(概述/目录树/插件树/非目标)、§1.6、§8、§9(M7 行划掉 + M8 回归清单去掉"通知")、§10(R8/R10)、§11。下一个里程碑改为 M8。|
 | 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
+| 2026-08-25 | (重构) | (本次) | **dash-web-adapter 拆分改名**。按契约归属切开:动作桥/收侧边栏/rail 抵消 → dash-layout 的 client 半边(dash-layout 由此成为**首个双面包的 Swift 载荷插件**:`dsh.client` + `swift/` 并存);纯样式 → `dash-nativeify`,并删净网页侧边栏外观调整(topInset/玻璃透出)与 `ui-dash-adapter` row 的 config。研究结论:`dsh.client.inject` 在 0.1.1-rc.2 **无消费者**(node 侧塞进 `manifest.plugins[].inject`,web shell 的 `runPluginBoot` 只读 `id`、`prefetchImmediateTier` 只读 `immediately`),真正的 bundle 排序字段是 `dsh.client.external`;两个 client 半边的 `exports.inject` 都保持 `[]`,服务依赖一律走作用域 `ctx.inject`。就地更新:§7.4、CLAUDE.md、根 README。|

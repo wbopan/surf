@@ -22,10 +22,12 @@ dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint �
   host/            Xcode 工程载荷：project.yml / Sources/ / Packages/DSHKit / scripts/ / tools/
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
-dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具栏
+dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具栏；
+                   client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
 dash-hello/        原生插件流水线的冒烟样例（占 root 槽，与 layout 互斥，默认不注册）
-dash-web-adapter/  注入 dsh Web UI 的 cordis 插件（纯 client 半边，无构建步骤）
+dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中
+                   （纯 client 半边、纯 CSS、零服务依赖，无构建步骤）
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
@@ -36,7 +38,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 |---|---|---|
 | **插件的 `swift/`** | 存盘即可。桥 500ms 轮询发现 → 壳重编 → 世代热替换 | **1~3s，不重启任何东西** |
 | 插件的 `lib/*.js`、`package.json`、增删插件 | **必须重启 dsh**（官方在 web bundle 下 disable 了 node 侧 HMR） | 秒级 |
-| dash-web-adapter 的 `lib/client.js` | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
+| `lib/client.js`（dash-nativeify / dash-layout） | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
 | **壳源码 `dash-app/host/`** | dash-app 盯着它：改了后台重建，窗口右上角提示「重启生效」，点一下就换代 | 重建 2s + 重启 |
 
 **改 Swift 插件不需要碰 dsh，也不需要重启 App。** 编译失败会带文件行号打进 dsh 终端，

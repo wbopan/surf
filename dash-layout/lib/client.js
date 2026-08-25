@@ -1,30 +1,34 @@
 /*
- * dash 适配插件，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
+ * dash-layout，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
- * v2 功能（均 UA 门控：仅当页面运行在 dash 的 WKWebView 内、UA 含
- * "Dash/" 时生效；终端 `dsh web` / 普通浏览器打开同一 profile 不受影响）：
+ * **为什么住在 dash-layout**：这里的两件事都是「原生分栏接管排版」的网页对端，
+ * 而它们唯一的 Swift 调用方就是本包的 `WebViewConversationSurface`
+ * （swift/ConversationSurface.swift）。协议两端同包 = 改一边必然看见另一边，
+ * 与 `DashConversationSurface` 协议「住在消费者侧」是同一条 1×N 规则。
  *
- * 1. （v1）侧边栏顶部让位 + 透出原生玻璃（topInset）。
- * 2. （v2，额外需 URL 参数 dash-native-sidebar=1）「隐藏侧边栏」模式：
- *    经 ui-layout 的公开服务 ctx.layout.toggleSidebar() 把侧边栏收起，
- *    再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口左缘起排；
- *    此模式下停用 v1 的玻璃宽度 ResizeObserver 上报（原生侧边栏自管宽度）。
- * 3. （v2）页内动作桥 window.__dash：
- *    selectSession / startSession / openSettings + 当前会话反向回报
- *    （window.webkit.messageHandlers.dash.postMessage）。
+ * 1. **页内动作桥 `window.__dash`**：selectSession / startSession / openSettings
+ *    + 当前会话反向回报（window.webkit.messageHandlers.dash.postMessage）。
+ * 2. **收起 web 侧边栏**：经 ui-layout 的公开服务 ctx.layout.toggleSidebar()
+ *    把侧边栏收起，再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口
+ *    左缘起排——原生侧边栏（dash-sidebar）占的就是那块地方。
+ *
+ * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
+ * 那是 dash-nativeify 的事，它零服务依赖、要抢首帧。
+ *
+ * 门控：UA 含 "Dash/"（动作桥）之上，收起侧边栏再要求 URL 参数
+ * dash-native-sidebar=1。终端 `dsh web` / 普通浏览器不受影响。
  *
  * 选择器说明：dsh Web UI 的类名是 hash 化 CSS module（如 pI_x6G_sidebarCol），
- * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中
- * ui-layout AppFrame 的侧边栏列。升级 dsh 后若失效，优先核对该语义名。
+ * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中。
  */
 window.__ModuleLoader__.load({
-	id: "dash-web-adapter",
+	id: "dash-layout",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-		const STYLE_ID = "dash-web-adapter-style";
+		const STYLE_ID = "dash-layout-style";
 		// ui-layout computeColumns：折叠（sidebar 偏好为 0）时轨道仍占 56px rail。
 		const RAIL_PX = 56;
 
@@ -45,10 +49,6 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		/* ------------------------------------------------------------------ *
-		 * A2：页内动作桥 window.__dash（仅 dash UA；防御式，绝不抛）。
-		 * ------------------------------------------------------------------ */
-
 		/**
 		 * 经 window.webkit.messageHandlers.dash 向壳应用发消息；
 		 * 普通浏览器（无该 handler）静默跳过。
@@ -60,6 +60,10 @@ window.__ModuleLoader__.load({
 				if (handler && typeof handler.postMessage === "function") handler.postMessage(msg);
 			} catch { /* 上报失败静默 */ }
 		}
+
+		/* ------------------------------------------------------------------ *
+		 * 页内动作桥 window.__dash（仅 dash UA；防御式，绝不抛）。
+		 * ------------------------------------------------------------------ */
 
 		/**
 		 * 安装动作桥。三个动作全部走 web UI 自身的公开 cordis 服务：
@@ -112,7 +116,7 @@ window.__ModuleLoader__.load({
 								} catch { /* 读取失败静默 */ }
 							};
 							report();
-							sctx.effect(() => sessions.list.subscribe(report), "dash-adapter: currentSession channel");
+							sctx.effect(() => sessions.list.subscribe(report), "dash-layout: currentSession channel");
 						}
 					} catch { /* 服务形状不符静默 */ }
 				});
@@ -185,7 +189,7 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ------------------------------------------------------------------ *
-		 * A1：「隐藏侧边栏」模式。
+		 * 「隐藏 web 侧边栏」模式。
 		 * ------------------------------------------------------------------ */
 
 		/**
@@ -284,88 +288,27 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * 插件体：注入侧边栏顶部让位样式；fiber 卸载（HMR/禁用）时移除。
+		 * 插件体：装动作桥（凡 Dash/ UA）+ 收起 web 侧边栏（再要 native 模式）。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
-		 * @param {{ topInset?: number }} [config]
 		 */
-		function apply(ctx, config) {
+		function apply(ctx) {
 			if (!insideDash()) return;
 			const native = nativeSidebarMode();
-			const raw = config && typeof config.topInset === "number" ? config.topInset : 24;
-			const topInset = Math.min(Math.max(raw, 0), 200);
 			ctx.effect(() => {
-				document.getElementById(STYLE_ID)?.remove();
-				const style = document.createElement("style");
-				style.id = STYLE_ID;
-				const rules = [
-					":root { --dash-titlebar-inset: " + topInset + "px; }",
-					// 壳应用左栏是原生 NSGlassEffectView（Liquid Glass）。
-					// dsh UI 有多层不透明背景会把它盖住：
-					//   1. 整窗框架 _frame 画 --dsw-alias-bg-base（覆盖整窗，含侧边栏）
-					//   2. sidebarCol 画 --dsw-specific-sidebar-fill
-					//   3. sidebar 组件根（ui-sidebar 的 *_root，sidebarCol 直接子元素，
-					//      height:100%）也画 --dsw-specific-sidebar-fill——顶部让位
-					//      padding 区无子元素故透出玻璃（即左上小缺口），其余被它盖住。
-					// 壳内把这些全透明，底色只保留在中间/右侧列，侧边栏露出原生玻璃。
-					"html, body, #root { background: transparent !important; }",
-					'[class*="_frame"] {',
-					"  background: transparent !important;",
-					"}",
-					'[class*="_centerCol"], [class*="_detailsCol"] {',
-					"  background: var(--dsw-alias-bg-base) !important;",
-					"}",
-					'[class*="_sidebarCol"] {',
-					"  box-sizing: border-box;",
-					"  padding-top: var(--dash-titlebar-inset);",
-					"  background: transparent !important;",
-					// sidebarCol 自带 border-right（--dsw-alias-border-l1），
-					// 在实体背景上不显眼、贴着玻璃时成了一条突兀的黑白分隔线，去掉。
-					"  border-right: none !important;",
-					"}",
-					// 诊断实测：sidebarCol 之下有一层透明
-					// wrapper，hHd-Xa_root 在第二级，且整栏背景 rgb(27,27,28) 由它绘制。
-					// 因此用后代选择器而非直接子选择器。
-					'[class*="_sidebarCol"] [class*="_root"] {',
-					"  background: transparent !important;",
-					"}",
-					// 会话列表底部渐变遮罩（ui-workspace 的 *_fade，
-					// linear-gradient → --dsw-specific-sidebar-fill 不透明黑），去掉。
-					'[class*="_sidebarCol"] [class*="_fade"] {',
-					"  background: none !important;",
-					"}",
-					// 列边界拖拽手柄（ui-layout 的 *_handle，8px 宽，
-					// background: --dsw-alias-button-floating-fill）在侧边栏右缘
-					// 留一条不透明竖条；拖拽功能靠 cursor，背景可安全去除。
-					'[class*="_frame"] [class*="_handle"] {',
-					"  background: transparent !important;",
-					"}",
-				];
+				let style = null;
+				let cleanupCollapse = () => {};
+				let cleanupOccupancy = () => {};
 				if (native) {
-					rules.push(
-						// ===== 原生侧边栏模式（dash-native-sidebar=1）=====
+					document.getElementById(STYLE_ID)?.remove();
+					style = document.createElement("style");
+					style.id = STYLE_ID;
+					style.textContent = [
 						// 折叠后 computeColumns 仍给 sidebar 轨道保留 56px rail。
 						// grid 轨道宽度由 AppFrame 的内联 gridTemplate-columns 决定、
 						// 无法部分覆盖，因此整体把 frame 向左平移 rail 宽（实时测量入
 						// --dash-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
 						// 会话列从窗口左缘起排。frame 自带 overflow:hidden，不会外溢。
 						":root { --dash-sidebar-occupancy: " + RAIL_PX + "px; }",
-						// 整页滚动 + 橡皮筋：overflow:hidden 在 WebKit 里不禁用 elastic
-						// 滚动——内层滚动容器（[data-conversation-scroll] 等）滚到底后
-						// 惯性仍会链到 document，把整页（conversation+details）拉走。
-						// overscroll-behavior:none 禁 document 橡皮筋；内层所有元素
-						// contain 切断滚动链（自身仍可滚、自身边界仍有原生回弹）。
-						"html[data-dash-native-sidebar], html[data-dash-native-sidebar] body { overflow: hidden !important; overscroll-behavior: none !important; }",
-						"html[data-dash-native-sidebar] body * { overscroll-behavior: contain !important; }",
-						// UI 文本不可选中（壳应用观感）：全局关掉 user-select，
-						// 输入类控件（composer 输入框等）恢复可选以便编辑。
-						"html[data-dash-native-sidebar] body { -webkit-user-select: none !important; user-select: none !important; }",
-						"html[data-dash-native-sidebar] input, html[data-dash-native-sidebar] textarea, html[data-dash-native-sidebar] [contenteditable] { -webkit-user-select: text !important; user-select: text !important; }",
-						// 对话历史必须可复制：放开会话消息流与右侧 details 内容区。
-						// _flowItem = ui-conversation 每条消息的容器（用户气泡/助手
-						// markdown/思考/错误行全在其子树内；user-select 的 auto 随父
-						// 生效，整棵子树一起放开）；_contentColumn = ui-trajectory 的
-						// 工具调用详情内容列；pre/code 兜底放开所有代码块。
-						'html[data-dash-native-sidebar] [class*="_flowItem"], html[data-dash-native-sidebar] [class*="_contentColumn"], html[data-dash-native-sidebar] pre, html[data-dash-native-sidebar] code { -webkit-user-select: text !important; user-select: text !important; }',
 						'html[data-dash-native-sidebar] [class*="_frame"] {',
 						"  margin-left: calc(-1 * var(--dash-sidebar-occupancy)) !important;",
 						"  width: calc(100% + var(--dash-sidebar-occupancy)) !important;",
@@ -375,22 +318,15 @@ window.__ModuleLoader__.load({
 						"  visibility: hidden !important;",
 						"  pointer-events: none !important;",
 						"}",
-					);
+					].join("\n");
+					document.head.appendChild(style);
 					try { document.documentElement.setAttribute("data-dash-native-sidebar", ""); } catch { /* 静默 */ }
-				}
-				style.textContent = rules.join("\n");
-				document.head.appendChild(style);
-				// 原生侧边栏模式的动态部分：强制收起 + rail 占位测量。
-				let cleanupCollapse = () => {};
-				let cleanupOccupancy = () => {};
-				if (native) {
 					cleanupCollapse = forceSidebarCollapsed(ctx);
 					cleanupOccupancy = trackSidebarOccupancy();
 				}
-				// A2：动作桥（与原生侧边栏模式无关，凡 Dash/ UA 即装）。
 				installBridge(ctx);
 				return () => {
-					style.remove();
+					style?.remove();
 					cleanupCollapse(); cleanupOccupancy();
 					try { document.documentElement.removeAttribute("data-dash-native-sidebar"); } catch { /* 静默 */ }
 					try { document.documentElement.style.removeProperty("--dash-sidebar-occupancy"); } catch { /* 静默 */ }
@@ -400,6 +336,9 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.apply = apply;
+		// 三个服务（sessions / workspaces / layout）全部走作用域 ctx.inject：
+		// 服务缺席时该能力静默缺失，插件本身照常挂载——顶层硬依赖会让任一服务
+		// 重载连带本插件卸载重挂，白白抖掉已装好的 window.__dash。
 		exports.inject = [];
 		return module.exports;
 	}

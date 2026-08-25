@@ -2,17 +2,22 @@
 	"name": "dash-layout",
 	"version": "0.1.0",
 	"private": true,
-	"description": "dash 的窗口布局插件：接管 root 槽（分栏 + WebView 排版 + sidebar 槽），并定义会话展示面协议",
+	"description": "dash 的窗口布局插件：Swift 半边接管 root 槽（分栏 + WebView 排版 + sidebar 槽）并定义会话展示面协议；client 半边装 window.__dash 动作桥并收起 web 侧边栏",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {
 		".": "./lib/index.js",
+		"./client": "./lib/client.js",
 		"./cordis.patch.yml": "./cordis.patch.yml",
 		"./package.json": "./package.json"
 	},
 	"dsh": {
 		"bundle": {
 			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web",
+			"inject": []
 		}
 	}
 }
