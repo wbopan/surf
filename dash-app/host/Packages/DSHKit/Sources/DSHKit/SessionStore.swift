@@ -126,6 +126,76 @@ public final class SessionStore: ObservableObject {
         }
     }
 
+    /// Fork a session at its last completed turn (`session.fork` with no
+    /// `atSeq`) and mirror the web's title bookkeeping: the child inherits the
+    /// source title with its trailing fork number incremented.
+    @discardableResult
+    public func forkSession(id: String) async throws -> String {
+        let sid = DSHDecode.normalizeSessionId(id)
+        let sourceTitle = sessionsById[sid]?.title
+        let value = try await call("session.fork", ["sessionId": sid])
+        guard let childId = DSHDecode.sessionId(fromValue: value) else {
+            throw DSHWireError.badEnvelope
+        }
+        if let sourceTitle, !sourceTitle.isEmpty {
+            // Best-effort: a failed rename must not cost the user the fork.
+            _ = try? await call("session.rename", ["sessionId": childId,
+                                                   "title": Self.increasedForkTitle(sourceTitle)])
+        }
+        scheduleRefetch(immediate: true)
+        return childId
+    }
+
+    /// Increment a trailing fork number, preserving half-width or full-width
+    /// parentheses; an unnumbered title starts at ` (1)`. Mirrors the web
+    /// runtime's `increasedForkTitle` so both surfaces name forks alike
+    /// (ASCII digits only — same as the upstream regex's `\d`).
+    nonisolated static func increasedForkTitle(_ title: String) -> String {
+        for (open, close) in [("(", ")"), ("（", "）")] {
+            guard title.hasSuffix(close) else { continue }
+            let body = title.dropLast()
+            guard let openIndex = body.lastIndex(of: Character(open)) else { continue }
+            let digits = body[body.index(after: openIndex)...]
+            guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let n = Int(digits) else { continue }
+            return String(body[..<openIndex]) + open + String(n + 1) + close
+        }
+        return title + " (1)"
+    }
+
+    // MARK: - Workspace mutations
+    //
+    // The three registry writes the web sidebar offers. All of them echo the
+    // mutated row, but the mirror stays honest by refetching: `workspace.list`
+    // is the only place session membership and display order agree.
+
+    /// Adopt an existing host directory as a workspace (`workspace.create`).
+    /// Picking an already-adopted directory is not an error — the host echoes
+    /// the existing row with `created: false`.
+    @discardableResult
+    public func createWorkspace(path: String) async throws -> Workspace {
+        let value = try await call("workspace.create", ["path": path])
+        scheduleRefetch(immediate: true)
+        guard let workspace = DSHDecode.workspace(fromValue: value) else {
+            throw DSHWireError.badEnvelope
+        }
+        return workspace
+    }
+
+    /// Rename a workspace (`workspace.rename`). The host rejects a blank title.
+    public func renameWorkspace(id: String, title: String) async throws {
+        _ = try await call("workspace.rename", ["workspaceId": id, "title": title])
+        scheduleRefetch(immediate: true)
+    }
+
+    /// Drop a workspace from the registry (`workspace.delete`). Non-destructive
+    /// — the directory and every session log survive; the workspace's sessions
+    /// resurface in the ungrouped bucket.
+    public func deleteWorkspace(id: String) async throws {
+        _ = try await call("workspace.delete", ["workspaceId": id])
+        scheduleRefetch(immediate: true)
+    }
+
     // MARK: - Fetching
 
     private func refreshAll() async {

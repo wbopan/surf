@@ -96,6 +96,17 @@ public enum DSHDecode {
         return raw.compactMap { $0 as? String }.map(normalizeSessionId)
     }
 
+    /// Decode the `value` of the workspace mutations that echo one row
+    /// (`workspace.create` → `{"workspace":{...},"created":bool}`,
+    /// `workspace.rename` / `workspace.insertSessionBefore` → `{"workspace":{...}}`).
+    public static func workspace(fromValue data: Data) -> Workspace? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let row = obj["workspace"] as? [String: Any] else {
+            return nil
+        }
+        return rowToWorkspace(row)
+    }
+
     /// Decode the `value` of `session.create` (`{"sessionId": ...}`).
     public static func sessionId(fromValue data: Data) -> String? {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

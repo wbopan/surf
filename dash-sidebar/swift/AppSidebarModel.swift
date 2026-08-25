@@ -11,6 +11,8 @@ import Observation
 @MainActor
 final class AppSidebarModel: ObservableObject, SidebarModel {
     @Published var selectedSessionId: String?
+    /// 最近一次写操作的失败原因（视图弹 alert 后置 nil）。
+    @Published var actionError: String?
 
     private let store: SessionStore
     private let surface: DashConversationSurface
@@ -49,7 +51,9 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
             SidebarGroup(
                 id: group.id,
                 workspaceId: group.workspaceId,
-                title: group.title,
+                // 兜底组的标题在 DSHKit 里是英文常量 "Other"（数据层不该管文案）。
+                // 显示层收口成 web 同款的「未分组」。
+                title: group.workspaceId == nil ? "未分组" : group.title,
                 sessions: group.sessions.filter(visible).map(sessionRow)
             )
         }
@@ -74,14 +78,48 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
         surface.selectSession(id: sessionId)
     }
 
-    /// 归档（对齐 web：失败只记日志、列表不动）。store 收到归档集回包后
-    /// 即刻本地剔除该行，无确认弹窗。
+    /// 归档（对齐 web：无确认弹窗）。store 收到归档集回包后即刻本地剔除该行。
     func archive(sessionId: String) {
-        Task { [store, log] in
+        perform("归档会话") { [store] in try await store.archiveSession(id: sessionId) }
+    }
+
+    func renameSession(id: String, title: String) {
+        perform("重命名会话") { [store] in try await store.renameSession(id: id, title: title) }
+    }
+
+    /// 分叉后切到子会话——与 web 的 `fork(...).then(open)` 同序：先拿到 id，
+    /// 再走展示面，这样列表刷新到达之前高亮就已经在新行上。
+    func forkSession(id: String) {
+        perform("分叉会话") { [store, weak self] in
+            let childId = try await store.forkSession(id: id)
+            self?.activate(sessionId: childId)
+        }
+    }
+
+    func createWorkspace(path: String) {
+        perform("添加工作区") { [store] in try await store.createWorkspace(path: path) }
+    }
+
+    func renameWorkspace(id: String, title: String) {
+        perform("重命名工作区") { [store] in try await store.renameWorkspace(id: id, title: title) }
+    }
+
+    func deleteWorkspace(id: String) {
+        perform("删除工作区") { [store] in try await store.deleteWorkspace(id: id) }
+    }
+
+    /// 写操作统一收口：失败既进壳日志、也抬到 `actionError` 让视图弹一次 alert。
+    /// （web 多数写失败只进浏览器 console；原生用户看不到控制台，
+    /// 静默失败会让人以为动作生效了。）
+    private func perform(_ what: String,
+                         _ body: @escaping @MainActor () async throws -> Void) {
+        Task { [log] in
             do {
-                try await store.archiveSession(id: sessionId)
+                try await body()
             } catch {
-                log("归档会话 \(sessionId) 失败：\(error.localizedDescription)")
+                let reason = error.localizedDescription
+                log("\(what)失败：\(reason)")
+                actionError = "\(what)失败：\(reason)"
             }
         }
     }

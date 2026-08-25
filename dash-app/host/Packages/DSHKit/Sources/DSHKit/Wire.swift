@@ -10,6 +10,20 @@ public enum DSHWireError: Error, Equatable, Sendable {
     case server(code: String, message: String)
 }
 
+/// The server's own message is the only text worth showing a human (it carries
+/// e.g. the duplicate-workspace-name explanation); the transport-level cases
+/// stay terse and English — they are bugs, not user-facing conditions.
+extension DSHWireError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .httpStatus(let code): return "HTTP \(code)"
+        case .badEnvelope: return "Malformed server response"
+        case .rpcIdMismatch: return "Mismatched RPC id"
+        case .server(_, let message): return message
+        }
+    }
+}
+
 /// Pure wire-format helpers: request-body construction, envelope unwrapping,
 /// and event-frame decoding. No I/O — fully unit-testable.
 public enum DSHWire {

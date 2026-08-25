@@ -64,4 +64,19 @@ public protocol SidebarModel: ObservableObject {
     /// 归档会话（对齐 web 侧行菜单的 Archive：无确认、非破坏性，
     /// 归档集合回包后行从所有分组消失）。blank 行不提供。
     func archive(sessionId: String)
+    /// 重命名会话。标题由视图裁掉首尾空白后传入，空标题不会走到这里。
+    func renameSession(id: String, title: String)
+    /// 在最后一个完成回合处分叉会话，并切到新会话（对齐 web 的
+    /// `fork` + `open`，标题的分叉序号递增也在数据层复刻）。
+    func forkSession(id: String)
+    /// 把一个已存在的目录登记成工作区（`workspace.create`）。
+    func createWorkspace(path: String)
+    /// 重命名工作区。
+    func renameWorkspace(id: String, title: String)
+    /// 从工作区列表移除（`workspace.delete`）。非破坏性：目录与会话记录都留着，
+    /// 其会话回到「未分组」。视图负责先弹确认。
+    func deleteWorkspace(id: String)
+    /// 最近一次写操作的失败原因，供视图弹一次 alert；视图关掉时置 nil。
+    /// 原生这边没有控制台可看，静默失败等于骗人。
+    var actionError: String? { get set }
 }
