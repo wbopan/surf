@@ -42,6 +42,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 侧边栏首次显示的默认宽度（之后由 autosave 记忆）。
     static let sidebarDefaultWidth: CGFloat = 364
 
+    /// 主内容（WebView）最小宽度。窗口收窄时优先自动折叠 sidebar 保住它，
+    /// 折叠后窗口才不能更窄（minSize）。
+    static let contentMinWidth: CGFloat = 432
+
     /// 默认窗口大小（按屏幕可见区域收缩后应用，之后由 autosave 记忆）。
     static let defaultWindowSize = NSSize(width: 1200, height: 800)
 
@@ -72,6 +76,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private let splitViewController = NSSplitViewController()
     /// 侧边栏 split item（loadWebUI 时端口确定后才装配）。
     private var sidebarSplitItem: NSSplitViewItem?
+
+    /// 自动折叠标记：sidebar 因窗口收窄被我们折叠（而非用户手动收起），
+    /// 拉宽后自动恢复。
+    private var autoCollapsedSidebar = false
+
+    /// 折叠前记录的 sidebar 厚度，用于计算自动恢复的窗口宽度阈值。
+    private var sidebarVisibleThickness: CGFloat = MainWindowController.sidebarDefaultWidth
     /// 内容项：WKWebView 直接作为 VC 的 view（全出血，标题栏透明）。
     private lazy var webViewController: NSViewController = {
         let vc = NSViewController()
@@ -162,7 +173,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
-        win.minSize = NSSize(width: 720, height: 480)
+        // 最小宽度 = 主内容最小宽度（sidebar 已自动折叠的前提下）。
+        win.minSize = NSSize(width: Self.contentMinWidth, height: 480)
         win.backgroundColor = .windowBackgroundColor
         // 关窗只隐藏、不销毁窗口：harness 后台持续运行，点 Dock 图标可原样恢复页面。
         win.isReleasedWhenClosed = false
@@ -178,6 +190,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             win.center()
         }
         launchWindowFrame = win.frame
+    }
 
     private func setupContentView() {
         // NSSplitViewController 全权负责布局：侧边栏项在 loadWebUI 时端口
@@ -247,6 +260,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             if !sidebarHadArchive {
                 self.splitViewController.splitView
                     .setPosition(Self.sidebarDefaultWidth, ofDividerAt: 0)
+            }
+            // 恢复的窗口可能本来就太窄，立即应用一次自适应折叠判定。
+            if let win = self.window, let item = self.sidebarSplitItem {
+                self.windowDidResize(Notification(name: Notification.Name("layout"),
+                                                  object: win, userInfo: nil))
             }
         }
     }
@@ -713,6 +731,38 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     // MARK: - NSWindowDelegate
+
+    /// 折叠/展开 sidebar。必须走 NSSplitViewController.toggleSidebar(_:)：
+    /// 它内部带系统标准的滑入/滑出动画（工具栏按钮/⌘⌥S 同款）。
+    /// 直接赋值 isCollapsed 或包 NSAnimationContext 都不会触发该动画。
+    private func setSidebarCollapsed(_ collapsed: Bool) {
+        guard let item = sidebarSplitItem, item.isCollapsed != collapsed else { return }
+        splitViewController.toggleSidebar(nil)
+    }
+
+    /// 自适应 sidebar：窗口收窄、主内容宽度不够 contentMinWidth 时，
+    /// 优先自动折叠 sidebar（Web UI 同款设计）；拉宽到能同时容纳
+    /// sidebar（按折叠前厚度）+ 主内容最小宽度时自动恢复。
+    /// 用户手动收起的 sidebar（autoCollapsedSidebar = false）不会被恢复。
+    func windowDidResize(_ notification: Notification) {
+        guard let window, let item = sidebarSplitItem else { return }
+        let width = window.contentView?.bounds.width ?? 0
+        let divider = splitViewController.splitView.dividerThickness
+        if !item.isCollapsed {
+            let sidebarWidth = item.viewController.view.bounds.width
+            if width - sidebarWidth - divider < Self.contentMinWidth {
+                setSidebarCollapsed(true)
+                autoCollapsedSidebar = true
+            } else {
+                // 记录当前厚度，作为自动恢复的宽度阈值。
+                sidebarVisibleThickness = sidebarWidth
+            }
+        } else if autoCollapsedSidebar,
+                  width >= Self.contentMinWidth + sidebarVisibleThickness + divider {
+            setSidebarCollapsed(false)
+            autoCollapsedSidebar = false
+        }
+    }
 
     /// 窗口重新成为关键窗口时（首次显示、从 Dock 恢复、关掉设置窗口后），
     /// 若焦点没有落在更具体的控件上，就把键盘焦点还给 WebView——

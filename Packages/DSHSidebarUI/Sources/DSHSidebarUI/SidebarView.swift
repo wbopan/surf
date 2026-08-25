@@ -2,7 +2,7 @@ import SwiftUI
 
 // 原生侧边栏（阶段二·Mail 风格）：交给系统。
 // List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航；
-// 分组头自绘（无 chevron，点击图标/标题开合，折叠时 folder 变实心），
+// 分组头自绘（文件夹恒定实心，点击图标/标题开合，右缘 chevron 旋转表开合），
 // 宿主把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
 // 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 // 顶部操作按钮（收起侧边栏 / 新建会话）在宿主的 NSToolbar，不在本视图。
@@ -80,8 +80,9 @@ struct SessionRow: View {
     }
 }
 
-/// Workspace 分组头：文件夹图标 + 名称（整体可点开合，折叠时图标变实心）
-/// + hover 显示的 … 菜单。不用 DisclosureGroup——去掉 chevron。
+/// Workspace 分组头：文件夹图标（恒定描边）+ 标题（纯展示）
+/// + hover 显示的加号（新建会话）和右缘 chevron（唯一的开合开关，
+/// 点击展开/收起，展开时旋转 90°）。
 struct GroupHeader: View {
     let group: SidebarGroup
     let expanded: Bool
@@ -92,44 +93,56 @@ struct GroupHeader: View {
 
     @State private var hovering = false
 
+    /// 图标恒定描边（非 filled），开合状态只由 chevron 旋转表达。
     private var iconName: String {
-        if group.workspaceId == nil {
-            return expanded ? "tray" : "tray.fill"
-        }
-        return expanded ? "folder" : "folder.fill"
+        group.workspaceId == nil ? "tray" : "folder"
     }
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(action: onToggle) {
-                HStack(spacing: 6) {
-                    Image(systemName: iconName)
-                        .font(.system(size: 14))
-                        .foregroundStyle(containsCurrent ? AnyShapeStyle(Color.accentColor)
-                                                         : AnyShapeStyle(.secondary))
-                        .frame(width: 20, alignment: .leading)
-                    Text(group.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
+            // 图标 + 标题：纯展示（不再触发挥开/收起）。
+            HStack(spacing: 6) {
+                Image(systemName: iconName)
+                    .font(.system(size: 14))
+                    .foregroundStyle(containsCurrent ? AnyShapeStyle(Color.accentColor)
+                                                     : AnyShapeStyle(.secondary))
+                    .frame(width: 20, alignment: .leading)
+                Text(group.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .help(expanded ? "收起分组" : "展开分组")
+            .help(group.title)
             .accessibilityLabel(Text(group.title))
+            // hover 时加号出现在 chevron 左侧，占位固定避免标题跳动。
             Button {
                 surface.startSession(workspaceId: group.workspaceId)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("在此工作区新建会话")
+            .fixedSize()
+            .opacity(hovering ? 1 : 0)
+            // 右缘 chevron：唯一的开合开关（点击展开/收起），hover 才显示；
+            // 展开时旋转 90°（朝下）。固定槽位保证旋转/显隐不改变布局宽度。
+            Button(action: onToggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 20, alignment: .center)
+                    .contentShape(Rectangle())
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .animation(.easeInOut(duration: 0.15), value: expanded)
+            }
+            .buttonStyle(.plain)
+            .help(expanded ? "收起分组" : "展开分组")
+            .accessibilityLabel(Text(expanded ? "收起分组" : "展开分组"))
             .fixedSize()
             .opacity(hovering ? 1 : 0)
         }
@@ -204,22 +217,31 @@ public struct SidebarView<Model: SidebarModel>: View {
     public var body: some View {
         VStack(spacing: 0) {
             searchField
+            // 原生 List(selection:) 样式保留；分组头放 Section header——
+            // sidebar List 的 header 不是可选行，点击不会有任何高亮。
             List(selection: selection) {
                 ForEach(filteredGroups) { group in
-                    GroupHeader(group: group,
-                                expanded: isExpanded(group.id),
-                                containsCurrent: group.sessions.contains {
-                                    $0.id == model.selectedSessionId
-                                },
-                                onToggle: { toggleGroup(group.id) },
-                                surface: surface)
-                        .padding(.top, 4) // 组间呼吸
-                    if isExpanded(group.id) {
-                        ForEach(group.sessions) { session in
-                            SessionRow(session: session,
-                                       onArchive: { model.archive(sessionId: session.id) })
-                                .tag(session.id)
+                    Section {
+                        if isExpanded(group.id) {
+                            ForEach(group.sessions) { session in
+                                SessionRow(session: session,
+                                           onArchive: { model.archive(sessionId: session.id) })
+                                    .tag(session.id)
+                            }
                         }
+                    } header: {
+                        GroupHeader(group: group,
+                                    expanded: isExpanded(group.id),
+                                    containsCurrent: group.sessions.contains {
+                                        $0.id == model.selectedSessionId
+                                    },
+                                    onToggle: { toggleGroup(group.id) },
+                                    surface: surface)
+                            // Section header 默认占位高度偏窄，补回接近普通行的行高，
+                            // 让 hover 区域和 chevron/加号点击区不至于太挤。
+                            .padding(.vertical, 3)
+                            .frame(minHeight: 26)
+                            .padding(.top, 4) // 组间呼吸
                     }
                 }
             }
