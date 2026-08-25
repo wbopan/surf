@@ -25,6 +25,112 @@ dash（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
    `cubic-bezier(.32,.72,0,1)`，按下 80ms 跟手、松开 320ms 留余韵。悬停另加一层
    极轻的浮起投影。遵循 `prefers-reduced-motion`。
 
+4. **字体收到 macOS 原生度量**：控件 13px/18px、对话正文 15px/21px（dsh 原本
+   16px/28px，问题在行高不在字号）。见下节。
+
+### 字体：两个档位，别混为一谈
+
+**这一节的第一版是错的，错法值得记下来**：当时把 `NSFont.systemFontSize` = 13pt
+当成了正文字号，把整条对话列压到 13px。13pt 是 **chrome 度量**——菜单、工具栏、
+列表行、次级标签——不是阅读面度量。把它套到一列 700px 宽的长文上，等于把邮件
+正文调成菜单栏字号。
+
+两条实测反证：
+
+1. **macOS 27 的新 Siri App**（同一代系统里 Apple 自己的对话面）消息文字明显在
+   17pt 一档，远高于 systemFontSize。
+2. **System Settings 的档位实测**（本机 2x 截图逐像素量墨高，用同字串在已知 pt 下
+   渲染做标定）：
+
+   | | 墨高(2x 设备px) | 换算 |
+   |---|---|---|
+   | 侧栏项 / 行标签 / 右侧值 | 19–24 | **13pt** |
+   | 组标题「Energy Mode」 | 25（粗） | 13pt semibold |
+   | 说明文字 | 20 | **11pt** |
+
+   13pt 是**整个设置面板里最大的字**。对话列压到同一档，读起来就像在读设置页的
+   说明文字——这正是当时的观感反馈。
+
+所以现在是两个独立旋钮：
+
+| 旋钮 | 值 | 管什么 |
+|---|---|---|
+| `CONTROL` | 13px（`NSFont.systemFontSize`） | 工具调用行 / 时间戳 / 控件文字。壳的原生侧边栏就是这一档，两边才是同一套字。 |
+| `BODY` | 15px | 对话阅读列：markdown 全族、**用户气泡**、composer 输入框都跟它走。**改字号只动这一个数**，其余全部派生。 |
+
+**用户气泡跟 `BODY` 而不是 `CONTROL`**：它是对话内容，不是 chrome——和助手回复是同一场
+对话的两半，必须同号，否则自己说的话比对面说的小一档。dsh 给它硬编码 16px/24px 且不走
+token，内层 `_text` 是 `font: inherit`，所以只需把气泡本身从会话流兜底里摘出去、单独按
+`BODY` 给一条。
+
+### 行高：不是 1.23
+
+常说的"原生行高倍数 1.23"只对纯拉丁成立（SF 13pt → 16pt）。dsh 界面是中英混排，
+CoreText 一行取各 run 的最大行高，中文 run 落到 PingFang SC，它高得多。本机实测
+（`NSLayoutManager.defaultLineHeight`，macOS 26）：
+
+| 字号 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 20 | 22 | 26 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| SF | 13 | 15 | 16 | 17 | 18 | 18 | 20 | 23 | 26 | 30 |
+| PingFang SC | 16 | 17 | 18 | 20 | 21 | 22 | 24 | 28 | 30 | 37 |
+| **混排取大者** | **16** | **17** | **18** | **20** | **21** | **22** | **24** | **28** | **30** | **37** |
+
+照 1.23 做出来的中文会上下行碰字。插件里所有行高都查 `NATIVE_LINE_HEIGHT`，
+表里没有的字号直接抛异常，逼着补测而不是随手算个倍数。
+
+**dsh 原本 16px/28px 的问题从来不是字号，是行高**（倍数 1.75，而 16px 的原生行高
+是 22px）。这一层要做的是收行高，不是砍字号。
+
+**CSS px 与 AppKit pt 的等价性是逐像素验过的**：同一句中英混排，NSTextField 13pt
+与 WKWebView 13px 的汉字墨高都是 26 设备px（2x 屏），16pt/16px 都是 32。所以上面
+的 px 可以和 pt 直接对读。
+
+**层级靠字重和颜色，不靠字号跳变**（macOS headline 与 body 同号，只差 semibold）。
+所以 strong 一律 600（dsh 原本 500），markdown 标题走 `HEADINGS` 里 macOS 的语义
+阶梯（largeTitle 26 / title1 22 / title2 17 / title3 15）取正文之上的四档，
+h4 与正文同号只差字重。
+
+### 实现分三层
+
+| 层 | 做法 | 覆盖 | 风险 |
+|---|---|---|---|
+| **token 重映射** | 改 dsh 自己的 30 个 `--dsw-font-*`，写在 `html body`（0,0,2）稳压 dsh 的 `body`（0,0,1） | markdown 全族 + 所有走 token 的控件文字 | 不碰类名、不打 `!important`、深浅主题自动跟随 |
+| **会话流兜底** | `[class*="_flowItem"]` 子树内、`_markdown` 子树外，钉 `CONTROL` | 工具调用摘要行 / 文件名 / 时间戳（占会话流可见文字 62%） | 见下 |
+| **三处点修** | 行内 `code` 钉 `BODY-2`；用户气泡与 composer 卡片钉 `BODY` | — | 气泡和 composer 是仅有的两处越过「控件区不动」的地方，理由都是「同一场对话必须同号」 |
+
+**为什么方案「`html { font-size }` 全局等比缩放」不成立**：dsh 全站零 rem
+（65KB 静态 CSS + 45 个插件内联 CSS 里 `rem` 出现 **0** 次、`px` 3069 次）。那行
+仍然写着（值为 `CONTROL`），但它只是兜底——只影响「自己没声明 font-size、靠继承
+吃基准值」的元素。
+
+**为什么会话流那层用容器作用域而不是类名白名单**：硬编码字号有 309 条规则、61 个
+不同语义后缀，而且后缀互相打架——`_title` 在 12/13/14/15/16px 五档里都出现，
+`_input`、`_label`、`_item` 同样跨档，按后缀白名单必然误伤。改用结构事实：这批
+文字全在 `_flowItem` 里、全在 `_markdown` 外（实测该范围 129 个带文字元素里 126 个
+是 14px/24px，其余 2 个 16px/24px + 1 个隐藏节点）。
+
+已知失效方向：dsh 若在会话流里新增一种 10~12px 的小标签，会被顶到 `CONTROL`
+（变大，不是变乱）；发现了往 `FLOW_EXCLUDED` 加一条。轨迹面（`_contentColumn`）
+整个不走 token 也不在 `_flowItem` 里，**完全不受影响**，仍是 dsh 原度量。
+
+**颜色一律走 dsh 的 alias，别自己编 token 名**。本插件只引用这六个，都在 dsh 的 78 个
+`--dsw-alias-*` 里核对过存在、且深浅主题都翻面：
+
+| token | 浅色 | 深色 |
+|---|---|---|
+| `--dsw-font-family` | `-apple-system, …` | 同 |
+| `--ds-font-family-code` | `"SF Mono", …` | 同（注意是 `--ds-` 前缀，不是 `--dsw-`） |
+
+**教训**（来自一个临时调参面板，那东西已经拆了，教训留着）：曾写过
+`--dsw-alias-bg-elevated` 和 `--dsw-alias-bg-primary`，这两个 dsh 根本没有——CSS
+变量不存在时**静默走 fallback，不报错**，所以浅色下看着完全正常、只有深色主题才
+暴露。加 token 前先在页面控制台核一次：
+`getComputedStyle(document.body).getPropertyValue('--dsw-alias-xxx')`。核实存在之后
+**不要留 fallback**，留着只会把将来的改名继续掩盖过去。
+
+**别动字体栈**：`--dsw-font-family` 第一位已经是 `-apple-system`，这是对的。写死
+`"SF Pro Text"` 反而丢掉系统的光学尺寸切换和动态字距。
+
 ### 按钮效果只给「实体按钮」
 
 **判据：normal 态自己画了背景色或边框的才算按钮**，全透明的只是「可点的图标」。
@@ -141,5 +247,11 @@ npx pnpm add link:~/.dsh/profiles/plugins/dash-nativeify
   CSS module 语义类名后缀（hash 会变、后缀通常稳定）。升级 dsh 后若对话历史突然
   不能复制，先核对 `@deepseek-ai/dsh-client-ui-conversation` / `-ui-trajectory` 的类名。
 - `overflow:hidden` 强加于 html/body：与全屏/滚动类未来特性可能冲突。
+- 字体那层依赖 dsh 的 `--dsw-font-*` token 名（30 个）。dsh 改名 = 那个 token 悄悄
+  退回原值（**变回原样，不会变乱**）。核对办法：页面控制台跑
+  `getComputedStyle(document.body).getPropertyValue('--dsw-font-markdown-base')`，
+  应当是 `15px/21px ...`（即 `BODY`/`lh(BODY)`）。另：dsh 目前只引用 token 的
+  `font` 简写、五个长手零引用，
+  插件两者都写，就是防它哪天改用长手时一半新一半旧地分裂。
 - 完整网页模式（逃生舱）下红绿灯会压在网页侧边栏顶部——**这是刻意接受的**：
   逃生舱的定位是「dash-layout 挂了也还能用」的降级路径，不为它做外观修补。

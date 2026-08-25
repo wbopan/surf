@@ -3,7 +3,9 @@
  *
  * **职责边界**：只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事，
  * 全部实现是注入一段 CSS，零服务依赖、零跨插件契约：禁掉 document 橡皮筋、
- * UI 文本不可选中（输入框与会话消息流除外）、实体按钮的按压手感。
+ * UI 文本不可选中（输入框与会话消息流除外）、实体按钮的按压手感、
+ * 字体收到 macOS 原生度量（两个旋钮：CONTROL 管控件、BODY 管对话阅读列，
+ * 见下面「原生字体度量」的实测表）。
  *
  * **不在这里的**：
  * - `window.__dash` 动作桥、收起 web 侧边栏、rail 轨道抵消——那些是原生分栏
@@ -87,6 +89,229 @@ window.__ModuleLoader__.load({
 		const solidHover = join(ENABLED + ":hover");
 		const solidActive = join(ENABLED + ":active");
 		const solidActiveSvg = join(ENABLED + ":active svg");
+
+		/**
+		 * ===== 原生字体度量：两个旋钮 =====
+		 *
+		 * **数据是本机实测的，不是查来的**：`NSFont` + `NSLayoutManager.defaultLineHeight`，
+		 * macOS 26。CSS px 与 AppKit pt 的等价性也是逐像素验过的——同一句中英混排，
+		 * NSTextField 13pt 与 WKWebView 13px 的汉字墨高都是 26 设备 px（2x 屏），
+		 * 16pt/16px 都是 32。所以下面的 px 可以和 pt 直接对读。
+		 *
+		 * 实测行高表（中英混排：CoreText 一行取各 run 的最大行高，中文 run 回退到
+		 * PingFang SC，它比 SF 高得多——**所以常说的"原生行高倍数 1.23"对这个界面是
+		 * 错的**，那只对纯拉丁成立）：
+		 *
+		 *   字号 | 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26
+		 *   SF   | 12 13 15 16 17 18 18 20 21 22 23 24 26 27 28 29 30
+		 *   PF   | 14 16 17 18 20 21 22 24 25 26 28 29 30 32 33 36 37
+		 *   混排 | 14 16 17 18 20 21 22 24 25 26 28 29 30 32 33 36 37  ← NATIVE_LINE_HEIGHT
+		 *
+		 * ---
+		 *
+		 * **两个档位，别混为一谈**（第一版就是栽在这里）：
+		 *
+		 * `CONTROL = 13` —— `NSFont.systemFontSize`。菜单、工具栏、列表行、次级标签。
+		 *   壳的原生侧边栏就是这一档，所以工具调用行/时间戳跟着它，两边才是同一套字。
+		 *
+		 * `BODY` —— 对话阅读列。**这里不是 systemFontSize，差得还很远。**
+		 *   13pt 是 chrome 度量，不是阅读面度量；把它套到一列 700px 宽的长文上，
+		 *   等于把邮件正文调成菜单栏字号。对照 macOS 27 的新 Siri App——同一代系统里
+		 *   Apple 自己的对话面——消息文字明显在 17pt 一档，远高于 systemFontSize。
+		 *   dsh 原本的 16px 其实离 Apple 的对话面不远，真正离谱的是它 28px 的行高
+		 *   （1.75；16px 的原生行高是 22px）。所以这一层要做的是**收行高、不是砍字号**。
+		 *
+		 * 改字号只动 BODY 一个数，其余全部派生。
+		 */
+		const NATIVE_LINE_HEIGHT = {
+			8: 11, 9: 13, 10: 14, 11: 16, 12: 17, 13: 18, 14: 20, 15: 21,
+			16: 22, 17: 24, 18: 25, 19: 26, 20: 28, 21: 29, 22: 30, 23: 32,
+			24: 33, 25: 36, 26: 37, 27: 38, 28: 40,
+		};
+		/** 取原生行高；表里没有的字号直接抛，逼着补测而不是随手算个倍数。 */
+		const lh = (size) => {
+			const v = NATIVE_LINE_HEIGHT[size];
+			if (!v) throw new Error(`dash-nativeify: ${size}px 没有实测行高，先补测再用`);
+			return v;
+		};
+
+		const CONTROL = 13;   // NSFont.systemFontSize：控件 / 工具调用行 / 次级标签
+		const BODY = 15;      // 对话阅读列。改字号只动这一个数，其余全部派生。
+
+		/**
+		 * 标题阶梯 h1~h4。走 macOS 的语义档（largeTitle 26 / title1 22 / title2 17 /
+		 * title3 15），取正文之上的四档；**h4 与正文同号、只差字重**——macOS 的层级
+		 * 靠字重和颜色分，不靠字号跳变，这是原生做法。
+		 * BODY 换档时这四个数要一起看，所以写在一起。
+		 */
+		const HEADINGS = BODY >= 16 ? [26, 22, 20, BODY] : [20, 17, 15, BODY];
+
+		const NATIVE_FONT_FAMILY = "var(--dsw-font-family)";   // 别动：第一位已是 -apple-system
+		const NATIVE_MONO_FAMILY = "var(--ds-font-family-code)";
+
+		/**
+		 * dsh 的 `--dsw-font-*` token → 原生度量。
+		 *
+		 * **为什么改 token 而不是改选择器**：dsh 全站零 rem（65KB 静态 CSS + 45 个插件
+		 * 内联 CSS，`rem` 出现 0 次、`px` 3069 次），所以 `html { font-size }` 那种全局
+		 * 等比缩放根本不成立。但 dsh 自己有一套完整的排版 token，其中 markdown 那一族
+		 * 是高杠杆的——`._markdown` 一处声明就覆盖整个助手回复正文，h1~h4 / code /
+		 * table 各一处。改 token 等于在 dsh 自己的语义层里说话：不碰任何类名、不打
+		 * `!important`、深浅主题自动跟随、dsh 升级换 hash 也不受影响。
+		 *
+		 * 覆盖率诚实说：全站 309 条规则里只有 68 处用 token，其余是硬编码 px。硬编码
+		 * 那部分见下面 FLOW_SCOPE 的注释。
+		 *
+		 * 每项 = [token 名, 字号, 字重(0=不指定即400), 斜体?, 字族]；行高一律查表。
+		 */
+		const TYPE_TOKENS = [
+			// —— markdown 正文族：`._markdown` 及其子元素，助手回复的全部文字 ——
+			//    字号维持在阅读档，收的是行高（dsh 16/28 → 17/24，倍数 1.75 → 1.41）。
+			["markdown-base",                 BODY,       0, 0, NATIVE_FONT_FAMILY],
+			["markdown-base-strong",          BODY,     600, 0, NATIVE_FONT_FAMILY],
+			["markdown-base-italic",          BODY,       0, 1, NATIVE_FONT_FAMILY],
+			["markdown-base-strong-italic",   BODY,     600, 1, NATIVE_FONT_FAMILY],
+			//    次级正文降两档（dsh 自己也是 base 之下一档）。
+			["markdown-small",                BODY - 2,   0, 0, NATIVE_FONT_FAMILY],
+			["markdown-small-strong",         BODY - 2, 600, 0, NATIVE_FONT_FAMILY],
+			["markdown-small-italic",         BODY - 2,   0, 1, NATIVE_FONT_FAMILY],
+			["markdown-small-strong-italic",  BODY - 2, 600, 1, NATIVE_FONT_FAMILY],
+			//    标题：见 HEADINGS。字重统一 600（macOS semibold），不是 dsh 的 700。
+			["markdown-h1",                   HEADINGS[0], 600, 0, NATIVE_FONT_FAMILY],
+			["markdown-h2",                   HEADINGS[1], 600, 0, NATIVE_FONT_FAMILY],
+			["markdown-h3",                   HEADINGS[2], 600, 0, NATIVE_FONT_FAMILY],
+			["markdown-h4",                   HEADINGS[3], 600, 0, NATIVE_FONT_FAMILY],
+			//    等宽比正文小两档：等宽的 x-height 更大，同号会显得胖，这是原生惯例。
+			["markdown-code",                 BODY - 2,   0, 0, NATIVE_MONO_FAMILY],
+			["markdown-code-block",           BODY - 3,   0, 0, NATIVE_MONO_FAMILY],
+			["markdown-code-block-small",     BODY - 4,   0, 0, NATIVE_MONO_FAMILY],
+			["markdown-table",                BODY - 2,   0, 0, NATIVE_FONT_FAMILY],
+			["markdown-table-head",           BODY - 2, 600, 0, NATIVE_FONT_FAMILY],
+			// —— 通用 UI 族：token 名里的数字是 dsh 的原字号，别照着念 ——
+			//    base-16 / s-14 / xs-13 三档全部收到 CONTROL：原生窗口里它们本来就该是
+			//    同一档（systemFontSize），dsh 分三档纯属网页习惯。
+			["base-16",                       CONTROL,     0, 0, NATIVE_FONT_FAMILY],
+			["base-strong-16",                CONTROL,   600, 0, NATIVE_FONT_FAMILY],
+			["s-14",                          CONTROL,     0, 0, NATIVE_FONT_FAMILY],
+			["s-strong-14",                   CONTROL,   600, 0, NATIVE_FONT_FAMILY],
+			["xs-13",                         CONTROL,     0, 0, NATIVE_FONT_FAMILY],
+			["xs-strong-13",                  CONTROL,   600, 0, NATIVE_FONT_FAMILY],
+			//    小字两档已经踩在 macOS 的 callout(12) / small(11) 上，只收行高。
+			["xxs-12",                        12,          0, 0, NATIVE_FONT_FAMILY],
+			["xxs-strong-12",                 12,        600, 0, NATIVE_FONT_FAMILY],
+			["xxxs-11",                       11,          0, 0, NATIVE_FONT_FAMILY],
+			["xxxs-strong-11",                11,        600, 0, NATIVE_FONT_FAMILY],
+			//    大字三档 → title3 / title2 / title1。
+			["m-18",                          15,        600, 0, NATIVE_FONT_FAMILY],
+			["l-20",                          17,        600, 0, NATIVE_FONT_FAMILY],
+			["xl-24",                         22,        600, 0, NATIVE_FONT_FAMILY],
+		];
+
+		/**
+		 * 展开成 CSS 声明。dsh 每个 token 都有一个 `font` 简写和五个长手
+		 * （`-font-size` / `-line-height` / `-font-weight` / `-font-style` / `-font-family`）。
+		 * 实测 dsh 当前**只引用简写、长手零引用**，但两者失配是颗定时炸弹——dsh 哪天
+		 * 改用长手就会一半新一半旧地分裂——所以六个一起写，成本只是几 KB。
+		 */
+		const typeTokenDecls = TYPE_TOKENS.flatMap(([name, size, weight, italic, family]) => {
+			const lineHeight = lh(size);
+			const shorthand = [
+				italic ? "italic" : "",
+				weight || "",
+				`${size}px/${lineHeight}px`,
+				family,
+			].filter(Boolean).join(" ");
+			return [
+				`  --dsw-font-${name}: ${shorthand};`,
+				`  --dsw-font-${name}-font-size: ${size}px;`,
+				`  --dsw-font-${name}-line-height: ${lineHeight}px;`,
+				`  --dsw-font-${name}-font-weight: ${weight || 400};`,
+				`  --dsw-font-${name}-font-style: ${italic ? "italic" : "normal"};`,
+				`  --dsw-font-${name}-font-family: ${family};`,
+			];
+		});
+
+		/**
+		 * 会话流里**不走 token** 的那批文字。
+		 *
+		 * dsh 的工具调用摘要行、文件名、时间戳、错误行……字号是硬编码的
+		 * `font-size:14px; line-height:24px`，token 够不着。实测这一族占会话流可见
+		 * 文字的 62%——正文改到 13px 之后，它们反而比正文还大，层级整个是反的
+		 * （macOS 里次级标签只会更小或同号，绝不会更大）。
+		 *
+		 * **为什么用容器作用域而不是类名白名单**：这批规则有 309 条、61 个不同的语义
+		 * 后缀，而且后缀互相打架——`_title` 在 12/13/14/15/16px 五档里都出现过，
+		 * `_input`、`_label`、`_item` 同样跨档。按后缀白名单必然误伤。改用结构事实：
+		 * **它们全都住在 `_flowItem` 子树里、且全都在 `_markdown` 子树之外**（实测：
+		 * 该范围内 129 个带文字的元素，126 个是 14px/24px，另外 2 个 16px/24px、
+		 * 1 个是屏幕阅读器的隐藏节点——没有更小的字号会被这条规则放大）。
+		 *
+		 * 已知失效方向：dsh 若在会话流里新增一种 10~12px 的小标签（badge、tag 之类），
+		 * 会被这条规则顶到 13px（变大，而不是变乱）。发现了就往 EXCLUDED 里加一条。
+		 */
+		const FLOW_SCOPE = '[class*="_flowItem"]';
+		const FLOW_EXCLUDED = [
+			'[class*="_markdown"]',    // markdown 子树自己走 token，别重复接管
+			'[class*="_markdown"] *',
+			// 用户气泡是**对话内容**，不是 chrome——它和助手回复是同一场对话的两半，
+			// 必须同号，否则自己说的话比对面说的小一档。dsh 给它 16px/24px 且不走
+			// token（内层 `_text` 是 `font: inherit`），所以从这条兜底里摘出去，
+			// 由下面 fontRules 里那条单独按 BODY 给。
+			'[class*="_bubble"]',
+			'[class*="_bubble"] *',
+			"pre", "pre *", "code", "code *",   // 代码块的行高是它自己的事
+			"svg", "svg *",            // 图标内部有按 em 定尺的几何，别碰
+		].join(", ");
+
+		/** 字体那一层的全部 CSS。两个旋钮见上面的 CONTROL / BODY。 */
+		const fontRules = [
+				// ===== 字体原生化（macOS 度量）=====
+				//
+				// 度量表、两个旋钮（CONTROL / BODY）与取值理由见文件头。
+				//
+				// 基准。dsh 没给 html reset 过 font-size，浏览器默认 16px；改成 CONTROL
+				// = NSFont.systemFontSize。因为 dsh 全站零 rem，这一行**只影响"自己没
+				// 声明 font-size、靠继承吃基准值"的元素**，不会等比缩放任何东西——
+				// 它的作用是兜底，让 dsh 漏设字号的地方落在原生档位而不是 16px。
+				`html { font-size: ${CONTROL}px; }`,
+
+				// token 重映射。dsh 把 --dsw-font-* 定义在 `body` 上（特异性 0,0,1），
+				// 这里写 `html body`（0,0,2）稳压一头——**刻意不靠源顺序取胜**：
+				// dsh 的 UI 插件是运行时逐个注入 <style> 的，谁先谁后不受本插件控制。
+				"html body {",
+				...typeTokenDecls,
+				"}",
+
+				// 行内代码。dsh 写的是 `._markdown :not(pre) > code { font-size:.875em !important }`，
+				// 相对定尺，落在正文的 0.875 倍上——会得到 14.875px 这种次像素值。钉成
+				// 整数并与 markdown-code token 对齐。要盖过对方的 !important 就得拼
+				// 特异性：对方 (0,1,2)，这里 `html body [class*=] :not(pre) > code` 是 (0,1,4)。
+				`html body [class*="_markdown"] :not(pre) > code { font-size: ${BODY - 2}px !important; }`,
+
+				// 会话流里不走 token 的硬编码文字（工具调用摘要行、文件名、时间戳……）。
+				// 作用域与失效方向见文件头 FLOW_SCOPE 的注释。只写 font-size + line-height
+				// 两条长手，**不用 `font` 简写**——简写会把 font-weight 一起重置成
+				// normal，把这批标签里本来加粗的那些拍平。
+				"html body " + FLOW_SCOPE + " :not(" + FLOW_EXCLUDED + ") {",
+				`  font-size: ${CONTROL}px;`,
+				`  line-height: ${lh(CONTROL)}px;`,
+				"}",
+
+				// 用户气泡。dsh 硬编码 16px/24px、不走 token，内层 `_text` 是 `font: inherit`
+				// 所以只设气泡本身就够。跟 BODY 走的理由同 composer：你说的话和对面说的话
+				// 是同一场对话，必须同号。
+				`html body [class*="_bubble"] { font-size: ${BODY}px; line-height: ${lh(BODY)}px; }`,
+
+				// composer 输入卡片。dsh 硬编码 16px/24px，卡片内的 textarea 走
+				// `font: inherit` 跟着它。这是**唯一一处越过"控件区不动"边界的规则**，
+				// 理由是它非动不可：你敲进去的字和发出来渲染的字必须同号，否则同一段
+				// 文本在同一个窗口里两个字号，比不改更不像原生。所以它跟 BODY 走，
+				// 不跟 CONTROL 走。
+				// `:has(textarea)` 把「卡片」收窄到「装着输入框的那张卡片」——`_card`
+				// 这个后缀太泛，光靠它会误伤设置页里的卡片。
+				`html body [class*="_card"]:has(textarea) { font-size: ${BODY}px; line-height: ${lh(BODY)}px; }`,
+		];
+
 		function insideDash() {
 			try {
 				return navigator.userAgent.includes("Dash/");
@@ -284,6 +509,8 @@ window.__ModuleLoader__.load({
 					"@media (prefers-reduced-motion: reduce) {",
 					"  " + solidActive + ", " + solidActiveSvg + " { scale: 1 !important; }",
 					"}",
+
+					...fontRules,
 				];
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
