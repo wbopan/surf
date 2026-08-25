@@ -4,4 +4,4 @@
 # unconditionally is harmless).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-date "+%Y-%m-%d %H:%M:%S" > DSHarness/Resources/BuildTimestamp.txt
+date "+%Y-%m-%d %H:%M:%S" > Sources/Resources/BuildTimestamp.txt

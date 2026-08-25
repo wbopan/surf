@@ -6,13 +6,13 @@ xcuserdata/
 *.xcuserstate
 
 # 构建时间戳（prebuild 脚本每次生成，入库只会让工作区永远脏）
-DSHarness/Resources/BuildTimestamp.txt
+dash-app/host/Sources/Resources/BuildTimestamp.txt
 
 # 本地构建工具（从 GitHub Releases 下载，见 README）
 tools/
 
-# 插件 host 依赖解析：指向 app harness 安装的 @deepseek-ai symlink（机器相关，勿入库）
-plugins/node_modules/
+# 插件依赖解析：指向 harness @deepseek-ai 的本地 symlink（机器相关，勿入库）
+node_modules/
 
 # firecrawl 抓取的本地调研残留
 .firecrawl/
