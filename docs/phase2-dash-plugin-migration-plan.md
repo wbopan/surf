@@ -324,6 +324,10 @@ Cordis 依赖解析由此保证:layout 未挂好 sidebar 不挂载、layout 替�
      与 `dsh-client-hmr` 同款、纯 polling、无 watcher 依赖。内容 hash 变化 → 登记表版本(全表 hash)bump → 广播 `changed{version}`。
   4. 读路径(pull 模型,桥对客户端零状态):`snapshot` 请求 → 按拓扑序(由各插件 inject/swiftDeps 排序)返回
      `[{plugin, files:{path:content}, deps, contentHash, schemaVersion}]` + 总版本号。
+     **级联重编是硬约束**(M2 断言 6 实测,见 `docs/native-abi.md` §4):上游 `contentHash` 变化时,
+     所有传递依赖它的下游插件必须一并重编重装载——否则下游**不崩、不报错**,只是静默绑在旧代
+     (旧 dylib 按设计不 dlclose,仍在内存),两个插件对世界的认知分裂而 UI 上毫无征兆。
+     因此新鲜度判断必须沿依赖边传播,不能按插件独立计算。
   5. 写路径(上行信封 `{clientId, plugin, channel, payload}`):`compile-result`(成功/失败+日志,供诊断与 agent 迭代)、
      expose 动作转发、审批应答、`restart-dsh` 请求(转 `appExit`)。多客户端各自带 clientId;**单 active seat**语义后置(M9 只留字段)。
 - **不往 session 写任何自定义事件**(§0.5-6)。
@@ -376,8 +380,12 @@ xcrun swiftc \
 ```
 
 - 插件间顺序 = Cordis inject 拓扑序(桥已排好);插件内无序。
-- 加载:按拓扑序先 `dlopen` 依赖再 `dlopen` 消费者;`dlsym("dash_plugin_entry")` → activate。
-- 依赖 dylib 定位:`-L` + install_name/`@rpath` 细节 M2 spike 定(备选:显式绝对路径 install_name_tool)。
+- 加载:`dlopen(path, RTLD_NOW | RTLD_LOCAL)` → `dlsym(image, "dash_plugin_entry")` → activate。
+  **`RTLD_LOCAL` + 按 image handle 取符号是必需的**——每个插件都导出同名 entry。
+- **拓扑序不是 dlopen 的要求**(M2 实测):`install_name = @rpath/lib<M>.dylib` + 消费者带
+  `-rpath`,dyld 会自动把依赖带起来(只 dlopen 下游、完全不碰上游也能跑)。拓扑序真正约束的是
+  **编译顺序**与 **activate 顺序**。
+- 依赖 dylib 定位方案已定稿(同上),不需要 install_name_tool 后处理。
 
 ### 6.2 内容寻址缓存与产物布局
 
@@ -437,7 +445,8 @@ xcrun swiftc \
 - 窗口收窄自动折叠(未提交新功能):随布局迁入 layout 插件(它现在拥有分栏);壳里对应代码删除。
 - 门控与启动时序(壳与 layout 协作;反转后 app 被拉起时 dsh 必然已活,时序更短):
   t0 窗口 + boot 视图(桥连接/编译进度/诊断) → **立即后台预热 WebView**(endpoint 已知) →
-  snapshot 全部编译完成 **或** 超时(冷启动预算,建议 60s)/失败 → root 槽切换
+  snapshot 全部编译完成 **或** 超时(冷启动预算 **10s**——M2 实测 408 行 SwiftUI 插件
+  编译仅 1.03s,四插件全量 3–5s;原 60s 的估计高了一个数量级)/失败 → root 槽切换
   (有 layout=原生布局;无=fallback 全网页)。缓存命中的热启动此门控近乎零等待。
 
 ### 7.2 dash-sidebar
@@ -516,7 +525,7 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 |---|---|---|---|
 | M0 | 固化+搬家+改名(§2) | 新仓库根 `~/.dsh/profiles/plugins/`;dash 命名全换;dsh 全局安装 | dev.sh 全流程可跑;终端 `dsh web` 起得来;web-adapter 功能不变;旧 repo 退役 |
 | M1 | 启动反转(§3) | 壳退役 spawn 层;三级 endpoint 定位;dash-app v0(壳源码入插件,构建+拉起) | `dsh web` → 必要时构建 → app 自动弹出;dsh 未起双击 app → 引导页;dsh 重启 → app 自动恢复;功能等价 |
-| M2 | ABI spike(独立 scratch 工程) | `docs/native-abi.md`(入口签名/编译命令/已验证结论) | swiftc→dlopen→AnyView 上屏→改源重编换代→`.id` 重建→WKWebView 实例跨代不重载,全链跑通;失败则触发 Plan B 评审(SDUI 降级) |
+| M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ 16 条断言全通过,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
 | M3 | SDK 骨架(§4) | DashSDK module(dash-app/host 内)+ `dash-bridge/plugin` 工厂 | 壳内 registry/store/EventBus 单元可用;工厂能被样例插件 import(dash-* 互引解析定案) |
 | M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | 桥 WS/登记表/snapshot/changed/轮询;CompilerService/Loader/账本/缓存;hello 插件 | 改 hello 源码 → ≤5s 界面更新不重启;编译失败可见不崩;重启缓存命中秒载 |
 | M5 | dash-layout 接管 root | layout 插件;壳收缩布局代码;门控/预热/fallback | disable dash-layout → 完整网页模式(网页 sidebar 回归);enable → 原生布局;页面在插件换代时不重载 |
@@ -534,9 +543,10 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 ## 10. 风险与开放问题
 
-1. **R1 SwiftUI 跨 dylib ABI**(概率低、影响大):AnyView/Observation 跨 image 的元数据实例化理论可行
-   (Swift runtime 是共享系统库),但必须 M2 实测本机 OS/toolchain。Plan B:该插件形态降级为 server-driven
-   JSON 模板(壳内通用渲染器)——表达力受限,但桥/登记表/热循环全部复用。
+1. ~~**R1 SwiftUI 跨 dylib ABI**~~ **已解除**(2026-08-25 M2 实测,macOS 27.0 / Swift 6.4):
+   SwiftUI View + `@Observable` 跨 dylib 渲染、交互、换代、WKWebView 实例跨代复用全部成立,
+   16 条断言无一失败。Plan B(SDUI 降级)不启用。**再次出现风险的触发条件是升级 Xcode/macOS**——
+   届时重跑 `docs/spikes/m2-abi/`(一条命令)即可复验。
 2. **R2 dsh preview 破坏**:全局安装钉 `0.1.1-rc.2`;桥/TS 半身对内部服务一律 `ctx.get` 防御;
    升级 dsh 前跑冒烟清单(§9-M8 回归表)。注意反转后失去 HarnessManager 的 N-1 目录回滚,
    回滚=`npm i -g` 装回旧版(npm cache 命中,分钟级),可接受。
@@ -547,8 +557,9 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 5. **R5 WKWebView 跨代细节**:navigationDelegate/uiDelegate 是插件对象(weak,旧代释放后自动 nil)——
    新世代 activate 时必须重设;进程池/inspectable 等配置归壳。写进 SDK 纪律。
 6. **R6 搬家断裂**:profile 布线校验(`dsh plugin list`);留一次性回滚指引(mv 回原路径 + 恢复 link)。
-7. **R7 编译时延**:冷启动首编串行可 >30s——boot 视图必须有 per-plugin 进度;缓存命中路径保证热启动无感;
-   并行编译(拓扑同层并发)后置优化。
+7. ~~**R7 编译时延**~~ **不成立**(M2 实测):真实 DSHSidebarUI 体量(408 行 SwiftUI)编译 1.03s,
+   四插件全量冷编译 3–5s。boot 视图的 per-plugin 进度仍值得做(诊断价值),但它不再是可用性前提;
+   并行编译优先级进一步下调。内容寻址缓存(§6.2)的价值转为"重连不重编",非启动可用性依赖。
 8. **R8 事件名/服务名假设**:§7.3 的宿主事件名、§1.6 服务语义在实现时以源码复核为准,本文标注"候选"处皆是。
 9. **R9 会话日志污染**:重申 §0.5-6——桥与插件永不 append 自定义 session event(0.1.1-rc.2 硬坑)。
 10. **R10 反转后的运维语义**:dsh 生命周期归用户终端(退出=app 变引导页);⌘⇧R 依赖外层重启机制;
@@ -574,4 +585,5 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 | 日期 | 里程碑 | commit | 备注(与计划的偏差、更新了文档哪节) |
 |---|---|---|---|
+| 2026-08-25 | M2 | `bce3204` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。16 条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|

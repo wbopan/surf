@@ -27,3 +27,6 @@ node_modules/
 .build/
 .swiftpm/
 skills/
+
+# spike 产物（dylib/截图，可由 build.sh 重生成）
+docs/spikes/*/out/
