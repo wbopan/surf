@@ -63,8 +63,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private var probeInFlight = false
     private let connectPollInterval: TimeInterval = 2
 
-    private var eventsBridge: EventsBridge?
-
     /// 原生插件宿主：桥 ↔ 编译机 ↔ 装载器 ↔ registry。壳对插件世界的全部认知都在它那儿。
     let nativeHost = NativePluginHost()
 
@@ -278,7 +276,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private func enterRunning() {
         hideBootstrap()
         loadWebUI()
-        startEventsBridge()
         if let endpoint {
             nativeHost.connect(baseURL: endpoint.httpBase, bridgePath: endpoint.bridgePath)
         }
@@ -290,8 +287,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard endpoint != nil else { return }
         Log.write("与 dsh 断开连接", to: DashPaths.logURL, tag: "endpoint")
         endpoint = nil
-        eventsBridge?.stop()
-        eventsBridge = nil
         nativeHost.disconnect()
         webView.stopLoading()
         showBootstrapGuide(
@@ -334,22 +329,12 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         DispatchQueue.main.asyncAfter(deadline: .now() + bridgeReadyTimeout, execute: work)
     }
 
-    private func startEventsBridge() {
-        guard let base = endpoint?.httpBase else { return }
-        eventsBridge?.stop()
-        let bridge = EventsBridge(baseURL: base)
-        eventsBridge = bridge
-        bridge.start()
-    }
-
     // MARK: - 重连 / 清理
 
     /// ⌘⇧R：忘掉当前端点，立刻重走三级定位。
     /// M4 加桥后这里会升级为"经桥请求 dsh 重启自己"（dsh 侧有 appExit 服务）；
     /// M1 还没有反向通道，能做的只是壳这一侧重新接入——dsh 自身的重启归终端。
     func reconnect() {
-        eventsBridge?.stop()
-        eventsBridge = nil
         nativeHost.disconnect()
         webView.stopLoading()
         endpoint = nil
@@ -363,7 +348,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         connectTimer?.invalidate()
         connectTimer = nil
         bridgeWarnWork?.cancel()
-        eventsBridge?.stop()
         nativeHost.disconnect()
     }
 

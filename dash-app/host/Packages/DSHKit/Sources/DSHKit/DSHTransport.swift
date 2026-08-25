@@ -36,7 +36,7 @@ public final class LiveDSHTransport: DSHTransport, @unchecked Sendable {
     private let session: URLSession
 
     /// Separate URLSession for WebSockets so stream timeouts never interfere
-    /// with unary calls (mirrors EventsBridge configuration).
+    /// with unary calls (long-lived streams must never time out).
     private let wsSession: URLSession
 
     public init(baseURL: URL,

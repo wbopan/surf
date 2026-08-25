@@ -125,7 +125,7 @@ export function apply(ctx, config) {
 			try {
 				frame = JSON.parse(String(data));
 			} catch {
-				return; // 未知/坏帧一律忽略不崩（与 EventsBridge 同纪律）
+				return; // 未知/坏帧一律忽略不崩（协议向前兼容）
 			}
 			handleFrame(client, frame);
 		});

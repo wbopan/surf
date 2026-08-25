@@ -10,8 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 每完成一个里程碑在计划 §12 追加一行执行日志；发现文档与 dsh 源码冲突，
 以源码为准并就地更新计划文档。
 
-**当前进度：M0～M6 已完成，下一步 M7（dash-notifications）。**
-壳里已经没有布局、侧边栏、进程管理代码；剩下的业务残留是 `EventsBridge.swift`（M7 迁走）。
+**当前进度：M0～M6 已完成，M7（通知）已放弃，下一步 M8（壳收缩收尾）。**
+壳里已经没有布局、侧边栏、通知、进程管理代码——业务残留清零，
+只剩"定位 dsh、连桥、编译装载插件、给 root 槽兜底"这四件事。
 
 仓库根就是 `~/.dsh/profiles/plugins/`（这不是巧合，是 §1.4 布线硬约束的要求）。
 
@@ -124,7 +125,6 @@ Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，�
   全出血 WebView 兜底）。
 - `dash-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus。**没有业务 UI。**
-- `dash-app/host/Sources/EventsBridge.swift`：WebSocket 事件流发通知（M7 迁去 dash-notifications）。
 - 插件门控：UA 含 `Dash/`（带斜杠，防普通子串误命中）且 URL 带 `?dash-native-sidebar=1`；
   终端 `dsh web`/普通浏览器不受影响。
 

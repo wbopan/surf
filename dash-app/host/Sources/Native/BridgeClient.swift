@@ -2,7 +2,7 @@ import Foundation
 
 /// 桥客户端：壳这一侧的 `/dash/bridge`。
 ///
-/// 一条 WebSocket，JSON 文本帧，**未知帧一律忽略不崩**（与 EventsBridge 同纪律）。
+/// 一条 WebSocket，JSON 文本帧，**未知帧一律忽略不崩**（协议向前兼容：新版桥加帧型不会打死旧壳）。
 /// 断线指数退避重连；重连成功后调用方会重新拉一次 snapshot——桥对客户端零状态，
 /// 所以"重连=重新握手+重新拉全量"永远是安全动作。
 @MainActor

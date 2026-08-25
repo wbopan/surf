@@ -33,8 +33,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSUserNotificationUsageDescription</key>
-	<string>dash 在需要批准、需要回答或任务完成时发送本地通知。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

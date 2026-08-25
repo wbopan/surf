@@ -21,14 +21,13 @@ dash macOS 壳的宿主插件。载荷是 `host/` 里的整个 Xcode 工程—�
 
 ## 壳里还剩什么（M6 之后）
 
-界面已经全在插件里，壳只保留"让插件能跑起来"的那部分：
+界面已经全在插件里，通知线也已丢弃（计划 §7.3），壳只保留"让插件能跑起来"的那部分：
 
 | 目录 | 职责 |
 |---|---|
 | `host/Sources/DashSDK/` | 壳↔插件的 ABI 词汇。编成独立 dylib 随 bundle 分发，全进程只有一份 |
 | `host/Sources/Native/` | BridgeClient（连 dash-bridge 的 WS）、CompilerService（内容寻址地跑 swiftc）、NativePluginHost（dlopen + activate + 世代账）、ShellRootView（root 槽 + 全出血 WebView 兜底） |
 | `host/Sources/MainWindowController.swift` | 窗口、菜单、连接状态机、页内桥消息转 EventBus。没有业务 UI |
-| `host/Sources/EventsBridge.swift` | 事件流通知，**M7 迁去 dash-notifications** |
 | `host/Packages/DSHKit` | 仅 Foundation 的 dsh API 层，同样是共享 dylib |
 
 没有任何插件占 `root` 槽时（没装 dash-layout、或它编译失败还没有过成功世代），
