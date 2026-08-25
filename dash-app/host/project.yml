@@ -21,11 +21,9 @@ settings:
       PRODUCT_NAME: dash
       PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash
       APP_ICON_NAME: AppIcon
-packages:
-  # DSHKit 不再作为 SwiftPM 包链接进壳：它与 DashSDK 一样要"全进程一份"，
-  # 由 scripts/build-modules.sh 编成 dylib 随 bundle 分发（插件也链接同一份）。
-  DSHSidebarUI:
-    path: Packages/DSHSidebarUI
+# 没有 SwiftPM 包了：DSHKit 与 DashSDK 由 scripts/build-modules.sh 编成共享 dylib
+# 随 bundle 分发（壳和插件链接同一份，类型身份才对得上）；DSHSidebarUI 随 M6
+# 整体迁进 dash-sidebar/swift/。
 targets:
   dash:
     type: application
@@ -67,8 +65,6 @@ targets:
       # 把共享 module 摆进 bundle 并重新签名（拷贝晚于 Xcode 的签名步骤）。
       - script: scripts/embed-modules.sh
         name: Embed shared modules
-    dependencies:
-      - package: DSHSidebarUI
     entitlements:
       path: Sources/dash.entitlements
       properties:

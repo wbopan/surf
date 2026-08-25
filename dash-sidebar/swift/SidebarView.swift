@@ -1,11 +1,12 @@
+import DashLayout
 import SwiftUI
 
 // 原生侧边栏（阶段二·Mail 风格）：交给系统。
 // List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航；
 // 分组头自绘（文件夹恒定实心，点击图标/标题开合，右缘 chevron 旋转表开合），
-// 宿主把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
+// dash-layout 把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
 // 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
-// 顶部操作按钮（收起侧边栏 / 新建会话）在宿主的 NSToolbar，不在本视图。
+// 顶部操作按钮（收起侧边栏 / 新建会话）在 dash-layout 的 NSToolbar，不在本视图。
 
 /// 相对时间已按需求移除（session 行不再显示时间戳）。
 
@@ -89,7 +90,7 @@ struct GroupHeader: View {
     /// 组内含当前会话时文件夹染 accent 色（对齐 web 的 folderActive）。
     let containsCurrent: Bool
     let onToggle: () -> Void
-    let surface: ConversationSurface
+    let surface: DashConversationSurface
 
     @State private var hovering = false
 
@@ -153,7 +154,7 @@ struct GroupHeader: View {
 /// 主视图：搜索框 + 按 Workspace 折叠分组的会话列表。
 public struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
-    let surface: ConversationSurface
+    let surface: DashConversationSurface
 
     @State private var searchText = ""
     /// 收起的分组（默认全部展开；搜索时强制展开命中组）。
@@ -164,7 +165,7 @@ public struct SidebarView<Model: SidebarModel>: View {
         Set(collapsedGroupsCSV.split(separator: ",").map(String.init))
     }
 
-    public init(model: Model, surface: ConversationSurface) {
+    public init(model: Model, surface: DashConversationSurface) {
         self.model = model
         self.surface = surface
     }
@@ -246,13 +247,17 @@ public struct SidebarView<Model: SidebarModel>: View {
                 }
             }
             .listStyle(.sidebar)
-            #if DEBUG
-            devFooter
-            #endif
+            if isDevBuild { devFooter }
         }
     }
 
-    #if DEBUG
+    /// Dev 构建判定。插件由壳在运行时编译，**没有 `-DDEBUG`**，
+    /// 所以 `#if DEBUG` 在这里永远不成立——改看壳的 bundle id
+    /// （Debug 产物是 io.wenbo.dash.dev）。
+    private var isDevBuild: Bool {
+        Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+    }
+
     /// Dev 构建专属：侧边栏底部橙色 DEV 状态条（含构建时间戳），
     /// 一眼区分 Debug/Release，并确认跑的是哪次构建。
     private var devFooter: some View {
@@ -278,9 +283,7 @@ public struct SidebarView<Model: SidebarModel>: View {
 
     /// 构建时间戳：主 App prebuild 脚本写入 Resources/BuildTimestamp.txt。
     private var buildTimestamp: String { Self.readBuildTimestamp() }
-    #endif
 
-    #if DEBUG
     private static func readBuildTimestamp() -> String {
         guard let url = Bundle.main.url(forResource: "BuildTimestamp", withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8)
@@ -288,7 +291,6 @@ public struct SidebarView<Model: SidebarModel>: View {
         else { return "" }
         return text
     }
-    #endif
 
     private var searchField: some View {
         HStack(spacing: 5) {

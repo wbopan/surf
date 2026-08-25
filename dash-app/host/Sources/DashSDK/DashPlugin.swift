@@ -37,11 +37,18 @@ public let dashABIVersion = 1
 /// 壳 `dlopen` + `dlsym` 拿到函数指针、调用、`takeRetainedValue` 收下所有权
 /// （M2 实测往返无泄漏无过释放）。
 public protocol DashPlugin: AnyObject {
-    /// 装载后立即调用一次，全程主线程。
+    /// 装载后立即调用一次。
+    ///
+    /// `@MainActor` 是这里唯一一处 actor 标注：插件干的全是 UI 的活，壳也确实只在
+    /// 主线程调它，标出来能让插件直接使用 AppKit / SwiftUI / `@MainActor` 的
+    /// DSHKit 类型而不必到处写 `assumeIsolated`。SDK 的那些 class（registry /
+    /// objects / events）仍然不标——从隔离上下文调非隔离代码永远合法，
+    /// 而反过来（在 dylib 之间跨 actor 边界）是 M2 没验证过的领域。
     ///
     /// 返回值是这一代插件的"命根子"：壳持有它 = 本代在役，壳释放它 = 本代退休。
     /// 约定把 `activate` 期间拿到的所有 `DashDisposable` 攒进这个对象，
     /// 它 `deinit` 时注册与订阅一并撤销——这样插件不需要实现任何 deactivate。
+    @MainActor
     func activate(host: DashHost) -> AnyObject?
 }
 

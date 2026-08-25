@@ -1,8 +1,9 @@
 import Foundation
 import SwiftUI
 
-// DSHSidebarUI 的数据面：一个窄协议，宿主（Mac 壳）把 DSHKit.SessionStore
-// 适配进来。值类型在本包定义，避免 UI 反向依赖协议客户端的具体实现细节。
+// 侧边栏的数据面：一个窄协议，AppSidebarModel 把 DSHKit.SessionStore 适配进来。
+// 值类型在本文件定义，让视图不必反向依赖协议客户端的实现细节。
+// （M6 前这些住在 Packages/DSHSidebarUI，随插件化整体迁入。）
 
 /// 会话状态点（对齐 web 侧边栏语义）。
 public enum SidebarSessionStatus: Equatable {

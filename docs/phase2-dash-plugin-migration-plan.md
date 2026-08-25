@@ -538,6 +538,31 @@ xcrun swiftc \
   编译仅 1.03s,四插件全量 3–5s;原 60s 的估计高了一个数量级)/失败 → root 槽切换
   (有 layout=原生布局;无=fallback 全网页)。缓存命中的热启动此门控近乎零等待。
 
+#### 7.1.1 M5 实做与本节的偏差(已交付,以此段为准)
+
+- **root 槽的载荷是 `NSViewControllerRepresentable` 包着的 `NSSplitViewController`**,不是
+  SwiftUI `HSplitView`。材质(macOS 26 的 Liquid Glass)、分隔条、拖拽调宽、双击复位、
+  宽度 autosave、收起动画、工具栏里跟随 divider 的 `NSTrackingSeparatorToolbarItem`
+  ——这些全是 `NSSplitViewItem(sidebarWithViewController:)` 白送的,用 SwiftUI 重画一遍
+  只会得到一个更差的仿制品。于是 root 槽的形状是"AppKit 包在 SwiftUI 里包在 AppKit 里",
+  丑但值。**注意别覆写 `loadView()`**(踩过:默认实现会把 splitView 装成 view,
+  换成空 `NSView` 窗口直接全白)。
+- **工具栏归 layout**,不是 §8 写的"留壳"。理由很简单:`NSTrackingSeparatorToolbarItem`
+  要 splitView,而 splitView 现在归 layout。壳只留菜单;⌘, 改为经 EventBus 广播
+  `dash.menu.command`,layout 收到再调会话展示面——壳喊话,有能力的插件干活。
+- **`NSHostingController.sizingOptions = []`**:默认含 `.preferredContentSize`,
+  槽内插件每换一代重建视图时都会把分栏拉成 SwiftUI 内容的 fitting 宽度,
+  用户调好的宽度就没了。
+- **门控没做超时状态机**。原设计是"等编译完成或 10s 超时再切 root 槽";实做发现不需要
+  ——壳的 root 槽本来就是"没人占就画全出血 WebView",编译那 1~3 秒里用户看到的就是
+  fallback,切换是无缝的。再加一层超时状态机只是多一个会出错的东西。
+- **`navigationDelegate`/`uiDelegate` 留在壳里**(WKWebView 归壳所有),
+  §10-R5 说的"新世代 activate 时必须重设 delegate"因此不存在——插件从头到尾不碰 delegate。
+- **网页侧边栏的显隐门控**:壳按 `UserDefaults` 里记的"上次有没有原生侧边栏"决定
+  首次加载要不要带 `?dash-native-sidebar=1`(页面必须在插件编译完之前就开始预热,
+  那时还不知道 sidebar 槽会不会被占),插件稳定后核对一次,不符就更新记忆并重载页面。
+  稳态下不会有多余的重载。
+
 ### 7.2 dash-sidebar
 
 - Swift 载荷:`Packages/DSHSidebarUI` 四个文件基本原样迁入 `dash-sidebar/swift/`,改为
@@ -552,6 +577,26 @@ xcrun swiftc \
   页内 `currentSession` 上报回流高亮(现有机制不变);store 只存滚动/展开 hint。
 - 显隐联动:sidebar 插件在场 ↔ 网页侧边栏隐藏。机制沿用 URL 参数(壳拼 `?dash-native-sidebar=1`);
   第一版接受"切换需重载页面";后续给 `__dash` 桥加 `setNativeSidebar(bool)` 免重载(改 dash-web-adapter client 半边)。
+
+#### 7.2.1 M6 实做与本节的偏差(已交付,以此段为准)
+
+- **数据面比本节的 M6 方案更进一步:`SessionStore` 由插件自己创建**,而不是壳构造后
+  放进保管箱。M3 已把 DSHKit 升成随 bundle 分发的共享 module,它的类型身份跨世代稳定,
+  所以插件把 store 存进保管箱、下一代再取出来转型照样成立——热替换时列表不闪、
+  WS 事件流不断,而壳保持 0 行业务代码(比原方案更符合 §0.5-2)。端点变了就丢旧重建
+  (base URL 也记在箱里供比对)。
+- **`#if DEBUG` 在插件里永远不成立**:插件由壳在运行时编译,命令行里没有 `-DDEBUG`。
+  侧边栏底部那条 DEV BUILD 改看壳的 bundle id 后缀(`io.wenbo.dash.dev`)。
+  这是所有"从壳迁进插件"的代码都要过的一道坎。
+- **选中高亮活过热替换**靠 `host.store`(DashStore)存 `selectedSessionId`;
+  它只是"页面把 currentSession 报回来之前先亮哪一行"的装饰状态,丢了不心疼(§0.5-1)。
+- `ConversationSurface` 协议换成 dash-layout 导出的 `DashConversationSurface`;
+  `Packages/DSHSidebarUI` 整包删除(本计划原写 M8 删,既然内容全迁走了就没必要留)。
+- **级联重编实测成立**:只改 dash-layout 一行,dash-sidebar 也跟着重编换代
+  (g3→g5),不需要任何额外机制——上游 hash 折进下游 hash 就够了(§5.1.1)。
+- **SDK 里唯一一处 `@MainActor` 是 `DashPlugin.activate`**,M6 才补上:插件要碰
+  `@MainActor` 的 `SessionStore` 与 AppKit,不标就得到处写 `assumeIsolated`。
+  类本身不能标——`dash_plugin_entry` 是 nonisolated 的 C 入口,构造不了隔离类型。
 
 ### 7.3 dash-notifications
 
@@ -617,8 +662,8 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 | M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ §6.5 十条断言全通过（runner 14 项检查）,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
 | M3 | SDK 骨架(§4) | ✅ **已完成** DashSDK + DSHKit 升为随 bundle 分发的共享 dylib;`dash-bridge/plugin` 工厂 | ✅ registry/objects/store/EventBus/bridge 全部可用;dash-hello 经相对路径 import 工厂成功挂载 |
 | M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | ✅ **已完成** 桥 WS/登记表/snapshot/changed/500ms 轮询;CompilerService/装载器/账本/内容寻址缓存;dash-hello | ✅ 改 hello 源码 → **2.2s** 换代、界面更新不重启;编译失败带文件行号进 dsh 终端、旧代留任、壳不崩;重启缓存命中(0 编译);push/invoke 双向通 |
-| M5 | dash-layout 接管 root | layout 插件;壳收缩布局代码;门控/预热/fallback | disable dash-layout → 完整网页模式(网页 sidebar 回归);enable → 原生布局;页面在插件换代时不重载 |
-| M6 | dash-sidebar 迁移 | DSHSidebarUI→swift/;数据面保管箱方案;显隐联动 | 功能与现状等价;改 SidebarView.swift 热更新且选中高亮存活;disable → 优雅回退 |
+| M5 | dash-layout 接管 root | ✅ **已完成** layout 插件(396 行 Swift);壳交出分栏/工具栏/自适应折叠;fallback = 全出血 WebView | ✅ 三条全过:移除 dash-layout → 完整网页模式(网页 sidebar 回归、渲染与插件模式一致);装回 → 原生布局;插件换代时**页面无重载**(日志无新的加载完成事件) |
+| M6 | dash-sidebar 迁移 | ✅ **已完成** DSHSidebarUI + AppSidebarModel → `dash-sidebar/swift/`(577 行);数据面 SessionStore 进保管箱跨世代复用;显隐联动 | ✅ 功能与迁移前等价(材质/工具栏/tracking separator/宽度记忆/搜索/分组/归档全在);改 SidebarView.swift **1.4s** 热更新且选中高亮与列表都不闪;移除插件 → 优雅回退网页侧边栏 |
 | M7 | dash-notifications 迁移 | TS 半身订宿主事件;EventsBridge 删除 | 四类通知等价(含冷却/前台规则);dsh 重启期间不崩、恢复后继续 |
 | M8 | 壳收缩收尾 | §8 清单落实;dash-app v1(源码变更自动构建);README/CLAUDE.md 重写;死代码清理 | 职责清单达标;改壳源码 → 自动构建 + 提示重启;全功能回归(启动/新建/切换/归档/通知/设置/逃生舱/引导页) |
 | M9 | 治理硬化 | 审批+hash 审计;账本阈值+空闲自重启;协议 clientId/seat 字段 | 外来插件首编弹确认;账本可查;阈值触发自重启验证 |
@@ -661,11 +706,11 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 | 资产 | 行数 | 去向 |
 |---|---|---|
-| MainWindowController.swift | 882→799 | M1 已把状态机换成"三级定位+2s 健康轮询";余下拆分:窗口/菜单骨架留壳;状态机简化为"endpoint 定位+桥状态";布局/侧边栏装配→dash-layout;桥 handler→layout TS 半身+壳 EventBus |
+| MainWindowController.swift | 882→799→**665** | M1 换成"三级定位+2s 健康轮询";M5 交出布局:分栏/侧边栏装配/工具栏/自适应折叠全部移入 dash-layout,壳只剩窗口 + 菜单 + 连接状态机 + root 槽挂载 + 页内桥转 EventBus |
 | HarnessProcess/Manager + NodeResolver/Semver/Shell | 711 | ✅ M1 全部退役删除(`Shell` 实测无其它引用面,一并删;`Log` 保留)。新增 `DashPaths`(28)+`DashEndpoint`(105)接手 |
 | EventsBridge.swift | 223→235 | M1 把 `init(port:)` 改成 `init(baseURL:)`(端口不再由壳自选);语义→dash-notifications(TS 半身);WS 重连模式→BridgeClient 参考;文件删除 |
-| DSHKit | 686 | M6 留(保管箱数据面);M10 退役(或 iOS 线复用) |
-| DSHSidebarUI + AppSidebarModel | 525 | →dash-sidebar/swift/(近原样) |
+| DSHKit | 686 | ✅ M3 升为随 bundle 分发的**共享 dylib**(壳与插件链同一份);源码仍在 `Packages/DSHKit/`(单元测试还在那儿),但不再是 SwiftPM 依赖。M10 视 TS 数据面进展退役 |
+| DSHSidebarUI + AppSidebarModel | 525 | ✅ M6 迁入 `dash-sidebar/swift/`(577 行,近原样;`ConversationSurface`→`DashConversationSurface`,`#if DEBUG`→bundle id 判定),`Packages/DSHSidebarUI` 整包删除 |
 | dsharness-web-adapter | 466 | →dash-web-adapter(改名搬家,功能不动) |
 | BootstrapViewController | 123→178 | M1 已扩建出 guide 态(标题+说明+可拷贝 `dsh web`+重试);M4/M8 再补桥状态/编译进度/账本 |
 | SettingsWindowController | 156 | ✅ M1 整件退役删除(Node 路径/更新频率两项皆随 spawn 层失效,壳已无偏好可设);⌘, 改为经页内桥打开 dsh 自己的设置面板 |
@@ -680,4 +725,6 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|
 | 2026-08-25 | M3 | `2dc23d0` | SDK 骨架。就地更新:§4.1.1(五条实做偏差——SDK 必须是独立 dylib、DSHKit 一并升共享 module、DashHost 改 final class、不加 @MainActor、Disposable 带 token 校验)、§4.2(dash-* 互引定案走相对路径)、§9(M3 行)。|
 | 2026-08-25 | M4 | `0eddda5` | 桥 + 编译机 + hello 世代循环,五条验收全过:改源码 **2.2s** 换代不重启;编译失败带文件行号进 dsh 终端、旧代留任、壳不崩;重启缓存命中 0 编译;push/invoke 双向通;**R4 解除**(`registerUpgrade` 是裸升级,用 `ws` 的 noServer 模式,`ws` 已在 profiles/node_modules 里)。就地更新:§5.1.1(四条偏差)、§6.2(module 名取自 contentHash,世代隔离与内容寻址合一)、§9(M4 行)、§10-R4。|
+| 2026-08-25 | M5 | `de995de` | dash-layout 接管 root。就地更新:§7.1.1(六条偏差——root 槽用 AppKit NSSplitViewController、工具栏归 layout、sizingOptions=[]、门控不做超时状态机、delegate 留壳因而 R5 不存在、网页侧边栏门控靠 UserDefaults 记忆 + 稳定后核对)、§9(M5 行)、§11。踩坑:覆写 `NSSplitViewController.loadView()` 会让窗口全白。|
+| 2026-08-25 | M6 | `TBD-M6` | dash-sidebar 迁移,壳内 0 行侧边栏代码。就地更新:§7.2.1(六条偏差——SessionStore 归插件且跨世代复用、`#if DEBUG` 在插件里不成立、选中高亮走 DashStore、协议换 DashConversationSurface、级联重编实测成立、SDK 补 `DashPlugin.activate` 的 @MainActor)、§9(M6 行)、§11(DSHKit/DSHSidebarUI 两行)。|
 | 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
