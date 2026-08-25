@@ -9,7 +9,8 @@
 
 **R1（SwiftUI 跨 dylib ABI）不成立为风险——赌注赢了，不需要 Plan B。**
 
-16 条断言全部通过：SwiftUI 视图 + `@Observable` model 从命令行 `swiftc -emit-library`
+计划 §6.5 的 10 条断言全部通过（runner 拆成 14 项具体检查，另有编译基线与
+dyld 依赖解析两项旁证）：SwiftUI 视图 + `@Observable` model 从命令行 `swiftc -emit-library`
 编出的 dylib 里 `dlopen` 装载、`AnyView` 进 `NSHostingView` 正常渲染、可交互；同一份源码
 换代重编再装载，`.id(version)` 触发整棵重建、新视图上屏、旧世代 ARC 正常回收、进程不崩；
 壳保管箱里的 WKWebView 跨代复用后页面未重载、JS 状态存活。

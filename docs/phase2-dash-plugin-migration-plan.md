@@ -525,7 +525,7 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 |---|---|---|---|
 | M0 | 固化+搬家+改名(§2) | 新仓库根 `~/.dsh/profiles/plugins/`;dash 命名全换;dsh 全局安装 | dev.sh 全流程可跑;终端 `dsh web` 起得来;web-adapter 功能不变;旧 repo 退役 |
 | M1 | 启动反转(§3) | 壳退役 spawn 层;三级 endpoint 定位;dash-app v0(壳源码入插件,构建+拉起) | `dsh web` → 必要时构建 → app 自动弹出;dsh 未起双击 app → 引导页;dsh 重启 → app 自动恢复;功能等价 |
-| M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ 16 条断言全通过,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
+| M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ §6.5 十条断言全通过（runner 14 项检查）,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
 | M3 | SDK 骨架(§4) | DashSDK module(dash-app/host 内)+ `dash-bridge/plugin` 工厂 | 壳内 registry/store/EventBus 单元可用;工厂能被样例插件 import(dash-* 互引解析定案) |
 | M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | 桥 WS/登记表/snapshot/changed/轮询;CompilerService/Loader/账本/缓存;hello 插件 | 改 hello 源码 → ≤5s 界面更新不重启;编译失败可见不崩;重启缓存命中秒载 |
 | M5 | dash-layout 接管 root | layout 插件;壳收缩布局代码;门控/预热/fallback | disable dash-layout → 完整网页模式(网页 sidebar 回归);enable → 原生布局;页面在插件换代时不重载 |
@@ -545,7 +545,7 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 1. ~~**R1 SwiftUI 跨 dylib ABI**~~ **已解除**(2026-08-25 M2 实测,macOS 27.0 / Swift 6.4):
    SwiftUI View + `@Observable` 跨 dylib 渲染、交互、换代、WKWebView 实例跨代复用全部成立,
-   16 条断言无一失败。Plan B(SDUI 降级)不启用。**再次出现风险的触发条件是升级 Xcode/macOS**——
+   §6.5 十条断言无一失败。Plan B(SDUI 降级)不启用。**再次出现风险的触发条件是升级 Xcode/macOS**——
    届时重跑 `docs/spikes/m2-abi/`(一条命令)即可复验。
 2. **R2 dsh preview 破坏**:全局安装钉 `0.1.1-rc.2`;桥/TS 半身对内部服务一律 `ctx.get` 防御;
    升级 dsh 前跑冒烟清单(§9-M8 回归表)。注意反转后失去 HarnessManager 的 N-1 目录回滚,
@@ -585,5 +585,5 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 | 日期 | 里程碑 | commit | 备注(与计划的偏差、更新了文档哪节) |
 |---|---|---|---|
-| 2026-08-25 | M2 | `5361621` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。16 条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
+| 2026-08-25 | M2 | `5361621` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。§6.5 十条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|

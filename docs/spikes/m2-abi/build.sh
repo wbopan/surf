@@ -48,7 +48,17 @@ timed "beta (35 行, import Alpha_g1)" xcrun swiftc plugins/beta/BetaPlugin.swif
   -Xlinker -install_name -Xlinker "@rpath/libBeta.dylib" \
   -target "$TARGET" -language-mode 5 -Onone -g
 
-# 4) 宿主
+# 4) 断言 8：模拟 app bundle 内分发——SDK 只给 .swiftinterface + dylib，故意不给 .swiftmodule
+rm -rf "$OUT/bundle"; mkdir -p "$OUT/bundle"
+cp "$OUT/sdk/DashSDK.swiftinterface" "$OUT/sdk/libDashSDK.dylib" "$OUT/bundle/"
+timed "alpha (interface-only SDK 路径)" xcrun swiftc plugins/alpha/AlphaPlugin.swift \
+  -module-name Alpha_iface \
+  -emit-library -o "$OUT/bundle/libAlpha_iface.dylib" \
+  -I "$OUT/bundle" -L "$OUT/bundle" -lDashSDK \
+  -Xlinker -rpath -Xlinker "@loader_path" \
+  -target "$TARGET" -language-mode 5 -Onone -g
+
+# 5) 宿主
 timed "host (197 行)" xcrun swiftc host/main.swift \
   -o "$OUT/spike-host" \
   -I "$OUT/sdk" -L "$OUT/sdk" -lDashSDK \
