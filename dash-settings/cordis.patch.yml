@@ -1,0 +1,6 @@
+# dash-settings 的 bundle patch 层：插入自己的浏览器插件 row。
+# 本插件的浏览器半边默认惰性——只有 URL 带 ?dash-settings=1 时才接管 root 槽，
+# 所以这一行对普通 `dsh web` 标签页零影响。
+- insert:
+    - id: ui-dash-settings
+      name: dash-settings

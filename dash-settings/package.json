@@ -1,0 +1,26 @@
+{
+	"name": "dash-settings",
+	"version": "0.1.0",
+	"private": true,
+	"description": "dash 的原生设置窗口：原生窗框与导航，内容区渲染 dsh 官方的 settings.section",
+	"type": "module",
+	"main": "lib/index.js",
+	"exports": {
+		".": "./lib/index.js",
+		"./client": "./lib/client.js",
+		"./cordis.patch.yml": "./cordis.patch.yml",
+		"./package.json": "./package.json"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web",
+			"inject": [
+				"@deepseek-ai/dsh-client-runtime",
+				"@deepseek-ai/dsh-client-ui-slots"
+			]
+		}
+	}
+}
