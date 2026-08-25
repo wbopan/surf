@@ -55,11 +55,17 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
         }
     }
 
-    /// 与 web 侧边栏同一条可见性规则（dsh-client-ui-workspace sessionVisible）：
-    /// subagent 子会话永不显示；blank 会话仅在是当前选中（临时 New Session 行）
-    /// 时显示。归档已在 SessionStore 镜像层滤除。
+    /// 可见性规则（**此处刻意偏离 web 的 sessionVisible**）：subagent 子会话
+    /// 永不显示；blank 会话一律不显示。web 的做法是"blank 恰好是当前选中时临时
+    /// 插一行 New Session"，但那行的存亡挂在选中态上——点走别处它就凭空消失，
+    /// 列表里于是有一条随焦点闪进闪出的幽灵行。原生侧边栏的取舍是：没落下第一句
+    /// prompt 的会话不算列表成员；上游在首个 prompt 后把 blank 翻成 false，
+    /// 那一刻行自然出现，且已经是选中态。归档已在 SessionStore 镜像层滤除。
+    ///
+    /// 副作用（有意接受）：新建后到首个 prompt 之间，列表无任何高亮行，
+    /// 分组头的文件夹也不再染 accent（containsCurrent 查的就是这份可见行）。
     private func visible(_ s: SessionSummary) -> Bool {
-        !s.isSubagent && (!s.blank || s.id == selectedSessionId)
+        !s.isSubagent && !s.blank
     }
 
     func activate(sessionId: String) {
