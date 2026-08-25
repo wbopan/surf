@@ -322,7 +322,7 @@ window.__ModuleLoader__.load({
 					// 在实体背景上不显眼、贴着玻璃时成了一条突兀的黑白分隔线，去掉。
 					"  border-right: none !important;",
 					"}",
-					// 诊断实测（harness.log DIAG 探针）：sidebarCol 之下有一层透明
+					// 诊断实测：sidebarCol 之下有一层透明
 					// wrapper，hHd-Xa_root 在第二级，且整栏背景 rgb(27,27,28) 由它绘制。
 					// 因此用后代选择器而非直接子选择器。
 					'[class*="_sidebarCol"] [class*="_root"] {',
@@ -380,38 +380,6 @@ window.__ModuleLoader__.load({
 				}
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
-				// 【临时诊断】2.5s 后扫描 sidebarCol 子树里所有「不透明背景」元素，
-				// 结果写进一个 1px 文字节点——壳应用 didFinish 诊断会把 body 文本
-				// 打进 harness.log（DOM(3s)），据此定位还剩哪层在挡玻璃。
-				const diagTimer = setTimeout(() => {
-					try {
-						const col = document.querySelector('[class*="_sidebarCol"]');
-						const rows = [];
-						if (col) {
-							rows.push("col=" + col.className + " kids=" + col.childElementCount);
-							const walk = (el, depth) => {
-								if (!el || depth > 6) return;
-								for (const child of el.children) {
-									const cs = getComputedStyle(child);
-									const r = child.getBoundingClientRect();
-									const opaque = cs.backgroundColor && !cs.backgroundColor.endsWith(" 0)") && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent";
-									if (opaque && r.width > 50 && r.height > 50) {
-										rows.push("D" + depth + " " + child.className + " bg=" + cs.backgroundColor + " " + Math.round(r.width) + "x" + Math.round(r.height));
-									}
-									walk(child, depth + 1);
-								}
-							};
-							walk(col, 1);
-						} else {
-							rows.push("no sidebarCol found");
-						}
-						const d = document.createElement("span");
-						d.style.cssText = "position:fixed;left:-9999px;top:0;font-size:1px";
-						d.textContent = " DIAG: " + rows.join(" | ") + " ";
-						// 诊断日志只取 body 前 400 字符，必须插到最前
-						document.body.insertBefore(d, document.body.firstChild);
-					} catch (e) { /* 诊断失败静默 */ }
-				}, 2500);
 				// 原生侧边栏模式的动态部分：强制收起 + rail 占位测量。
 				let cleanupCollapse = () => {};
 				let cleanupOccupancy = () => {};
@@ -422,7 +390,7 @@ window.__ModuleLoader__.load({
 				// A2：动作桥（与原生侧边栏模式无关，凡 Dash/ UA 即装）。
 				installBridge(ctx);
 				return () => {
-					clearTimeout(diagTimer); style.remove();
+					style.remove();
 					cleanupCollapse(); cleanupOccupancy();
 					try { document.documentElement.removeAttribute("data-dash-native-sidebar"); } catch { /* 静默 */ }
 					try { document.documentElement.style.removeProperty("--dash-sidebar-occupancy"); } catch { /* 静默 */ }

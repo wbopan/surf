@@ -90,7 +90,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private var bootstrapVC: BootstrapViewController?
 
-    /// 壳有新版时右下角那条浮动提示（dash-app v1 播报，§7.5）。
+    private var diagnosticsPanel: DiagnosticsPanel?
+
+    /// 壳有新版时右上角那条浮动提示（dash-app v1 播报，§7.5）。
     /// 用户点"稍后"就收起，直到下一次播报——不缠人。
     private var updateBanner: ShellUpdateBanner?
 
@@ -518,6 +520,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let logsItem = appMenu.addItem(withTitle: "打开日志目录",
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
+        let diagItem = appMenu.addItem(withTitle: "诊断信息…",
+                                       action: #selector(showDiagnostics), keyEquivalent: "d")
+        diagItem.keyEquivalentModifierMask = [.command, .option]
+        diagItem.target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "隐藏 \(AppInfo.displayName)",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -601,6 +607,62 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     @objc private func openLogs() {
         NSWorkspace.shared.open(DashPaths.logsDir)
+    }
+
+    /// ⌥⌘D：把壳此刻的全部认知摊平成一屏可拷贝的文本。
+    @objc private func showDiagnostics() {
+        let panel = diagnosticsPanel ?? DiagnosticsPanel(collect: { [weak self] in
+            self?.diagnosticsText() ?? "（窗口已销毁）"
+        })
+        diagnosticsPanel = panel
+        panel.present()
+    }
+
+    /// 诊断正文。顺序按"离用户多远"排：先是它连着谁，再是它跑着什么。
+    private func diagnosticsText() -> String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        var lines: [String] = []
+        lines.append("\(AppInfo.displayName)  \(version)  (\(Bundle.main.bundleIdentifier ?? "?"))")
+        lines.append("构建时间：\(AppInfo.buildTimestamp.isEmpty ? "未知" : AppInfo.buildTimestamp)")
+        lines.append("")
+        lines.append("── dsh 连接 ──")
+        if let endpoint {
+            lines.append("端点：\(endpoint.summary)")
+            lines.append("来源：\(endpoint.source.rawValue)")
+        } else {
+            lines.append("端点：未连接（引导页在场）")
+        }
+        lines.append("桥：\(nativeHost.isBridgeConnected ? "已连接" : "未连接")")
+        lines.append("页内桥：\(bridgeReady ? "已就绪" : "未就绪")")
+        lines.append("原生侧边栏门控：\(nativeSidebarParamInUse ? "开（?dash-native-sidebar=1）" : "关（完整网页模式）")")
+        lines.append("")
+        lines.append("── 原生插件 ──")
+        lines.append("在役 \(nativeHost.loadedCount) 个，本次运行退休 \(nativeHost.retiredThisRun) 个 image")
+        if nativeHost.diagnostics.isEmpty {
+            lines.append("（一个都没有：root 槽由壳的全出血 WebView 兜底）")
+        } else {
+            lines.append(contentsOf: nativeHost.diagnostics.map { "  \($0)" })
+        }
+        lines.append("root 槽占用者：\(nativeHost.registry.owner(of: "root") ?? "无（兜底 WebView）")")
+        lines.append("sidebar 槽占用者：\(nativeHost.registry.owner(of: "sidebar") ?? "无")")
+        lines.append("")
+        lines.append("── 壳自身构建 ──")
+        if let build = nativeHost.appBuild {
+            lines.append("最近播报：\(build.status)"
+                         + (build.hash.map { "  \($0)" } ?? "")
+                         + (build.durationMs.map { String(format: "  %.1fs", Double($0) / 1000) } ?? ""))
+            if let log = build.log, !log.isEmpty {
+                lines.append("日志尾巴：")
+                lines.append(contentsOf: log.split(separator: "\n").map { "  \($0)" })
+            }
+        } else {
+            lines.append("本次连接期间没有重建过（dash-app 没播报过 app-build）")
+        }
+        lines.append("")
+        lines.append("── 路径 ──")
+        lines.append("日志：\(DashPaths.logsDir.path)")
+        lines.append("发现文件：\(DashPaths.endpointURL.path)")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - 网页 → 原生消息

@@ -308,10 +308,19 @@ final class NativePluginHost {
 
     // MARK: - 诊断
 
-    /// 给 boot/诊断视图看的一行行摘要。
+    /// 给诊断面板看的一行行摘要。**"我现在跑的到底是哪一份代码"**——
+    /// 世代号 + module 名（含内容 hash）合起来就是答案，这也是 §6.2
+    /// "内容寻址与世代隔离是同一件事的两面"在人眼层面的体现。
     var diagnostics: [String] {
         loaded.values.sorted { $0.name < $1.name }.map {
-            "\($0.name) g\($0.generation) \($0.module)"
+            // module 名末尾就是 contentHash 的短前缀（§6.2），不再单列一次。
+            "\($0.name)  g\($0.generation)  \($0.module)"
         }
     }
+
+    /// 本次运行退休掉的 image 数（旧 dylib 按设计不 dlclose，见 §6.4）。
+    var retiredThisRun: Int { ledger.retiredThisRun }
+
+    /// 在役插件数。
+    var loadedCount: Int { loaded.count }
 }
