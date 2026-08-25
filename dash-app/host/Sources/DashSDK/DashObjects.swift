@@ -8,7 +8,8 @@ import Foundation
 ///
 /// **禁止放插件自己定义的类型**：新一代 module 里的同名类型与旧一代互不认识，
 /// 取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
-@MainActor
+/// 线程约定同 `DashRegistry`：**只在主线程使用**，不加 `@MainActor`
+/// （M2 没有覆盖跨 dylib 的 actor 边界，少一个未验证的变量比多一层静态保证划算）。
 public final class DashObjects {
     private var storage: [String: AnyObject] = [:]
 

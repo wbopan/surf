@@ -2,8 +2,6 @@ import AppKit
 import DashSDK
 import SwiftUI
 import WebKit
-import DSHKit
-import DSHSidebarUI
 
 /// 顶部透明拖拽条：命中后整窗可拖，
 /// 弥补 fullSizeContentView 下原生标题栏被 WebView 盖住、无拖拽区的问题。
@@ -34,17 +32,14 @@ private final class WKScriptMessageHandlerProxy: NSObject, WKScriptMessageHandle
     }
 }
 
-/// 主窗口：NSSplitViewController（sidebar 项 + WKWebView 内容项），
-/// Mail 式原生侧边栏；材质/分隔条/调宽/收起/宽度记忆全交系统。
-/// 并驱动整体状态机（安装 → 启动 → 健康 → 载入 Web UI / 通知桥）。
+/// 主窗口。M5 起壳只剩窗口与 root 槽：
+/// 布局、分栏、侧边栏装配全部搬进 dash-layout 插件，这里负责
+/// "定位 dsh、连桥、把 root 槽的视图挂上去、没人占 root 时兜底全出血 WebView"。
 @MainActor
 final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
 
-    /// 侧边栏首次显示的默认宽度（之后由 autosave 记忆）。
-    static let sidebarDefaultWidth: CGFloat = 364
-
-    /// 主内容（WebView）最小宽度。窗口收窄时优先自动折叠 sidebar 保住它，
-    /// 折叠后窗口才不能更窄（minSize）。
+    /// 窗口最小宽度。sidebar 的自适应折叠归 dash-layout 管，
+    /// 这里只兜住"折叠之后窗口还能多窄"。
     static let contentMinWidth: CGFloat = 432
 
     /// 默认窗口大小（按屏幕可见区域收缩后应用，之后由 autosave 记忆）。
@@ -53,7 +48,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 窗口 frame / 分隔条宽度的 autosave key。AppKit 的记忆会盖住代码里的
     /// 默认值，调整默认值时需换 key 才能对已有用户生效。
     private static let windowAutosaveName = "DashMainWindow.v1"
-    private static let sidebarAutosaveName = "DashMainSidebar.v1"
 
     /// 启动时的目标窗口 frame（默认或 autosave 恢复值）。赋
     /// contentViewController / 插入侧边栏项时 AppKit 会把窗口收缩成内容
@@ -73,40 +67,24 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 原生插件宿主：桥 ↔ 编译机 ↔ 装载器 ↔ registry。壳对插件世界的全部认知都在它那儿。
     let nativeHost = NativePluginHost()
-    /// `root` 槽的挂载点。占了才挂——没占就露出底下的壳布局（M5 前是分栏，M5 后是全出血 WebView）。
-    private var rootSlotView: NSView?
+
+    /// 窗口内容容器：root 宿主 / 顶部拖拽条 / 按需的引导页，三层叠在这里。
+    private let containerController = NSViewController()
+    /// root 槽的宿主。它内部自己在"插件视图"与"全出血 WebView 兜底"之间切换，
+    /// 所以整个 App 生命周期只装配一次。
+    private lazy var rootHostingController = NSHostingController(
+        rootView: ShellRootView(registry: nativeHost.registry, webView: webView))
+
+    /// 上次载入页面时用的原生侧边栏门控值。插件装载完成后若与实际不符就重载一次页面
+    /// （§7.2 第一版接受"切换需重载页面"）。
+    private var nativeSidebarParamInUse = MainWindowController.rememberedNativeSidebar
 
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
     // 需与插件 cordis.patch.yml 的 topInset 保持一致，网页内容才不会钻到条底下。
     static let titleBarHeight: CGFloat = 40
 
-    // 分割视图：侧边栏项 + 内容项。系统负责材质（macOS 26 上即 Liquid Glass）、
-    // 分隔条、拖拽调宽、双击复位、宽度 autosave、收起动画与红绿灯布局。
-    private let splitViewController = NSSplitViewController()
-    /// 侧边栏 split item（loadWebUI 时端口确定后才装配）。
-    private var sidebarSplitItem: NSSplitViewItem?
-
-    /// 自动折叠标记：sidebar 因窗口收窄被我们折叠（而非用户手动收起），
-    /// 拉宽后自动恢复。
-    private var autoCollapsedSidebar = false
-
-    /// 折叠前记录的 sidebar 厚度，用于计算自动恢复的窗口宽度阈值。
-    private var sidebarVisibleThickness: CGFloat = MainWindowController.sidebarDefaultWidth
-    /// 内容项：WKWebView 直接作为 VC 的 view（全出血，标题栏透明）。
-    private lazy var webViewController: NSViewController = {
-        let vc = NSViewController()
-        vc.view = webView
-        return vc
-    }()
     private let titleBarDragView = WindowDragRegionView() // 顶部可拖拽条
 
-    // MARK: - 原生侧边栏（阶段二·Mail 风格）
-
-    private var sessionStore: SessionStore?
-    /// 当前 sessionStore 的 transport 所指 base；dsh 换端口后据此判断是否整件重装。
-    private var sessionStoreBase: URL?
-    private var sidebarModel: AppSidebarModel?
-    private var conversationSurface: WebViewConversationSurface?
     /// 桥 ready 监视（8s 超时 → 只记日志；不再回退网页侧边栏模式）。
     private var bridgeReady = false
     private var bridgeWarnWork: DispatchWorkItem?
@@ -145,7 +123,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
         nativeHost.objects.setObject(DashObjects.Key.webView, webView)
-        nativeHost.onUpdate = { [weak self] in self?.refreshRootSlot() }
+        nativeHost.onUpdate = { [weak self] in self?.syncNativeSidebarGate() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -198,79 +176,34 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     private func setupContentView() {
-        // NSSplitViewController 全权负责布局：侧边栏项在 loadWebUI 时端口
-        // 确定后才插入，装配前 bootstrap 覆盖整个窗口，不露馅。
-        // contentViewController 赋值会把窗口收缩成 fitting size，布局后
-        // 由 assertLaunchWindowFrame 拉回。
-        window?.contentViewController = splitViewController
+        // 壳自己不排版：一个空容器 + 一个 SwiftUI 宿主，剩下的交给 root 槽的占用者。
+        containerController.view = NSView()
+        window?.contentViewController = containerController
         assertLaunchWindowFrame()
 
-        let contentItem = NSSplitViewItem(viewController: webViewController)
-        contentItem.canCollapse = false
-        splitViewController.addSplitViewItem(contentItem)
+        containerController.addChild(rootHostingController)
+        let rootView = rootHostingController.view
+        rootView.translatesAutoresizingMaskIntoConstraints = false
+        containerController.view.addSubview(rootView)
+        NSLayoutConstraint.activate([
+            rootView.topAnchor.constraint(equalTo: containerController.view.topAnchor),
+            rootView.bottomAnchor.constraint(equalTo: containerController.view.bottomAnchor),
+            rootView.leadingAnchor.constraint(equalTo: containerController.view.leadingAnchor),
+            rootView.trailingAnchor.constraint(equalTo: containerController.view.trailingAnchor),
+        ])
 
         // 顶部透明拖拽条（titleBarHeight，比标准 28pt 更高更好抓）：
-        // fullSizeContentView 下原生标题栏被 WebView 盖住，需要它发起整窗拖拽。
+        // fullSizeContentView 下原生标题栏被内容盖住，需要它发起整窗拖拽。
+        // 它是窗口 chrome，不随插件换代，所以留在壳里、盖在 root 之上。
         let drag = titleBarDragView
         drag.translatesAutoresizingMaskIntoConstraints = false
-        splitViewController.view.addSubview(drag)
+        containerController.view.addSubview(drag)
         NSLayoutConstraint.activate([
-            drag.topAnchor.constraint(equalTo: splitViewController.view.topAnchor),
-            drag.leadingAnchor.constraint(equalTo: splitViewController.view.leadingAnchor),
-            drag.trailingAnchor.constraint(equalTo: splitViewController.view.trailingAnchor),
+            drag.topAnchor.constraint(equalTo: containerController.view.topAnchor),
+            drag.leadingAnchor.constraint(equalTo: containerController.view.leadingAnchor),
+            drag.trailingAnchor.constraint(equalTo: containerController.view.trailingAnchor),
             drag.heightAnchor.constraint(equalToConstant: MainWindowController.titleBarHeight),
         ])
-    }
-
-    // MARK: - 原生侧边栏装配
-
-    /// 装配侧边栏：NSHostingController(SidebarView) 塞进 sidebar split item；
-    /// 材质/分隔条/调宽/宽度记忆交给系统。
-    private func installSidebar() {
-        guard sidebarSplitItem == nil, let base = endpoint?.httpBase else { return }
-
-        conversationSurface = WebViewConversationSurface(webView: webView)
-        let store = SessionStore(transport: DSHTransportFactory.live(baseURL: base))
-        sessionStore = store
-        let model = AppSidebarModel(store: store, surface: conversationSurface!,
-                                    logURL: DashPaths.logURL)
-        sidebarModel = model
-
-        let hosting = NSHostingController(rootView: SidebarView(model: model,
-                                                                surface: conversationSurface!))
-        hosting.preferredContentSize = NSSize(width: MainWindowController.sidebarDefaultWidth,
-                                              height: 0)
-        let item = NSSplitViewItem(sidebarWithViewController: hosting)
-        // 宽度记忆（系统级）；默认宽度调整时换 key（见 sidebarAutosaveName）。
-        // 侧边栏无存档时首次布局会把它钳到最小厚度，布局后补回默认宽度。
-        let sidebarHadArchive = UserDefaults.standard
-            .string(forKey: "NSSplitView Subview Frames \(Self.sidebarAutosaveName)") != nil
-        splitViewController.splitView.autosaveName = Self.sidebarAutosaveName
-        item.minimumThickness = 200
-        item.maximumThickness = 420
-        item.canCollapse = true
-        splitViewController.insertSplitViewItem(item, at: 0)
-        sidebarSplitItem = item
-        sessionStoreBase = base
-
-        installToolbar()
-        Task { await store.start() }
-
-        // 插入侧边栏项的布局同样会收缩窗口（且时机晚于 setupContentView）；
-        // 补回窗口 frame 后再把无存档时的默认侧边栏宽度落位。
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.assertLaunchWindowFrameNow()
-            if !sidebarHadArchive {
-                self.splitViewController.splitView
-                    .setPosition(Self.sidebarDefaultWidth, ofDividerAt: 0)
-            }
-            // 恢复的窗口可能本来就太窄，立即应用一次自适应折叠判定。
-            if let win = self.window, let item = self.sidebarSplitItem {
-                self.windowDidResize(Notification(name: Notification.Name("layout"),
-                                                  object: win, userInfo: nil))
-            }
-        }
     }
 
     /// 首次布局完成后，若窗口被 AppKit 收缩成内容 fitting size，拉回启动
@@ -287,36 +220,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         if win.frame.size != launchWindowFrame.size {
             win.setFrame(launchWindowFrame, display: true)
         }
-    }
-
-    /// 左上角工具栏（红绿灯同排）：收起侧边栏 + 新建会话。
-    /// 依赖 sidebar split item 已就位（tracking separator 需要 divider 0），
-    /// 因此在 installSidebar 尾部调用；重复调用幂等。
-    private func installToolbar() {
-        guard let window, window.toolbar == nil else { return }
-        let tb = NSToolbar(identifier: "MainToolbar")
-        tb.delegate = self
-        tb.displayMode = .iconOnly
-        tb.allowsUserCustomization = false
-        window.toolbarStyle = .unified // Mail 同款：红绿灯垂直居中、圆形玻璃按钮
-        window.toolbar = tb
-    }
-
-    @objc private func newSessionFromToolbar() {
-        conversationSurface?.startSession(workspaceId: nil)
-    }
-
-    /// 卸载侧边栏（dsh 重启换端口时整件重装镜像）。
-    private func uninstallSidebar() {
-        sessionStore?.stop()
-        sessionStore = nil
-        sessionStoreBase = nil
-        sidebarModel = nil
-        conversationSurface = nil
-        if let item = sidebarSplitItem {
-            splitViewController.removeSplitViewItem(item)
-        }
-        sidebarSplitItem = nil
     }
 
     // MARK: - 连接状态机
@@ -366,9 +269,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         endpoint = found
         Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)",
                   to: DashPaths.logURL, tag: "endpoint")
-        // 换了端点（dsh 重启或换端口）：整件卸掉旧镜像再重装，
-        // 已 stop 的 store 不会自己复活。
-        if isReconnect { uninstallSidebar() }
+        if isReconnect {
+            Log.write("端点变化，插件将随重连的桥重新对齐", to: DashPaths.logURL, tag: "endpoint")
+        }
         enterRunning()
     }
 
@@ -390,7 +293,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         eventsBridge?.stop()
         eventsBridge = nil
         nativeHost.disconnect()
-        uninstallSidebar()
         webView.stopLoading()
         showBootstrapGuide(
             title: "与 dsh 断开连接",
@@ -408,14 +310,14 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard let base = endpoint?.httpBase,
               var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
         components.path = "/"
-        // 插件门控参数：网页侧边栏永久隐藏，原生侧边栏接管。
-        components.queryItems = [URLQueryItem(name: "dash-native-sidebar", value: "1")]
+        // 插件门控参数：带上它则网页侧边栏隐藏，由原生 sidebar 槽接管；
+        // 不带则完整网页模式（dash-sidebar 缺席时的样子）。
+        let native = Self.rememberedNativeSidebar
+        nativeSidebarParamInUse = native
+        components.queryItems = native
+            ? [URLQueryItem(name: "dash-native-sidebar", value: "1")] : nil
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
-        if sessionStore != nil && sessionStoreBase != base {
-            uninstallSidebar()
-        }
-        installSidebar()
         bridgeReady = false
         armBridgeWarn()
     }
@@ -449,7 +351,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         eventsBridge?.stop()
         eventsBridge = nil
         nativeHost.disconnect()
-        uninstallSidebar()
         webView.stopLoading()
         endpoint = nil
         showBootstrap("正在重新连接 dsh…")
@@ -464,44 +365,29 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         bridgeWarnWork?.cancel()
         eventsBridge?.stop()
         nativeHost.disconnect()
-        sessionStore?.stop()
     }
 
-    // MARK: - root 槽
+    // MARK: - 原生侧边栏门控
 
-    /// `root` 槽的占用状态变了就挂上/摘掉。槽内插件自己换代不走这里——
-    /// `ShellRootView` 观察 registry，版本号跳变时自己整棵重建。
-    private func refreshRootSlot() {
-        if nativeHost.registry.isOccupied("root") {
-            mountRootSlot()
-        } else {
-            unmountRootSlot()
-        }
+    private static let nativeSidebarDefaultsKey = "dash.nativeSidebar"
+
+    /// 上次运行时是否有原生侧边栏。页面必须在插件编译完成之前就开始加载
+    /// （预热 WebView），那时还不知道 sidebar 槽会不会被占，只能先按上次的答案来。
+    private static var rememberedNativeSidebar: Bool {
+        get { UserDefaults.standard.object(forKey: nativeSidebarDefaultsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: nativeSidebarDefaultsKey) }
     }
 
-    private func mountRootSlot() {
-        guard rootSlotView == nil, let content = window?.contentView else { return }
-        let hosting = NSHostingView(rootView: ShellRootView(registry: nativeHost.registry))
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        // 盖在壳自己的布局之上。引导页比它更晚加入（同样 .above nil），
-        // 因此断连时引导页仍在最上层。
-        content.addSubview(hosting, positioned: .above, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            hosting.topAnchor.constraint(equalTo: content.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            hosting.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-        ])
-        rootSlotView = hosting
-        Log.write("root 槽已挂载（\(nativeHost.registry.owner(of: "root") ?? "?")）",
-                  to: DashPaths.logURL, tag: "plugin")
-    }
-
-    private func unmountRootSlot() {
-        guard let view = rootSlotView else { return }
-        view.removeFromSuperview()
-        rootSlotView = nil
-        Log.write("root 槽已摘除，回落壳布局", to: DashPaths.logURL, tag: "plugin")
+    /// 插件装载稳定后核对一次：实际有没有原生侧边栏与页面加载时的假设不符，
+    /// 就更新记忆并重载页面（网页侧边栏随之回归或让位）。
+    private func syncNativeSidebarGate() {
+        guard nativeHost.didSettle, endpoint != nil else { return }
+        let actual = nativeHost.registry.isOccupied("sidebar")
+        guard actual != nativeSidebarParamInUse else { return }
+        Log.write("原生侧边栏门控变化：\(nativeSidebarParamInUse) → \(actual)，重载页面",
+                  to: DashPaths.logURL, tag: "layout")
+        Self.rememberedNativeSidebar = actual
+        loadWebUI()
     }
 
     // MARK: - 引导视图
@@ -648,8 +534,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         NSApp.mainMenu = mainMenu
     }
 
+    /// ⌘,：壳只负责喊一声，谁有能力谁去做（layout 拥有会话展示面）。
     @objc private func openSettings() {
-        conversationSurface?.openSettings()
+        nativeHost.events.emit(DashEventBus.Topic.menuCommand, ["command": "openSettings"])
     }
 
     @objc private func reconnectNow() {
@@ -686,7 +573,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 nativeHost.events.emit(DashEventBus.Topic.pageReady, ["capabilities": caps])
             case "currentSession":
                 if let id = body["id"] as? String {
-                    sidebarModel?.pageDidSelect(sessionId: id)
                     nativeHost.events.emit(DashEventBus.Topic.pageCurrentSession, ["id": id])
                 }
             case "debug":
@@ -701,38 +587,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     // MARK: - NSWindowDelegate
-
-    /// 折叠/展开 sidebar。必须走 NSSplitViewController.toggleSidebar(_:)：
-    /// 它内部带系统标准的滑入/滑出动画（工具栏按钮/⌘⌥S 同款）。
-    /// 直接赋值 isCollapsed 或包 NSAnimationContext 都不会触发该动画。
-    private func setSidebarCollapsed(_ collapsed: Bool) {
-        guard let item = sidebarSplitItem, item.isCollapsed != collapsed else { return }
-        splitViewController.toggleSidebar(nil)
-    }
-
-    /// 自适应 sidebar：窗口收窄、主内容宽度不够 contentMinWidth 时，
-    /// 优先自动折叠 sidebar（Web UI 同款设计）；拉宽到能同时容纳
-    /// sidebar（按折叠前厚度）+ 主内容最小宽度时自动恢复。
-    /// 用户手动收起的 sidebar（autoCollapsedSidebar = false）不会被恢复。
-    func windowDidResize(_ notification: Notification) {
-        guard let window, let item = sidebarSplitItem else { return }
-        let width = window.contentView?.bounds.width ?? 0
-        let divider = splitViewController.splitView.dividerThickness
-        if !item.isCollapsed {
-            let sidebarWidth = item.viewController.view.bounds.width
-            if width - sidebarWidth - divider < Self.contentMinWidth {
-                setSidebarCollapsed(true)
-                autoCollapsedSidebar = true
-            } else {
-                // 记录当前厚度，作为自动恢复的宽度阈值。
-                sidebarVisibleThickness = sidebarWidth
-            }
-        } else if autoCollapsedSidebar,
-                  width >= Self.contentMinWidth + sidebarVisibleThickness + divider {
-            setSidebarCollapsed(false)
-            autoCollapsedSidebar = false
-        }
-    }
 
     /// 窗口重新成为关键窗口时（首次显示、从 Dock 恢复、关掉设置窗口后），
     /// 若焦点没有落在更具体的控件上，就把键盘焦点还给 WebView——
@@ -806,49 +660,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, let endpoint = self.endpoint, endpoint == before else { return }
             self.webView.reload()
-        }
-    }
-}
-
-// MARK: - 工具栏
-
-extension NSToolbarItem.Identifier {
-    static let newSession = NSToolbarItem.Identifier("dash.newSession")
-}
-
-extension MainWindowController: NSToolbarDelegate {
-    // sidebarTrackingSeparator 之前的项落在侧边栏区域，之后的落在内容区域（留空）。
-    // 布局：红绿灯 …弹性… 新建会话 收起侧边栏 | 分隔线（按钮组右对齐贴 divider）。
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, .newSession, .toggleSidebar, .sidebarTrackingSeparator]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    func toolbar(_ toolbar: NSToolbar,
-                 itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case .newSession:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.image = NSImage(systemSymbolName: "square.and.pencil",
-                                 accessibilityDescription: "新建会话")
-            item.label = "新建会话"
-            item.toolTip = "新建会话"
-            item.isBordered = true
-            item.target = self
-            item.action = #selector(newSessionFromToolbar)
-            return item
-        case .sidebarTrackingSeparator:
-            // 让分隔线在标题栏内跟随 split divider（全高侧边栏观感）。
-            return NSTrackingSeparatorToolbarItem(identifier: itemIdentifier,
-                                                  splitView: splitViewController.splitView,
-                                                  dividerIndex: 0)
-        default:
-            // .toggleSidebar / .flexibleSpace 等系统项由 AppKit 提供行为。
-            return NSToolbarItem(itemIdentifier: itemIdentifier)
         }
     }
 }

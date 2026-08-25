@@ -40,5 +40,8 @@ public final class DashEventBus {
         public static let pageCurrentSession = "dash.page.currentSession"
         /// 页内桥就绪。载荷 `["capabilities": [String]]`。
         public static let pageReady = "dash.page.ready"
+        /// 壳的菜单/快捷键触发了一个命令。载荷 `["command": String]`。
+        /// 壳只负责喊，具体做什么归拥有相应能力的插件（如 layout 拥有会话展示面）。
+        public static let menuCommand = "dash.menu.command"
     }
 }
