@@ -1,3 +1,13 @@
+> [!WARNING]
+> **本文描述的是阶段二迁移之前的架构，已大面积过时**（改名前的 DSHarness、壳 spawn dsh、
+> npm 管理的 harness 自更新、Node 探测、设置窗口——这些代码在 M1 已经删除）。
+> 按计划 §9，README 由 **M8 收尾时重写**。在那之前，以
+> [`CLAUDE.md`](CLAUDE.md)、[`docs/phase2-dash-plugin-migration-plan.md`](docs/phase2-dash-plugin-migration-plan.md)
+> 和 [`dash-app/README.md`](dash-app/README.md) 为准。
+>
+> 一句话现状：App 改名 **dash**，启动方向已反转——`dsh web` 先起，其中的 dash-app 插件
+> 构建并拉起 App；App 三级定位 dsh（flag → endpoint 发现文件 → 引导页）。
+
 # DeepSeek Harness —— dsh 的 macOS 原生壳应用
 
 Swift/AppKit + WKWebView 的 macOS 应用，把 [`dsh`](https://github.com/deepseek-ai/deepseek-harness)（`@deepseek-ai/dsh`）的 Web UI 包进原生窗口：系统通知（UNUserNotificationCenter）+ 透明 vibrancy 侧边栏（NSVisualEffectView）。

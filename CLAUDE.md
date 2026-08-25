@@ -10,13 +10,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 每完成一个里程碑在计划 §12 追加一行执行日志；发现文档与 dsh 源码冲突，
 以源码为准并就地更新计划文档。
 
-**当前进度：M0（固化 + 搬家 + 改名）已完成，下一步 M1（启动反转）。**
+**当前进度：M0（固化+搬家+改名）、M2（ABI spike，R1 已解除）、M1（启动反转）均已完成，下一步 M3（SDK 骨架）。**
 
 仓库根就是 `~/.dsh/profiles/plugins/`（这不是巧合，是 §1.4 布线硬约束的要求）。
 
 ```
-dash-app/          壳源码为载荷的插件（M1 起有 lib/index.js；现在只有 host/）
-  host/            Xcode 工程：project.yml / Sources/ / Packages/ / scripts/ / tools/
+dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
+  lib/index.js     node 半边（inject webServer）
+  host/            Xcode 工程载荷：project.yml / Sources/ / Packages/ / scripts/ / tools/
 dash-web-adapter/  注入 dsh Web UI 的 cordis 插件（纯 client 半边，无构建步骤）
 docs/              计划与调研文档
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
@@ -27,9 +28,13 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 **必须用 `-derivedDataPath build`**——用户从 `build/Build/Products/Debug/` 启动 App，
 输出到其它位置（如 `build/DerivedData/`）会导致"BUILD SUCCEEDED 但改动永远不生效"。
 
+**M1 起 app 由 dsh 拉起**：终端跑 `dsh web --no-open`，dash-app 插件会按需构建并 open 出 App
+（源码没变则跳过构建，App 已在运行则跳过拉起）。`--no-open` 是为了不让 dsh 另开一个重复的浏览器
+标签页。`dev.sh` 仍在，作为同一套逻辑的手动捷径。
+
 ```bash
-# Debug 构建并重启 Dev App（默认不影响 Release App，两者可并存运行；
-# 如确需先退出 Release App 用 --quit-release）
+# 常规循环：改 Swift → 退出 App → dsh web（插件自动重建重拉）
+# 或者不重启 dsh，直接用手动捷径：
 dash-app/host/scripts/dev.sh [--quit-release]
 
 # Release 构建 + 安装到 /Applications（会退出正在运行的 Release App；
@@ -64,8 +69,8 @@ UI 差异全在 `#if DEBUG`，改图标设置看 project.yml 的 `configs:` 段�
 
 ## dsh 与插件布线
 
-dsh 从 M0 起是**全局安装**（`npm i -g @deepseek-ai/dsh@0.1.1-rc.2`，钉版本），
-终端 `dsh web` 直接可用；壳内 npm 管理的那份即将随 M1 启动反转退役。
+dsh 是**全局安装**（`npm i -g @deepseek-ai/dsh@0.1.1-rc.2`，钉版本），终端 `dsh web` 直接可用。
+壳内那份 npm 管理的 harness 已随 M1 退役（`<AppSupport>/io.wenbo.dash/harness/` 可手动删）。
 
 插件注册：`dsh plugin --profile web add link:<path>`（参数直接透传给 pnpm，
 `remove <name>` 同理）。**硬约束**：插件真实路径必须在 `~/.dsh/profiles/` 之下，
@@ -78,12 +83,18 @@ web bundle 下 disable 了 node 侧 HMR）；client 半边（`lib/client.js`）�
 
 ## 架构速览
 
-Swift/AppKit 壳 + WKWebView，当前仍由壳 spawn `dsh web`（M1 反转为 dsh 先起、
-由 dash-app 插件拉起壳）。详见 README.md（M8 随收尾重写）。
+Swift/AppKit 壳 + WKWebView。**启动方向已反转**：`dsh web` 先起，其中的 dash-app 插件
+构建并拉起 App；App 是 dsh 的客户端外设。详见 README.md（M8 随收尾重写）。
 
-- `dash-app/host/Sources/`：壳应用。MainWindowController 是主枢纽（窗口/WebView/状态机/菜单）；
-  HarnessProcess spawn `dsh web` 并选端口；EventsBridge 走 WebSocket 事件流发通知。
-  （后三者按计划 §3 将在 M1 退役。）
+App 三级定位 dsh：`--dash-endpoint` flag（插件拉起时传入）→ endpoint 发现文件
+（`<AppSupport>/io.wenbo.dash/endpoint.json`，插件写、退出删）→ 都没有 = 引导页
+（"未检测到 dsh，请运行 dsh web"）。2s 轮询兼管断连发现与自动重连，dsh 换端口回来
+会整件重装侧边栏镜像。
+
+- `dash-app/lib/index.js`：宿主插件（详见 dash-app/README.md）。源码内容 hash 决定是否重建，
+  marker 落 `host/build/.dash-app-source-hash.<配置>`。
+- `dash-app/host/Sources/`：壳应用。MainWindowController 是主枢纽（窗口/WebView/连接状态机/菜单）；
+  DashEndpoint 是三级定位；EventsBridge 走 WebSocket 事件流发通知（M7 迁走）。
 - `dash-app/host/Packages/DSHKit`：仅 Foundation 的 dsh API 层（SessionStore 镜像会话列表）；
   `Packages/DSHSidebarUI`：SwiftUI 原生侧边栏（M6 迁入 dash-sidebar 插件）。
 - `dash-web-adapter/`：注入 dsh Web UI 的 cordis 插件（隐藏网页侧边栏、注入 CSS、

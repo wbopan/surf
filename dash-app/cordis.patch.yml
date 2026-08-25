@@ -1,0 +1,16 @@
+# dash-app 的 bundle patch 层：
+# `dsh plugin --profile web add link:<repo>/dash-app` 之后 reconcile 会把包名写进
+# dsh.profile.bundles，本文件随之作为一个 patch 层生效——插入自己这一行。
+# 用户 profile 的 cordis.patch.yml 在其后，可覆盖这里的 config。
+- insert:
+    - id: dash-app
+      name: dash-app
+      config:
+        # 构建哪个配置。Debug 产物是 "dash Dev.app"（bundle id io.wenbo.dash.dev），
+        # Release 是 "dash.app"——两者可并存运行。开发期默认 Debug；
+        # 日常使用者应在自己的 profile patch 里覆写成 Release。
+        configuration: Debug
+        # 源码变了就重建（无 Xcode 时自动降级为"只探测既有产物"）。
+        build: true
+        # 构建/探测到产物后自动拉起（已在运行则跳过）。
+        launch: true

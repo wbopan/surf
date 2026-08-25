@@ -60,12 +60,15 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 断言拉回；有用户记忆时记忆值优先。
     private var launchWindowFrame: NSRect = .zero
 
-    // 供 SettingsWindowController 使用
-    let harnessManager: HarnessManager
+    /// 当前连上的 dsh。nil = 没找到/已断开（引导页在场）。
+    private var endpoint: DashEndpoint?
+    /// 定位/健康轮询。壳已不是 dsh 的父进程，拿不到退出信号，
+    /// 只能靠周期性 GET 发现它走了、也靠它发现它回来了。
+    private var connectTimer: Timer?
+    private var probeInFlight = false
+    private let connectPollInterval: TimeInterval = 2
 
-    private let harnessProcess: HarnessProcess
     private var eventsBridge: EventsBridge?
-    private var installed: HarnessManager.InstalledHarness?
 
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
     // 需与插件 cordis.patch.yml 的 topInset 保持一致，网页内容才不会钻到条底下。
@@ -94,8 +97,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     // MARK: - 原生侧边栏（阶段二·Mail 风格）
 
     private var sessionStore: SessionStore?
-    /// 当前 sessionStore 的 transport 所指端口；harness 换端口后据此判断是否整件重装。
-    private var sessionStorePort = -1
+    /// 当前 sessionStore 的 transport 所指 base；dsh 换端口后据此判断是否整件重装。
+    private var sessionStoreBase: URL?
     private var sidebarModel: AppSidebarModel?
     private var conversationSurface: WebViewConversationSurface?
     /// 桥 ready 监视（8s 超时 → 只记日志；不再回退网页侧边栏模式）。
@@ -104,10 +107,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private let bridgeReadyTimeout: TimeInterval = 8
 
     private var bootstrapVC: BootstrapViewController?
-    private var settingsWC: SettingsWindowController?
-    private var updateTimer: Timer?
-    private var bootTask: Task<Void, Never>?
-    private var healthCheckInFlight = false
 
     // MARK: - WebView
 
@@ -132,16 +131,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         return wv
     }()
 
-    init(harnessManager: HarnessManager) {
-        self.harnessManager = harnessManager
-        self.harnessProcess = HarnessProcess(logURL: harnessManager.logURL)
+    init() {
         super.init(window: nil)
         setupWindow()
         setupContentView()
         setupMenus()
-        harnessProcess.onState = { [weak self] state in
-            DispatchQueue.main.async { self?.handleProcessState(state) }
-        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -177,7 +171,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 最小宽度 = 主内容最小宽度（sidebar 已自动折叠的前提下）。
         win.minSize = NSSize(width: Self.contentMinWidth, height: 480)
         win.backgroundColor = .windowBackgroundColor
-        // 关窗只隐藏、不销毁窗口：harness 后台持续运行，点 Dock 图标可原样恢复页面。
+        // 关窗只隐藏、不销毁窗口：dsh 在终端持续运行，点 Dock 图标可原样恢复页面。
         win.isReleasedWhenClosed = false
         win.delegate = self
         self.window = win
@@ -223,14 +217,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 装配侧边栏：NSHostingController(SidebarView) 塞进 sidebar split item；
     /// 材质/分隔条/调宽/宽度记忆交给系统。
     private func installSidebar() {
-        guard sidebarSplitItem == nil else { return }
+        guard sidebarSplitItem == nil, let base = endpoint?.httpBase else { return }
 
         conversationSurface = WebViewConversationSurface(webView: webView)
-        let store = SessionStore(transport: DSHTransportFactory.live(
-            baseURL: URL(string: "http://127.0.0.1:\(harnessProcess.port)")!))
+        let store = SessionStore(transport: DSHTransportFactory.live(baseURL: base))
         sessionStore = store
         let model = AppSidebarModel(store: store, surface: conversationSurface!,
-                                    logURL: harnessManager.logURL)
+                                    logURL: DashPaths.logURL)
         sidebarModel = model
 
         let hosting = NSHostingController(rootView: SidebarView(model: model,
@@ -248,7 +241,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         item.canCollapse = true
         splitViewController.insertSplitViewItem(item, at: 0)
         sidebarSplitItem = item
-        sessionStorePort = harnessProcess.port
+        sessionStoreBase = base
 
         installToolbar()
         Task { await store.start() }
@@ -303,11 +296,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         conversationSurface?.startSession(workspaceId: nil)
     }
 
-    /// 卸载侧边栏（harness 重启换端口时整件重装镜像）。
+    /// 卸载侧边栏（dsh 重启换端口时整件重装镜像）。
     private func uninstallSidebar() {
         sessionStore?.stop()
         sessionStore = nil
-        sessionStorePort = -1
+        sessionStoreBase = nil
         sidebarModel = nil
         conversationSurface = nil
         if let item = sidebarSplitItem {
@@ -316,109 +309,96 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         sidebarSplitItem = nil
     }
 
-    // MARK: - 状态机
+    // MARK: - 连接状态机
 
+    /// 三级定位 → 健康探测 → 接入。同时装上轮询：壳已不是 dsh 的父进程，
+    /// 拿不到它的退出信号，只能靠周期性 GET 发现它走了、也发现它回来了。
     func start() {
-        showBootstrap("准备启动…")
-        bootTask = Task { [weak self] in
+        showBootstrap("正在寻找 dsh…")
+        startConnectPolling()
+        probeNow()
+    }
+
+    private func startConnectPolling() {
+        guard connectTimer == nil else { return }
+        let t = Timer(timeInterval: connectPollInterval, repeats: true) { [weak self] _ in
+            self?.probeNow()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        connectTimer = t
+    }
+
+    /// 探一次。同一时刻只允许一个在飞，慢探测不叠罗汉。
+    private func probeNow() {
+        guard !probeInFlight else { return }
+        probeInFlight = true
+        Task { @MainActor [weak self] in
+            let found = await EndpointLocator.locateHealthy()
             guard let self else { return }
-            await self.boot()
+            self.probeInFlight = false
+            self.apply(found)
         }
     }
 
-    private func boot() async {
-        do {
-            let installed = try await harnessManager.ensureInstalled()
-            self.installed = installed
-            showBootstrap("正在启动 harness v\(installed.version)…")
-            let port = HarnessProcess.pickFreePort()
-            guard port > 0 else { return fail("无法分配空闲端口") }
-            try harnessProcess.start(entry: installed.entry,
-                                     node: harnessManager.node,
-                                     runWithNode: installed.runWithNode,
-                                     home: FileManager.default.homeDirectoryForCurrentUser,
-                                     port: port)
-        } catch {
-            fail("安装失败：\(error.localizedDescription)")
-        }
-    }
-
-    private func handleProcessState(_ state: HarnessProcess.State) {
-        switch state {
-        case .starting:
-            guard !healthCheckInFlight else { return }
-            healthCheckInFlight = true
-            HarnessProcess.waitUntilHealthy(port: harnessProcess.port, timeout: 60) { [weak self] ok in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.healthCheckInFlight = false
-                    if ok {
-                        self.enterRunning()
-                    } else {
-                        self.handleHealthTimeout()
-                    }
-                }
+    /// 把一次探测结果落到界面上。四种去向：稳定（什么都不做）、
+    /// 接入、换端点重接、断开。
+    private func apply(_ found: DashEndpoint?) {
+        guard let found else {
+            if endpoint != nil {
+                enterDisconnected()
+            } else if !guideShown {
+                showSearchGuide()
             }
-        case .restarting(let attempt):
-            showBootstrap("harness 意外退出，正在重启（第 \(attempt) 次）…")
-        case .failed(let reason):
-            fail("harness 启动失败：\(reason)")
-        case .stopped:
-            break
-        default:
-            break
+            return
         }
+        guard found != endpoint else { return }
+        let isReconnect = endpoint != nil
+        endpoint = found
+        Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)",
+                  to: DashPaths.logURL, tag: "endpoint")
+        // 换了端点（dsh 重启或换端口）：整件卸掉旧镜像再重装，
+        // 已 stop 的 store 不会自己复活。
+        if isReconnect { uninstallSidebar() }
+        enterRunning()
     }
 
     private func enterRunning() {
         hideBootstrap()
         loadWebUI()
         startEventsBridge()
-        scheduleUpdateCheck()
     }
 
-    private func handleHealthTimeout() {
-        if harnessProcess.isRunning() {
-            // 进程活着但端口不健康：大概率端口被占，换端口重试
-            terminateAsync(wait: 2)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.restartWithNewPort()
-            }
-        } else {
-            fail("harness 启动超时（60s 内未就绪）")
-        }
+    /// dsh 不见了：停桥、卸镜像、盖引导页。窗口与 WebView 都留着——
+    /// dsh 回来时轮询自动把页面重新载上，用户不必重开 App。
+    private func enterDisconnected() {
+        guard endpoint != nil else { return }
+        Log.write("与 dsh 断开连接", to: DashPaths.logURL, tag: "endpoint")
+        endpoint = nil
+        eventsBridge?.stop()
+        eventsBridge = nil
+        uninstallSidebar()
+        webView.stopLoading()
+        showBootstrapGuide(
+            title: "与 dsh 断开连接",
+            detail: "dsh 已退出或不再应答。重新运行下面的命令，\(AppInfo.displayName) 会自动接回。")
     }
 
-    /// terminate 会轮询等待，放到后台队列避免卡主线程。
-    private func terminateAsync(wait: TimeInterval) {
-        DispatchQueue.global().async { [weak self] in
-            self?.harnessProcess.terminate(waitTimeout: wait)
-        }
-    }
-
-    private func restartWithNewPort() {
-        guard let installed else { return }
-        let port = HarnessProcess.pickFreePort()
-        guard port > 0 else { return fail("无法分配空闲端口") }
-        do {
-            try harnessProcess.start(entry: installed.entry,
-                                     node: harnessManager.node,
-                                     runWithNode: installed.runWithNode,
-                                     home: FileManager.default.homeDirectoryForCurrentUser,
-                                     port: port)
-        } catch {
-            fail("重启失败：\(error.localizedDescription)")
-        }
+    private func showSearchGuide() {
+        showBootstrapGuide(
+            title: "未检测到 dsh",
+            detail: "\(AppInfo.displayName) 是 dsh 的客户端外设，需要 dsh 先在终端跑起来；"
+                  + "启动后本页会自动接入，无需重开 App。")
     }
 
     private func loadWebUI() {
-        var components = URLComponents(string: "http://127.0.0.1:\(harnessProcess.port)/")!
+        guard let base = endpoint?.httpBase,
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
+        components.path = "/"
         // 插件门控参数：网页侧边栏永久隐藏，原生侧边栏接管。
         components.queryItems = [URLQueryItem(name: "dash-native-sidebar", value: "1")]
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
-        // harness 重启后端口可能变：镜像 transport 持旧端口时整件重装。
-        if sessionStore != nil && sessionStorePort != harnessProcess.port {
+        if sessionStore != nil && sessionStoreBase != base {
             uninstallSidebar()
         }
         installSidebar()
@@ -432,147 +412,90 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.bridgeReady else { return }
             Log.write("桥 ready 超时（\(Int(self.bridgeReadyTimeout))s）——插件疑似失效，currentSession 同步将不可用",
-                      to: self.harnessManager.logURL, tag: "bridge")
+                      to: DashPaths.logURL, tag: "bridge")
         }
         bridgeWarnWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + bridgeReadyTimeout, execute: work)
     }
 
     private func startEventsBridge() {
+        guard let base = endpoint?.httpBase else { return }
         eventsBridge?.stop()
-        let bridge = EventsBridge(port: harnessProcess.port)
+        let bridge = EventsBridge(baseURL: base)
         eventsBridge = bridge
         bridge.start()
     }
 
-    // MARK: - 更新检查
+    // MARK: - 重连 / 清理
 
-    func scheduleUpdateCheck() {
-        let hours = Settings.updateIntervalHours
-        guard hours > 0 else { return }
-        rescheduleUpdateTimer()
-        // 启动时静默检查一次
-        Task { await self.checkUpdates(force: false, silent: true) }
-    }
-
-    func rescheduleUpdateTimer() {
-        updateTimer?.invalidate()
-        updateTimer = nil
-        let hours = Settings.updateIntervalHours
-        guard hours > 0 else { return }
-        let t = Timer(timeInterval: hours * 3600, repeats: true) { [weak self] _ in
-            Task { await self?.checkUpdates(force: false, silent: true) }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        updateTimer = t
-    }
-
-    func checkUpdates(force: Bool, silent: Bool) async {
-        let result = await harnessManager.checkForUpdates(force: force)
-        switch result {
-        case .upToDate(let current):
-            if force && !silent {
-                await presentAlert(title: "已是最新", message: "当前 harness 版本：\(current)")
-            }
-        case .updated(let from, let to):
-            UserDefaults.standard.set(to, forKey: "pendingUpdateVersion")
-            let action = await presentAlert(
-                title: "harness 已更新：\(from) → \(to)",
-                message: "旧版本已保留用于回滚。重启 harness 后生效。",
-                buttons: ["立即重启", "稍后"]
-            )
-            if action == 0 { restartHarness() }
-        case .failed(let reason):
-            if force || !silent {
-                await presentAlert(title: "检查更新失败", message: reason)
-            } else {
-                Log.write("后台更新检查失败：\(reason)", tag: "update")
-            }
-        }
-    }
-
-    // MARK: - 重启 / 清理
-
-    func restartHarness() {
+    /// ⌘⇧R：忘掉当前端点，立刻重走三级定位。
+    /// M4 加桥后这里会升级为"经桥请求 dsh 重启自己"（dsh 侧有 appExit 服务）；
+    /// M1 还没有反向通道，能做的只是壳这一侧重新接入——dsh 自身的重启归终端。
+    func reconnect() {
         eventsBridge?.stop()
-        // 整件卸掉镜像：新进程端口即使碰巧相同，已 stop 的 store 也不会自己复活。
+        eventsBridge = nil
         uninstallSidebar()
         webView.stopLoading()
-        showBootstrap("正在重启 harness…")
-        let port = HarnessProcess.pickFreePort()
-        terminateAsync(wait: 4)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self, let installed = self.installed else { return }
-            do {
-                try self.harnessProcess.start(entry: installed.entry,
-                                              node: self.harnessManager.node,
-                                              runWithNode: installed.runWithNode,
-                                              home: FileManager.default.homeDirectoryForCurrentUser,
-                                              port: port)
-            } catch {
-                self.fail("重启失败：\(error.localizedDescription)")
-            }
-        }
+        endpoint = nil
+        showBootstrap("正在重新连接 dsh…")
+        probeNow()
     }
 
-    /// 应用退出前调用：停桥、杀进程组。terminate 阻塞轮询（最长 5s + 1s），
-    /// 同 terminateAsync 放后台队列，收完再回主线程 completion 放行退出。
-    func shutdown(completion: @escaping () -> Void) {
-        bootTask?.cancel()
+    /// 应用退出前调用。M1 起壳不拥有 dsh 进程，收尾只剩自己这一侧的连接，
+    /// 不再需要 .terminateLater 等一个进程组死透。
+    func shutdown() {
+        connectTimer?.invalidate()
+        connectTimer = nil
+        bridgeWarnWork?.cancel()
         eventsBridge?.stop()
         sessionStore?.stop()
-        let process = harnessProcess
-        DispatchQueue.global(qos: .userInitiated).async {
-            process.terminate(waitTimeout: 5)
-            DispatchQueue.main.async(execute: completion)
-        }
     }
 
     // MARK: - 引导视图
 
-    private func showBootstrap(_ text: String) {
-        if bootstrapVC == nil {
-            let vc = BootstrapViewController()
-            bootstrapVC = vc
-            if let content = window?.contentView {
-                let v = vc.view
-                v.frame = content.bounds
-                v.autoresizingMask = [.width, .height]
-                content.addSubview(v, positioned: .above, relativeTo: nil)
-            }
+    /// 引导页当前在场且处于 guide 态（非转圈）。轮询每 2s 打一次，
+    /// 靠它避免把同一段文案反复重设。
+    private var guideShown = false
+
+    /// 引导页盖在 contentView 之上，铺满窗口；重复调用只换文案。
+    private func mountBootstrap() -> BootstrapViewController {
+        if let vc = bootstrapVC { return vc }
+        let vc = BootstrapViewController()
+        bootstrapVC = vc
+        if let content = window?.contentView {
+            let v = vc.view
+            v.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(v, positioned: .above, relativeTo: nil)
+            NSLayoutConstraint.activate([
+                v.topAnchor.constraint(equalTo: content.topAnchor),
+                v.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+                v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            ])
         }
-        bootstrapVC?.setBusy(text)
+        return vc
+    }
+
+    private func showBootstrap(_ text: String) {
+        guideShown = false
+        mountBootstrap().setBusy(text)
+    }
+
+    /// 引导态：告诉用户在终端跑 `dsh web`，附可拷贝命令与"重试"。
+    /// 重试只是催一次探测——轮询本来就会自己接回来。
+    private func showBootstrapGuide(title: String, detail: String) {
+        guideShown = true
+        mountBootstrap().setGuide(title: title, detail: detail, command: "dsh web",
+                                  retryTitle: "立即重试") { [weak self] in
+            self?.showBootstrap("正在寻找 dsh…")
+            self?.probeNow()
+        }
     }
 
     private func hideBootstrap() {
+        guideShown = false
         bootstrapVC?.view.removeFromSuperview()
         bootstrapVC = nil
-    }
-
-    private func fail(_ reason: String) {
-        Log.write("FAIL：\(reason)", to: harnessManager.logURL)
-        showBootstrapError(reason)
-    }
-
-    private func showBootstrapError(_ reason: String) {
-        if bootstrapVC == nil {
-            let vc = BootstrapViewController()
-            bootstrapVC = vc
-            if let content = window?.contentView {
-                let v = vc.view
-                v.translatesAutoresizingMaskIntoConstraints = false
-                content.addSubview(v, positioned: .above, relativeTo: nil)
-                NSLayoutConstraint.activate([
-                    v.topAnchor.constraint(equalTo: content.topAnchor),
-                    v.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-                    v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-                    v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-                ])
-            }
-        }
-        bootstrapVC?.setError(reason) { [weak self] in
-            self?.start()
-        }
     }
 
     // MARK: - 菜单
@@ -592,16 +515,15 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
+        // 壳自己已无偏好可设（Node 路径/更新频率随 spawn 层退役）；
+        // ⌘, 改为经页内桥打开 dsh 自己的设置面板。
         let settingsItem = appMenu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
-        let checkItem = appMenu.addItem(withTitle: "检查 harness 更新",
-                                        action: #selector(checkForUpdatesNow), keyEquivalent: "u")
-        checkItem.target = self
-        let restartItem = appMenu.addItem(withTitle: "重启 Harness",
-                                          action: #selector(restartHarnessNow),
-                                          keyEquivalent: "r")
-        restartItem.keyEquivalentModifierMask = [.command, .shift]
-        restartItem.target = self
+        let reconnectItem = appMenu.addItem(withTitle: "重新连接 dsh",
+                                            action: #selector(reconnectNow),
+                                            keyEquivalent: "r")
+        reconnectItem.keyEquivalentModifierMask = [.command, .shift]
+        reconnectItem.target = self
         let logsItem = appMenu.addItem(withTitle: "打开日志目录",
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
@@ -674,18 +596,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     @objc private func openSettings() {
-        if settingsWC == nil {
-            settingsWC = SettingsWindowController(mainController: self)
-        }
-        settingsWC?.showWindow(nil)
+        conversationSurface?.openSettings()
     }
 
-    @objc private func checkForUpdatesNow() {
-        Task { await self.checkUpdates(force: true, silent: false) }
-    }
-
-    @objc private func restartHarnessNow() {
-        restartHarness()
+    @objc private func reconnectNow() {
+        reconnect()
     }
 
     @objc private func reloadPage() {
@@ -693,8 +608,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     @objc private func openLogs() {
-        let dir = harnessManager.appSupport.appendingPathComponent("logs", isDirectory: true)
-        NSWorkspace.shared.open(dir)
+        NSWorkspace.shared.open(DashPaths.logsDir)
     }
 
     // MARK: - 网页 → 原生消息
@@ -715,13 +629,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 if let d = body["diag"] as? [String: Any] {
                     diag = " diag=\(d)"
                 }
-                Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: harnessManager.logURL, tag: "bridge")
+                Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: DashPaths.logURL, tag: "bridge")
             case "currentSession":
                 if let id = body["id"] as? String {
                     sidebarModel?.pageDidSelect(sessionId: id)
                 }
             case "debug":
-                Log.write("页内诊断：\(body["msg"] ?? "?")", to: harnessManager.logURL, tag: "bridge")
+                Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
             default:
                 break // 防御式：未知消息忽略
             }
@@ -794,7 +708,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     // MARK: - WKNavigationDelegate（防御式：注入失败不影响功能）
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: harnessManager.logURL, tag: "web")
+        Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: DashPaths.logURL, tag: "web")
         // 页面就绪后把键盘焦点交给 WebView，快捷键/输入立即可用
         if let window, window.firstResponder === window || window.firstResponder === window.contentView {
             window.makeFirstResponder(webView)
@@ -812,29 +726,31 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         """
         webView.evaluateJavaScript(script) { result, _ in
             if let s = result as? String {
-                Log.write("WebView DOM(0s)：\(s)", to: self.harnessManager.logURL, tag: "web")
+                Log.write("WebView DOM(0s)：\(s)", to: DashPaths.logURL, tag: "web")
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             webView.evaluateJavaScript(script) { result, _ in
                 if let s = result as? String {
-                    Log.write("WebView DOM(3s)：\(s)", to: self.harnessManager.logURL, tag: "web")
+                    Log.write("WebView DOM(3s)：\(s)", to: DashPaths.logURL, tag: "web")
                 }
             }
         }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 导航失败：\(error.localizedDescription)", to: harnessManager.logURL, tag: "web")
+        Log.write("WebView 导航失败：\(error.localizedDescription)", to: DashPaths.logURL, tag: "web")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 加载失败：\(error.localizedDescription)", to: harnessManager.logURL, tag: "web")
-        // 页面尚未载入过且进程可能刚重启：延迟重载一次
-        if harnessProcess.isRunning() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.webView.reload()
-            }
+        Log.write("WebView 加载失败：\(error.localizedDescription)", to: DashPaths.logURL, tag: "web")
+        // dsh 可能正在换端口或还没起完：催一次探测。端点没变就是真加载失败，
+        // 延迟重载一次；端点变了/没了，apply 会接管（重装或盖引导页）。
+        let before = endpoint
+        probeNow()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, let endpoint = self.endpoint, endpoint == before else { return }
+            self.webView.reload()
         }
     }
 }

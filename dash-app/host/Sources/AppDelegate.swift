@@ -4,7 +4,6 @@ import UserNotifications
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
-    private var harnessManager: HarnessManager?
 
     static func main() {
         let app = NSApplication.shared
@@ -17,37 +16,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         requestNotificationAuthorization()
 
-        switch NodeResolver.resolve() {
-        case .success(let node):
-            let manager = HarnessManager(appSupport: appSupportURL(), node: node)
-            harnessManager = manager
-            let wc = MainWindowController(harnessManager: manager)
-            windowController = wc
-            wc.showWindow(nil)
-            NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-            wc.start()
-        case .failure(let error):
-            let alert = NSAlert()
-            alert.alertStyle = .critical
-            alert.messageText = "未找到可用的 Node.js"
-            alert.informativeText = error.localizedDescription
-                + "\n\n\(AppInfo.displayName) 需要 Node.js ^22.19.0 或 >=24.0.0 来运行。"
-                + "\n\n安装方式：brew install node"
-            alert.addButton(withTitle: "退出")
-            alert.runModal()
-            NSApp.terminate(nil)
-        }
+        // M1 起壳不再探测 Node、不再 spawn dsh：dsh 先于 App 存在，
+        // 窗口起来后自己去找它（flag → 发现文件 → 引导页）。
+        let wc = MainWindowController()
+        windowController = wc
+        wc.showWindow(nil)
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+        wc.start()
     }
 
-    /// 收 harness 要 SIGTERM 整个进程组再轮询等它退（MCP 子进程未必秒退，
-    /// 最长 5s + 1s）。在主线程等会冻住 UI，所以走 .terminateLater：
-    /// 后台收完再放行退出，退出期间窗口和 Dock 保持响应。
+    /// 收尾只剩壳自己这一侧（停轮询、停事件流、停会话镜像），
+    /// 都是同步的——dsh 是别人的进程，不归我们杀，也不必等。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let windowController else { return .terminateNow }
-        windowController.shutdown {
-            NSApp.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
+        windowController?.shutdown()
+        return .terminateNow
     }
 
     /// macOS 14+ 要求显式声明安全的状态恢复，否则启动时打 Secure coding 警告。
@@ -56,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // 关窗 ≠ 退出：harness 在后台持续运行，只有真正退出 App 才被杀。
+        // 关窗 ≠ 退出：dsh 在终端持续运行，关掉壳窗口只是收起这个客户端。
         false
     }
 
@@ -68,14 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowController?.showWindow(nil)
         }
         return true
-    }
-
-    private func appSupportURL() -> URL {
-        let fm = FileManager.default
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("io.wenbo.dash", isDirectory: true)
-        try? fm.createDirectory(at: base, withIntermediateDirectories: true)
-        return base
     }
 
     private func requestNotificationAuthorization() {

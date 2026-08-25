@@ -13,7 +13,8 @@ import UserNotifications
 ///   帧型：approval/requested、question/requested、session/event（mux）；
 ///         host/agent-error、host/session-status（host）。
 final class EventsBridge: NSObject, UNUserNotificationCenterDelegate {
-    private let port: Int
+    /// dsh 的 HTTP 基址（M1 起由 EndpointLocator 三级定位给出，不再是壳自选的端口）。
+    private let baseURL: URL
     private let session: URLSession
     private var muxTask: URLSessionWebSocketTask?
     private var hostTask: URLSessionWebSocketTask?
@@ -31,8 +32,8 @@ final class EventsBridge: NSObject, UNUserNotificationCenterDelegate {
     private var lastQuestionNotice: [String: Date] = [:]
     private let pendingCooldown: TimeInterval = 60
 
-    init(port: Int) {
-        self.port = port
+    init(baseURL: URL) {
+        self.baseURL = baseURL
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 0
         cfg.timeoutIntervalForResource = TimeInterval(Int.max)
@@ -60,8 +61,20 @@ final class EventsBridge: NSObject, UNUserNotificationCenterDelegate {
         hostTask = nil
     }
 
-    private var muxURL: URL { URL(string: "ws://127.0.0.1:\(port)/api/events.mux")! }
-    private var hostURL: URL { URL(string: "ws://127.0.0.1:\(port)/api/events.host")! }
+    private var muxURL: URL { wsURL(path: "/api/events.mux") }
+    private var hostURL: URL { wsURL(path: "/api/events.host") }
+
+    /// http(s) → ws(s) 同主机同端口换路径。基址解析不出来时退回 loopback 默认端口，
+    /// 让连接自己失败重试，而不是在这里崩。
+    private func wsURL(path: String) -> URL {
+        guard var c = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return URL(string: "ws://127.0.0.1/\(path)")!
+        }
+        c.scheme = (c.scheme == "https") ? "wss" : "ws"
+        c.path = path
+        c.query = nil
+        return c.url ?? URL(string: "ws://127.0.0.1\(path)")!
+    }
 
     private func connectMux() {
         guard !stopped else { return }

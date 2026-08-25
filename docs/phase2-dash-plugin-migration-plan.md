@@ -145,7 +145,15 @@ App 叫 **dash**。插件前缀 `dash-*`。Swift module 前缀 `Dash*`。改名�
 - `globalThis.__DSH_TRANSPORT__` 是官方传输层替换接缝——本阶段不用,记为 iOS 远程线储备。
 - patch 层叠顺序:空根 → bundles 各自 patch → profile `cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml` → `--patch`;`{id, config}` 是**整体替换**不是深合并。
 - 别在 agent preset 里 provide 服务(会撞进程全局 realm);dash 系插件全部住 profile/web bundle 层。
-- 目前系统 PATH 上**没有** `dsh` 命令(唯一安装 = 壳 npm 管理的那份)。启动反转的前置就是先做全局安装(§2.5)。
+- ~~目前系统 PATH 上没有 `dsh` 命令~~ → M0 已全局安装 `@deepseek-ai/dsh@0.1.1-rc.2`(`npm i -g`,钉版本),终端 `dsh web` 直接可用;
+  壳内 npm 管理的那份随 M1 启动反转废弃(`<AppSupport>/harness/` 目录可手动删)。
+- **`ctx.logger` 在 `dsh web` 下没有 exporter**(M1 实测):cordis 的 LoggerService 不自带默认 sink,
+  没人 `ctx.logger.exporter(...)` 时消息只进环形缓冲,终端上一个字都看不见。要给蹲在终端的人看的进度,
+  必须自己写 stdout/stderr——仿 dsh 自己的 `dsh web: <url>`(那是 `console.log`,不是 logger)。
+  dash-app 的做法是两边都喂:`logger[level]` + `process.stderr.write("dash-app: …")`。
+- **`dsh web` 会自己开一个浏览器标签页**:`dsh-web-app` 行的 `openBrowser` 默认 `true`,与壳窗口重复。
+  眼下靠 `dsh web --no-open` 规避。插件不去 patch 该行的 config——`{id, config}` 是**整体替换**不是深合并(见上),
+  改一个键会连带抹掉 `printUrl` 等其余键。M8 打磨时再定(候选:壳拉起成功后由 dash-app 自己 tapIndex 提示,或让用户在 profile 层覆写整段 config)。
 
 ---
 
@@ -256,6 +264,32 @@ npm i -g @deepseek-ai/dsh@0.1.1-rc.2   # 钉版本;从此终端 `dsh web` 可用
 
 验收:终端 `dsh web` → app 自动弹出并正常工作;直接双击 app(dsh 已活)→ 发现文件接入;
 dsh 未起时双击 → 引导页;dsh 退出 → app 显示断连状态不崩,dsh 回来自动恢复。
+
+### 3.1 M1 实做与本节的偏差(已交付,以此段为准)
+
+- **⌘⇧R 的语义**:计划写"经桥请求 dsh 重启",但桥是 M4 的东西,M1 没有反向通道。
+  实做为**"重新连接 dsh"**——忘掉当前端点、立刻重走三级定位。M4 有桥之后再升级成请求 dsh 重启自己。
+- **⌘U 与设置窗口**:⌘U(检查 harness 更新)按计划删除;`SettingsWindowController` 走了"一并删除"这一支
+  (Node 路径与更新频率两项皆已失效,壳再无偏好可设)。⌘, 没有空置,改为经页内桥调 `window.__dash.openSettings()`
+  打开 dsh 自己的设置面板——该 capability 页内早就有,此前壳没用上。
+- **`Shell.swift` 也删了**:计划写"视余量保留",实测除 `HarnessManager` 外无任何引用面。`Log.swift` 保留。
+- **健康检查是 2s 周期轮询,不是一次性的**:壳已不是 dsh 的父进程,拿不到它的退出信号,
+  "断开"和"回来"都只能靠周期性 GET 发现。同一时刻只允许一个探测在飞。
+  轮询同时兼任三级定位的重试,引导页上的"立即重试"只是催一次,不重试也会自己接回来。
+- **端点变化 = 整件重装镜像**:`sessionStorePort: Int` 换成 `sessionStoreBase: URL?`;
+  dsh 换端口回来时先 `uninstallSidebar()` 再重装(已 stop 的 store 不会自己复活)。实测 0 → 24 条会话正常。
+- **endpoint 发现文件由插件按 pid 匹配删除**:fiber dispose 时先读回文件,`pid` 不是自己就不动——
+  两个 dsh 并存时,先退的那个不该把后来者的文件删掉。dsh 被 SIGKILL 时文件会残留,
+  这正是壳侧那次 GET 健康检查存在的理由(残留文件 → 探测失败 → 引导页)。
+- **构建日志**:计划写"落 dsh 终端"。实做为终端只留结论(仿 `dsh web:` 的 `dash-app: …` 行),
+  完整 xcodebuild 输出落 `<AppSupport>/logs/dash-app-build.<配置>.log`,失败时终端补最后 20 行。
+  理由见 §1.7 新增的 logger 事实。
+- **源码 hash 覆盖面**:`project.yml` + `Sources/` + `Packages/` + `scripts/`,内容摘要(不看 mtime,
+  换 git 分支不误判)。排除 `Sources/Resources/BuildTimestamp.txt`(prebuild 每次重写,进 hash 会让
+  "源码没变"永远不成立)与 `tools/`(xcodegen 二进制)。marker 存 `build/.dash-app-source-hash.<配置>`——
+  与产物同生共死,`build/` 被清时它一起消失,语义自洽。
+- **未覆盖**:无完整 Xcode 的降级路径(只探测既有产物)是照着写的,**没有实测**——本机装着 Xcode,
+  短期内不打算卸。M8 收尾前找一台干净机器或临时 `xcode-select` 到 CLT 验一次。
 
 ---
 
@@ -524,7 +558,7 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 | # | 内容 | 关键产出 | 验收标准 |
 |---|---|---|---|
 | M0 | 固化+搬家+改名(§2) | 新仓库根 `~/.dsh/profiles/plugins/`;dash 命名全换;dsh 全局安装 | dev.sh 全流程可跑;终端 `dsh web` 起得来;web-adapter 功能不变;旧 repo 退役 |
-| M1 | 启动反转(§3) | 壳退役 spawn 层;三级 endpoint 定位;dash-app v0(壳源码入插件,构建+拉起) | `dsh web` → 必要时构建 → app 自动弹出;dsh 未起双击 app → 引导页;dsh 重启 → app 自动恢复;功能等价 |
+| M1 | 启动反转(§3) | ✅ **已完成** 壳退役 spawn 层(-867 行);三级 endpoint 定位;dash-app v0(壳源码入插件,构建+拉起) | ✅ 五条全过:`dsh web` → 构建 → app 自动弹出;已运行则跳过拉起;dsh 未起双击 app → 引导页;dsh 退出 → 断连不崩;dsh 换端口回来 → 自动重接且侧边栏镜像整件重装 |
 | M2 | ABI spike(独立 scratch 工程) | ✅ **已完成** `docs/native-abi.md` + `docs/spikes/m2-abi/`(可复跑) | ✅ §6.5 十条断言全通过（runner 14 项检查）,全链跑通,**R1 解除、不走 Plan B**;附带修正:编译比预期快一个数量级(§7.1 预算)、级联重编成硬约束(§5.1) |
 | M3 | SDK 骨架(§4) | DashSDK module(dash-app/host 内)+ `dash-bridge/plugin` 工厂 | 壳内 registry/store/EventBus 单元可用;工厂能被样例插件 import(dash-* 互引解析定案) |
 | M4 | dash-bridge 通信面 + 编译机 + hello 世代循环 | 桥 WS/登记表/snapshot/changed/轮询;CompilerService/Loader/账本/缓存;hello 插件 | 改 hello 源码 → ≤5s 界面更新不重启;编译失败可见不崩;重启缓存命中秒载 |
@@ -570,14 +604,14 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 
 | 资产 | 行数 | 去向 |
 |---|---|---|
-| MainWindowController.swift | 882 | 拆:窗口/菜单骨架留壳;状态机简化为"endpoint 定位+桥状态";布局/侧边栏装配→dash-layout;桥 handler→layout TS 半身+壳 EventBus |
-| HarnessProcess/Manager + NodeResolver/Semver | ~615 | **退役删除**(启动反转;`Shell`/`Log` 视余量保留) |
-| EventsBridge.swift | 223 | 语义→dash-notifications(TS 半身);WS 重连模式→BridgeClient 参考;文件删除 |
+| MainWindowController.swift | 882→799 | M1 已把状态机换成"三级定位+2s 健康轮询";余下拆分:窗口/菜单骨架留壳;状态机简化为"endpoint 定位+桥状态";布局/侧边栏装配→dash-layout;桥 handler→layout TS 半身+壳 EventBus |
+| HarnessProcess/Manager + NodeResolver/Semver/Shell | 711 | ✅ M1 全部退役删除(`Shell` 实测无其它引用面,一并删;`Log` 保留)。新增 `DashPaths`(28)+`DashEndpoint`(105)接手 |
+| EventsBridge.swift | 223→235 | M1 把 `init(port:)` 改成 `init(baseURL:)`(端口不再由壳自选);语义→dash-notifications(TS 半身);WS 重连模式→BridgeClient 参考;文件删除 |
 | DSHKit | 686 | M6 留(保管箱数据面);M10 退役(或 iOS 线复用) |
 | DSHSidebarUI + AppSidebarModel | 525 | →dash-sidebar/swift/(近原样) |
 | dsharness-web-adapter | 466 | →dash-web-adapter(改名搬家,功能不动) |
-| BootstrapViewController | 123 | 扩建为 boot/诊断/引导视图(桥状态/编译进度/账本/"请运行 dsh web") |
-| SettingsWindowController | 156 | 退役(Node/更新项皆失效)或缩为壳偏好占位 |
+| BootstrapViewController | 123→178 | M1 已扩建出 guide 态(标题+说明+可拷贝 `dsh web`+重试);M4/M8 再补桥状态/编译进度/账本 |
+| SettingsWindowController | 156 | ✅ M1 整件退役删除(Node 路径/更新频率两项皆随 spawn 层失效,壳已无偏好可设);⌘, 改为经页内桥打开 dsh 自己的设置面板 |
 | git 历史 dsh-web-search-firecrawl | — | node 半边写法范本(peerDeps/静态 inject/Config/设置卡),bridge 实现参考 |
 | wire-notes.md / phase1 计划 | — | 保留;M8 随 README 一起校正漂移 |
 
@@ -587,3 +621,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 |---|---|---|---|
 | 2026-08-25 | M2 | `5361621` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。§6.5 十条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|
+| 2026-08-25 | M1 | 见 §12 尾注 | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|

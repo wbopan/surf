@@ -1,0 +1,105 @@
+import Foundation
+
+/// 一个"dsh 在哪"的答案。M1 起壳不再 spawn dsh，只负责找到它。
+struct DashEndpoint: Equatable {
+    /// 这个答案是从哪来的（诊断用；flag 优先于发现文件）。
+    enum Source: String {
+        case flag       // 命令行 --dash-endpoint（dash-app 插件拉起时传入）
+        case discovery  // endpoint 发现文件（用户手动双击 App 时走这条）
+    }
+
+    let httpBase: URL
+    /// M4 的桥路径，M1 只透传不使用。
+    let bridgePath: String
+    let pid: Int?
+    let startedAt: String?
+    let profile: String?
+    let source: Source
+
+    /// 描述给引导页/日志看的一行。
+    var summary: String {
+        var s = httpBase.absoluteString
+        if let profile { s += "（profile \(profile)" }
+        if let pid { s += profile == nil ? "（pid \(pid)" : "，pid \(pid)" }
+        if profile != nil || pid != nil { s += "）" }
+        return s
+    }
+}
+
+/// 三级定位：命令行 flag → endpoint 发现文件 → 都没有（引导页）。
+/// 每一级给出的都只是"候选"，真伪由 `probe` 的一次 GET 判定——
+/// flag 里的端口可能属于一个已经退出的 dsh。
+enum EndpointLocator {
+    static let defaultBridgePath = "/dash/bridge"
+
+    // MARK: - 候选
+
+    /// 按优先级排出所有候选；调用方逐个 probe，第一个健康的即答案。
+    static func candidates() -> [DashEndpoint] {
+        var out: [DashEndpoint] = []
+        if let flag = flagEndpoint() { out.append(flag) }
+        if let disc = discoveredEndpoint(), !out.contains(where: { $0.httpBase == disc.httpBase }) {
+            out.append(disc)
+        }
+        return out
+    }
+
+    /// `--dash-endpoint <url>`（也吃 `--dash-endpoint=<url>`）；
+    /// 可选 `--dash-bridge-path <path>`。
+    static func flagEndpoint() -> DashEndpoint? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let raw = value(of: "--dash-endpoint", in: args),
+              let url = URL(string: raw), url.scheme != nil, url.host != nil else { return nil }
+        return DashEndpoint(httpBase: url,
+                            bridgePath: value(of: "--dash-bridge-path", in: args) ?? defaultBridgePath,
+                            pid: nil, startedAt: nil, profile: nil, source: .flag)
+    }
+
+    private static func value(of flag: String, in args: [String]) -> String? {
+        for (i, a) in args.enumerated() {
+            if a == flag, i + 1 < args.count { return args[i + 1] }
+            if a.hasPrefix(flag + "=") { return String(a.dropFirst(flag.count + 1)) }
+        }
+        return nil
+    }
+
+    /// endpoint 发现文件。dash-app 插件在 dsh 启动时写、退出时删。
+    /// 文件在但内容坏 = 当作没有（不崩、不报错，probe 会兜底）。
+    static func discoveredEndpoint() -> DashEndpoint? {
+        guard let data = try? Data(contentsOf: DashPaths.endpointURL),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let base = obj["httpBase"] as? String,
+              let url = URL(string: base), url.host != nil else { return nil }
+        return DashEndpoint(httpBase: url,
+                            bridgePath: obj["bridgePath"] as? String ?? defaultBridgePath,
+                            pid: obj["pid"] as? Int,
+                            startedAt: obj["startedAt"] as? String,
+                            profile: obj["profile"] as? String,
+                            source: .discovery)
+    }
+
+    // MARK: - 健康判定
+
+    /// 对 httpBase 发一次 GET。M1 的健康检查就到此为止——
+    /// 端口能应答就够，进程监督归 dsh 自己（壳已不是它的父进程）。
+    static func probe(_ endpoint: DashEndpoint, timeout: TimeInterval = 1.5) async -> Bool {
+        var req = URLRequest(url: endpoint.httpBase)
+        req.timeoutInterval = timeout
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        do {
+            let (_, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return (200..<400).contains(http.statusCode)
+        } catch {
+            return false
+        }
+    }
+
+    /// 走完三级，返回第一个健康的候选；全不健康返回 nil（= 引导页）。
+    static func locateHealthy() async -> DashEndpoint? {
+        for candidate in candidates() {
+            if await probe(candidate) { return candidate }
+        }
+        return nil
+    }
+}

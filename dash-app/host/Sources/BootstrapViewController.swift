@@ -1,10 +1,18 @@
 import AppKit
 
-/// 首启/错误引导视图：安装中、启动中、失败（带重试）。
+/// 覆盖整个窗口的引导视图，三态：
+/// - busy：转圈 + 一行状态（正在寻找 dsh / 正在连接）
+/// - guide：标题 + 说明 + 可复制命令 + 重试（未检测到 dsh、连接断开）
+/// - error：标题 + 说明 + 重试（guide 的无命令版）
 @MainActor
 final class BootstrapViewController: NSViewController {
     private let spinner = NSProgressIndicator()
+    private let titleLabel = NSTextField(labelWithString: "")
     private let label = NSTextField(labelWithString: "")
+    /// 可选中的等宽命令行（`dsh web`），配一个拷贝按钮。
+    private let commandField = NSTextField(labelWithString: "")
+    private let copyButton = NSButton()
+    private let commandRow = NSStackView()
     private let retryButton = NSButton()
     private var retryHandler: (() -> Void)?
 
@@ -70,51 +78,98 @@ final class BootstrapViewController: NSViewController {
 
         spinner.style = .spinning
         spinner.controlSize = .regular
-        spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        label.font = .systemFont(ofSize: 14)
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.alignment = .center
+        titleLabel.maximumNumberOfLines = 0
+        titleLabel.isHidden = true
+
+        label.font = .systemFont(ofSize: 13)
         label.textColor = .secondaryLabelColor
         label.maximumNumberOfLines = 0
         label.lineBreakMode = .byWordWrapping
         label.alignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
+
+        commandField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        commandField.isSelectable = true
+        commandField.drawsBackground = true
+        commandField.backgroundColor = .textBackgroundColor
+        commandField.isBordered = true
+        commandField.bezelStyle = .roundedBezel
+
+        copyButton.title = "拷贝"
+        copyButton.bezelStyle = .rounded
+        copyButton.controlSize = .small
+        copyButton.target = self
+        copyButton.action = #selector(copyCommand)
+
+        commandRow.orientation = .horizontal
+        commandRow.spacing = 8
+        commandRow.addArrangedSubview(commandField)
+        commandRow.addArrangedSubview(copyButton)
+        commandRow.isHidden = true
 
         retryButton.title = "重试"
         retryButton.bezelStyle = .rounded
         retryButton.target = self
         retryButton.action = #selector(retryTapped)
         retryButton.isHidden = true
-        retryButton.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(spinner)
-        view.addSubview(label)
-        view.addSubview(retryButton)
+        // 单列居中栈：转圈 / 标题 / 说明 / 命令行 / 重试，各态按需隐藏。
+        let stack = NSStackView(views: [spinner, titleLabel, label, commandRow, retryButton])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),
-
-            label.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
-            retryButton.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 16),
-            retryButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+            commandField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
         ])
     }
 
+    /// 转圈态：一行状态文本，无标题无按钮。
     func setBusy(_ text: String) {
-        label.stringValue = text
-        spinner.startAnimation(nil)
+        titleLabel.isHidden = true
+        commandRow.isHidden = true
         retryButton.isHidden = true
+        label.stringValue = text
+        spinner.isHidden = false
+        spinner.startAnimation(nil)
+    }
+
+    /// 引导态：标题 + 说明 +（可选）可复制命令 + 重试按钮。
+    /// 停转圈——这一态不是"在等"，是"等你做点什么"。
+    func setGuide(title: String, detail: String, command: String? = nil,
+                  retryTitle: String = "重试", retry: @escaping () -> Void) {
+        spinner.stopAnimation(nil)
+        spinner.isHidden = true
+        titleLabel.stringValue = title
+        titleLabel.isHidden = false
+        label.stringValue = detail
+        if let command {
+            commandField.stringValue = command
+            commandRow.isHidden = false
+        } else {
+            commandRow.isHidden = true
+        }
+        retryButton.title = retryTitle
+        retryButton.isHidden = false
+        retryHandler = retry
     }
 
     func setError(_ text: String, retry: @escaping () -> Void) {
-        spinner.stopAnimation(nil)
-        label.stringValue = text
-        retryHandler = retry
-        retryButton.isHidden = false
+        setGuide(title: "出错了", detail: text, command: nil, retry: retry)
+    }
+
+    @objc private func copyCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(commandField.stringValue, forType: .string)
     }
 
     @objc private func retryTapped() {
