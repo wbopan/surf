@@ -1,130 +1,153 @@
-> [!WARNING]
-> **本文描述的是阶段二迁移之前的架构，已大面积过时**（改名前的 DSHarness、壳 spawn dsh、
-> npm 管理的 harness 自更新、Node 探测、设置窗口——这些代码在 M1 已经删除）。
-> 按计划 §9，README 由 **M8 收尾时重写**。在那之前，以
-> [`CLAUDE.md`](CLAUDE.md)、[`docs/phase2-dash-plugin-migration-plan.md`](docs/phase2-dash-plugin-migration-plan.md)
-> 和 [`dash-app/README.md`](dash-app/README.md) 为准。
->
-> 一句话现状：App 改名 **dash**，启动方向已反转——`dsh web` 先起，其中的 dash-app 插件
-> 构建并拉起 App；App 三级定位 dsh（flag → endpoint 发现文件 → 引导页）。
+# dash
 
-# DeepSeek Harness —— dsh 的 macOS 原生壳应用
-
-Swift/AppKit + WKWebView 的 macOS 应用，把 [`dsh`](https://github.com/deepseek-ai/deepseek-harness)（`@deepseek-ai/dsh`）的 Web UI 包进原生窗口：系统通知（UNUserNotificationCenter）+ 透明 vibrancy 侧边栏（NSVisualEffectView）。
-
-**核心架构决策**：签名后的 .app bundle 只读（改动即破坏签名），所以 harness 装在 **bundle 外**，由 npm 管理；壳应用与 harness 走两条独立更新通道。壳 = 重新 build；harness = npm 版本目录 + 符号链接原子切换（可回滚）。
+一组 [cordis](https://github.com/shigma/cordis) 插件，外加一个极薄的 macOS 壳。
+它们一起把 [`dsh`](https://github.com/deepseek-ai/deepseek-harness) 变成一个原生 Mac 应用——
+但不是"用原生外壳包一层网页"那种做法：**界面本身就是插件**，用 Swift 写，
+存盘一两秒后就在运行中的窗口里换掉，不重启任何进程。
 
 ```
-DeepSeek Harness.app（Swift/AppKit，ad-hoc 签名，不可变）
- ├─ 窗口: transparent titlebar + fullSizeContentView
- │    ├─ 左: NSGlassEffectView —— Liquid Glass 层（macOS 26+）
- │    ├─ 顶: 28pt 透明拖拽条（WindowDragRegionView）
- │    └─ WKWebView(透明) → http://127.0.0.1:<port>
- ├─ HarnessManager: npm 管理的 dsh 安装 + 自更新
- ├─ HarnessProcess: posix_spawn `dsh web`，进程组隔离 + 监督重启
- └─ EventsBridge: SSE 订阅 /api/events.mux + /api/events.host → 原生通知
-
-~/Library/Application Support/io.wenbo.dsharness/
- ├─ harness/versions/<semver>/   （npm --prefix 安装）
- ├─ harness/current → versions/<semver>   （符号链接原子切换，保留 N-1 回滚）
- ├─ npm-cache/                    （独立 npm 缓存，绕开 ~/.npm 属主问题）
- └─ logs/                         （harness.log、npm-<v>.log）
-
-~/.dsh/   ← dsh 自己的数据根，壳应用完全不动
+┌─ 终端 ────────────────────────────────────────────┐
+│ $ dsh web --no-open                              │
+│   dsh 起来 → 加载插件树 → dash-app 构建并拉起 App    │
+└──────────────────────────────────────────────────┘
+                        ↓ 它是 dsh 的客户端外设，不是宿主
+┌─ dash.app ───────────────────────────────────────┐
+│  窗口 + 一个 root 槽 + swiftc 编译机               │
+│    root  ← dash-layout（分栏、工具栏、WebView 排版） │
+│      sidebar ← dash-sidebar（原生会话列表）         │
+│      主区    ← WKWebView（dsh 自己的 Web UI）       │
+└──────────────────────────────────────────────────┘
 ```
 
-## 构建
+启动方向是反的，这是整件事的支点：dsh 先于 App 存在，于是它就是壳天然的
+bootstrapper——壳的源码、构建、拉起全都收进一个插件（`dash-app`），
+仓库里没有"特权目录"这种东西。
 
-前置：Xcode 27+、Node.js `^22.19.0 || >=24.0.0`（本机 Homebrew `/opt/homebrew/bin/node`）、XcodeGen（本机 brew 目录属主异常，可从 [GitHub Releases](https://github.com/yonaskolb/XcodeGen/releases) 下载 zip 放入 `tools/`）。
+## 跑起来
+
+前置：macOS 26+、完整 Xcode（`xcodebuild` 需要它，Command Line Tools 不够）、
+Node `^22.19.0 || >=24.0.0`。
 
 ```bash
-# 生成 .xcodeproj + 构建（产物在 build/Build/Products/Debug/DeepSeek Harness.app）
-./tools/xcodegen generate
-xcodebuild -project DSHarness.xcodeproj -scheme DSHarness \
-  -configuration Debug -derivedDataPath build build
-
-# 运行
-open "build/Build/Products/Debug/DeepSeek Harness.app"
+npm i -g @deepseek-ai/dsh@0.1.1-rc.2
 ```
 
-Release 构建 + 安装到 /Applications（生成工程 → Release 编译 → 退出运行中实例 → `ditto` 复制；`--keep-open` 装完自动启动）：
+仓库必须克隆到 `~/.dsh/profiles/plugins/`——不是习惯问题，是硬约束：插件的真实路径
+在 `~/.dsh/profiles/` 之下，`@deepseek-ai/*` 才解析得到。
 
 ```bash
-scripts/build.sh [--keep-open]
+git clone <repo> ~/.dsh/profiles/plugins
+cd ~/.dsh/profiles/plugins
+for p in dash-app dash-bridge dash-layout dash-sidebar dash-web-adapter; do
+  dsh plugin --profile web add "link:$PWD/$p"
+done
+dsh web --no-open
 ```
 
-签名：ad-hoc（`CODE_SIGN_IDENTITY: "-"`，无 Team），不开启沙盒（需要 spawn Node 子进程 + 写 Application Support）。如需分发/公证，在 `project.yml` 换成自己的开发证书并调整 entitlements。
+首次会构建壳（分钟级），之后源码没变就秒起。`--no-open` 是为了不让 dsh 另开一个
+重复的浏览器标签页。窗口没弹出来就看终端——`dash-app:` 开头的那几行会说清卡在哪。
 
-## 目录布局（仓库）
+## 三个开发循环，快慢差两个数量级
 
-```
-project.yml                     XcodeGen 声明式工程
-DSHarness/
- ├─ AppDelegate.swift            入口：Node 解析、通知授权、窗口装配
- ├─ MainWindowController.swift   窗口/vibrancy/WKWebView、状态机、菜单、更新流程
- ├─ HarnessManager.swift         版本化安装、symlink 切换、registry 更新检查
- ├─ HarnessProcess.swift         posix_spawn + 进程组、健康检查、退避重启
- ├─ EventsBridge.swift           WebSocket 双流解析、通知策略、断线重连
- ├─ BootstrapViewController.swift 首启/错误引导视图
- ├─ SettingsWindowController.swift Node 路径、更新频率设置
- └─ Support/                     Semver / NodeResolver / Shell / Log
-```
+| 改什么 | 怎么生效 | 耗时 |
+|---|---|---|
+| 插件的 `swift/` | 存盘即可。桥轮询发现 → 壳重编 → 世代热替换 | **1~3s，不重启任何东西** |
+| 壳源码 `dash-app/host/` | dash-app 盯着它，改了后台重建，窗口右上角提示「重启生效」 | 重建 2s + 重启 |
+| 插件的 `lib/*.js`、`package.json`、增删插件 | 必须重启 dsh（官方在 web bundle 下关了 node 侧 HMR） | 秒级 |
 
-## 与 dsh 的接口（对照 0.1.1-rc.2 源码验证）
+第一行是这个项目存在的理由。改 `dash-sidebar/swift/SidebarView.swift` 存盘，
+一两秒后侧边栏就变了，**选中态和列表内容都还在**——因为数据面存在跨世代的保管箱里，
+换的只是代码。编译失败会带文件行号打进 dsh 终端，旧世代继续在役，界面不变也不崩。
 
-- 启动：`dsh web --host 127.0.0.1 --port <p> --no-open`；`--port 0` 也可由 OS 分配，但壳用「绑定 0 取端口再释放」自行选择，失败换端口重试。
-- 入口探测（npm `--prefix` 布局实测）：`<v>/node_modules/.bin/dsh`（存在）→ `<v>/bin/dsh` → `<v>/node_modules/@deepseek-ai/dsh/lib/bin.js`（纯 JS，用 `node` 跑）。
-- **事件流走 WebSocket**（`dsh-client-connection` 对外提供；普通 GET `/api/events.mux` 返回 426 "upgrade required"，进程内 apiproxy 的 SSE 是另一条路径）：`ws://127.0.0.1:<port>/api/events.mux` 与 `ws://.../api/events.host`。每帧一个 JSON 文本消息 `{type:"server-request", rpcId, method, payload}`；纯下行，客户端发消息会被 1008 "downlink only" 关闭。`host/agent-error`、`host/session-status` 只在 host 流；`approval/requested`、`question/requested`、`session/event` 在 mux 流。重连后服务端会重放 pending 的批准/问题（通知侧有 60s 去重）。
-- `/api/respond` 服务端应答表在 preview 期仍是 stub → 通知只做「点击唤起窗口」，不做通知内批准。
-- loopback 无鉴权（仅需 `Content-Type: application/json` + loopback Host），壳应用零凭据接入。
-
-## 原生侧边栏（阶段一）
-
-左侧为 **SwiftUI 原生侧边栏**（坐在 NSGlassEffectView 上），WebView 只渲染 conversation + details：
+## 仓库里都有什么
 
 ```
-dsh server
-   ↑ POST /api（unary，朴素 JSON 包封，见 docs/wire-notes.md）
-   ↓ WS /api/events.mux、/api/events.host（只下行）
-DSHKit（Packages/DSHKit，仅 Foundation，iOS 就绪）
-   → DSHSidebarUI（Packages/DSHSidebarUI，仅 SwiftUI+DSHKit）
-   → Mac 壳（NSHostingView 承载）── WKWebView（网页侧边栏经插件隐藏）
+dash-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App + 盯壳源码
+  host/            Xcode 工程（project.yml / Sources/ / Packages/DSHKit / scripts/）
+dash-bridge/       唯一的特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯 swift/ 目录
+dash-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具栏
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏
+dash-hello/        原生插件流水线的冒烟样例（与 layout 争 root 槽，默认不注册）
+dash-web-adapter/  注入 dsh Web UI 的插件（纯 client 半边，有 HMR）
+docs/              迁移计划、ABI 实测结论、可复跑的 spike
 ```
 
-- 状态经服务端收敛；唯一页内桥是 `window.__dsharness`（`plugins/dsharness-web-adapter` v2 提供：
-  `selectSession`/`startSession`/`openSettings` + `currentSession` 反向上报），门控 = UA 含
-  `DSHarness` **且** URL 带 `?dsharness-native-sidebar=1`。终端 `dsh web` / 普通浏览器零影响。
-- 会话列表/状态点由 DSHKit.SessionStore 镜像（事件流驱动增量）；「当前选中会话」为页面本地状态，经桥双向同步。
-- **逃生舱**：显示菜单「使用原生侧边栏」开关；页面加载 8s 未见桥 `ready`（插件被上游 breaking change 打坏）自动回退完整网页模式并记日志。
-- 插件改动经 `~/.dsh/profiles/web/node_modules/dsharness-web-adapter` 符号链接生效，改后需重启 harness（⌘⇧R）。验证于 harness 0.1.1-rc.2。
+一个"带 Swift 载荷的插件"长这样——node 半边通常只有几行：
 
-## 通知策略（EventsBridge）
+```js
+import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
+export default createSwiftPlugin({
+  name: "dash-sidebar",
+  provide: "dash-sidebar",
+  inject: ["dash-layout"],      // cordis：layout 没挂好就不挂我
+  swiftDir: new URL("../swift/", import.meta.url),
+  swiftDeps: ["dash-layout"],   // 桥：上游换代时我自动跟着重编
+});
+```
 
-仅当应用非前台时发送：
+Swift 半边导出一个 C 入口，拿到 `host` 就往槽里塞视图：
 
-| 事件 | 通知 |
-|---|---|
-| `approval/requested` | 「需要你的批准」（含工具名/原因） |
-| `question/requested` | 「需要你的回答」（首问文本） |
-| `host/agent-error` | 「Agent 出错」 |
-| `session/event` 中 `turn/end` 且会话未运行 | 「任务完成」（每会话 5 分钟冷却，防轰炸） |
+```swift
+@_cdecl("dash_plugin_entry")
+public func dash_plugin_entry() -> UnsafeMutableRawPointer {
+    Unmanaged.passRetained(SidebarPlugin()).toOpaque()
+}
 
-断线指数退避重连（1s→30s 封顶），重连后不回填历史（通知只关心此后事件）。点击通知 → 唤起应用并前置窗口。
+final class SidebarPlugin: DashPlugin {
+    func activate(host: DashHost) -> AnyObject? {
+        let handle = DashPluginHandle()
+        host.register(slot: "sidebar") { AnyView(SidebarView(...)) }.kept(by: handle)
+        return handle   // 壳松手 = 这一代退休，注册与订阅一并撤销
+    }
+}
+```
 
-## 已知限制
+## 热替换是怎么成立的
 
-- **dsh 处于 developer preview**，明示会有 breaking change：事件帧解析全部防御式编写（未知帧忽略、异常不崩溃）；harness 版本切换保留 N-1 回滚。
-- 壳应用无自更新通道（Sparkle 未接入）：自用场景重新 build 即可。
-- 首启需 npm install（约 3–6 分钟，网络相关）；引导视图会显示进度。
-- 更新检查：启动时 + 每 6 小时（可在设置里改为手动/24h）；发现新版 → 装新目录 → 校验 → 切链接 → 提示重启生效。
-- 插件（`dsh plugin`）场景不接管：用户在终端照常操作 `~/.dsh` 下的 profile，壳提供「重启 Harness」菜单项让变更生效。
-- Node 需预装（`brew install node`）；v1 不做自动下载官方 Node tarball（免签名固定运行时是后续增强）。
+桥把每个插件的 `swift/` 目录扫成一份内容 hash，壳按这个 hash 做内容寻址编译：
+**module 名就是 hash**（`DashSidebar_ha502d7516810`）——缓存命中与世代类型隔离
+是同一个事实的两面。装载走 `dlopen` + `dlsym` 拿到入口，`activate` 里的新注册
+覆盖旧槽，然后壳松开旧 handle，旧的那一代自行退场。
 
-## 菜单
+三条硬事实，都是实测出来的（`docs/native-abi.md`）：
 
-标准 macOS 菜单结构（应用 / 文件 / 编辑 / 显示 / 窗口）：
+1. **旧 dylib 永不 `dlclose`**——对 Swift 不安全（类型元数据还被引用着）。
+   代码页泄漏式退休，实例由 ARC 正常回收。
+2. **上游换代、下游没重编 = 沉默的认知分裂**：下游不崩不报错，只是继续调旧代的代码。
+   所以桥把上游的 hash 折进下游的 hash——级联重编由数据结构保证，不靠传播逻辑。
+3. `DashSDK` / `DSHKit` 必须**全进程只有一份 dylib**，壳和插件链同一个文件，
+   类型身份才对得上。
 
-- `⌘,` 设置（Node 路径、更新频率）；`⌘U` 检查 harness 更新；`⌘⇧R` 重启 Harness；`⌘R` 重载页面
-- `⌘W` 关闭窗口；`⌘M` 最小化；`⌘Q` 退出；`⌘H` 隐藏
-- 编辑快捷键（作用于 WebView 与设置窗口的文本框）：`⌘Z` 撤销 / `⌘⇧Z` 重做 / `⌘X` 剪切 / `⌘C` 拷贝 / `⌘V` 粘贴 / `⌘A` 全选
-- 「切换侧边栏玻璃效果」在显示菜单内（无快捷键，避免占用 `⌘V` 粘贴）；「打开日志目录」在应用菜单内
+坏插件不许拖垮系统：编译失败保持上一代在役；没有任何插件占 `root` 槽时，
+壳退化成整窗 WebView——功能不缺，只是没有原生外壳。
+
+## 诊断
+
+`⌥⌘D` 打开诊断面板：连着哪个 dsh、桥通不通、每个插件是第几代跑的哪个 module、
+退休了多少 image、壳自己最近有没有重建过。可拷贝。
+
+日志在 `~/Library/Application Support/io.wenbo.dash/logs/`。
+
+## Debug 与 Release
+
+两个不同的 App，可并存运行：
+
+| | Debug（日常开发） | Release（正式） |
+|---|---|---|
+| App 名 | dash Dev | dash |
+| Bundle ID | io.wenbo.dash.dev | io.wenbo.dash |
+| 标记 | 橙色 DEV 徽章、标题栏 DEV pill、侧边栏构建时间戳 | 无 |
+| 位置 | `dash-app/host/build/Build/Products/Debug/` | `/Applications/` |
+
+日常使用者应在自己 profile 的 `cordis.patch.yml` 里把 `dash-app` 的
+`configuration` 覆写成 `Release`。手动构建走
+`dash-app/host/scripts/dev.sh` 与 `build.sh`（`dsh web` 做的是同一套步骤）。
+
+## 状态
+
+阶段二迁移进行中，**M0～M8 已完成**，通知线已放弃。
+唯一权威计划是 [`docs/phase2-dash-plugin-migration-plan.md`](docs/phase2-dash-plugin-migration-plan.md)，
+动手前先读它。给 agent 的工作须知在 [`CLAUDE.md`](CLAUDE.md)。
+
+`dsh` 处于 developer preview，明示会有 breaking change：帧解析一律防御式
+（未知帧忽略、异常不崩），CSS 选择器用语义后缀模糊匹配。验证于 `0.1.1-rc.2`。

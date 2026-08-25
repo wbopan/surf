@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 每完成一个里程碑在计划 §12 追加一行执行日志；发现文档与 dsh 源码冲突，
 以源码为准并就地更新计划文档。
 
-**当前进度：M0～M6 已完成，M7（通知）已放弃，下一步 M8（壳收缩收尾）。**
+**当前进度：M0～M8 已完成，M7（通知）已放弃，下一步 M9（治理硬化）。**
 壳里已经没有布局、侧边栏、通知、进程管理代码——业务残留清零，
 只剩"定位 dsh、连桥、编译装载插件、给 root 槽兜底"这四件事。
 
@@ -37,7 +37,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 | **插件的 `swift/`** | 存盘即可。桥 500ms 轮询发现 → 壳重编 → 世代热替换 | **1~3s，不重启任何东西** |
 | 插件的 `lib/*.js`、`package.json`、增删插件 | **必须重启 dsh**（官方在 web bundle 下 disable 了 node 侧 HMR） | 秒级 |
 | dash-web-adapter 的 `lib/client.js` | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
-| **壳源码 `dash-app/host/`** | 重新构建 + 重启 App（`dsh web` 会自动做，或手动 `dev.sh`） | 分钟级→秒级 |
+| **壳源码 `dash-app/host/`** | dash-app 盯着它：改了后台重建，窗口右上角提示「重启生效」，点一下就换代 | 重建 2s + 重启 |
 
 **改 Swift 插件不需要碰 dsh，也不需要重启 App。** 编译失败会带文件行号打进 dsh 终端，
 旧世代继续在役，界面不变也不崩。
@@ -51,9 +51,17 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 （源码没变则跳过构建，App 已在运行则跳过拉起）。`--no-open` 是为了不让 dsh 另开一个重复的
 浏览器标签页。`dev.sh` 仍在，作为同一套逻辑的手动捷径。
 
+**改壳源码不必手动做什么**：dash-app 每 2s 比一次源码签名，变了就后台重建，
+经桥播 `app-build`，壳在右上角挂一条「壳有新版本 · 重启 / 稍后」。点重启 = 壳发
+`app-restart` 后自己退出，dash-app 等它死透再按新产物拉起。想省掉这一下就在
+`dash-app/cordis.patch.yml` 里把 `restartOnRebuild` 打开（代价是每次改壳都丢页面状态）。
+
+**绝不让桥给后来者补发 `app-build`**：新连上来的壳跑的必然是磁盘上最新的产物，
+补发等于骗它——`restartOnRebuild` 打开时会变成退出-重拉-又被告知该重启的无限环
+（实测过）。壳侧另有一道保险丝：一个进程只自请重启一次。
+
 ```bash
-# 常规循环：改 Swift 壳源码 → 退出 App → dsh web（插件自动重建重拉）
-# 或者不重启 dsh，直接用手动捷径：
+# 手动捷径（不想等轮询、或 dsh 没在跑时）：
 dash-app/host/scripts/dev.sh [--quit-release]
 
 # Release 构建 + 安装到 /Applications（会退出正在运行的 Release App；
@@ -124,7 +132,9 @@ Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，�
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
   全出血 WebView 兜底）。
 - `dash-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
-  页内桥消息转 EventBus。**没有业务 UI。**
+  页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
+- `dash-app/host/Sources/DiagnosticsPanel.swift`：⌥⌘D 的诊断面板（端点/桥/插件世代/
+  module 名/退休 image 数/最近构建播报，可拷贝）。查"我现在跑的到底是哪份代码"用它。
 - 插件门控：UA 含 `Dash/`（带斜杠，防普通子串误命中）且 URL 带 `?dash-native-sidebar=1`；
   终端 `dsh web`/普通浏览器不受影响。
 

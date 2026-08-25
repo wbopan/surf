@@ -1,5 +1,10 @@
 # DSH Web API wire notes（M0 spike 实测）
 
+> 本文记的是 **dsh 的 Web API 协议事实**，M8 复核仍然成立（unary POST `/api/<method>`、
+> 两条只下行的事件流 WebSocket、rpcId 回显、loopback 无鉴权）。只有环境描述过时了：
+> 阶段二把 bundle id 换成了 `io.wenbo.dash`，壳也不再自己装 harness——dsh 现在是
+> 全局安装、由用户在终端启动。下面的路径按当时原样保留，不影响协议结论。
+
 验证环境：harness `0.1.1-rc.2`（`~/Library/Application Support/io.wenbo.dsharness/harness/versions/0.1.1-rc.2`），
 本机 web server `http://127.0.0.1:50241`，2026-08-24 curl 实测。
 源码依据：`@deepseek-ai/dsh-client-connection/lib/client.js`（AbstractApiClient，~L6180–6240）。

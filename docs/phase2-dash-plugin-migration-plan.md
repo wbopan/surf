@@ -646,13 +646,33 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 - **v2(远期,M10+)**:编译期贡献接口(`dashAppBuild` 登记表:widget extension 等 target
   由其他插件注入工程)——"编译期插件维度"的完整形态,本阶段不做。
 
+#### 7.5.1 v1 实做与本节的偏差(M8 已交付,以此段为准)
+
+1. **播报走桥的一条独立子通道**,不混进 push/invoke 的插件信封:`dashBridge.app.announce()`
+   下行 `app-build` 帧,`app.onRestartRequest()` 接上行 `app-restart` 帧。理由是 dash-app
+   不是 Swift 插件,没有 `expose` 表可用;壳构建也确实不是插件那个档位的事。
+2. **重启由壳发起、node 接力**:壳发 `app-restart` 后自己 `NSApp.terminate`,dash-app 轮询
+   到进程真的消失(上限 15s)再 `open` 新产物。node 不 kill 壳——优雅退出是壳自己的事。
+3. **绝不为后来者留底播报**。原本让桥在 hello 时补发最后一次 `app-build`,想让重启后连回来的
+   壳知道"你已经是最新的"。这恰好是反的:新连上来的壳跑的必然是磁盘上最新的产物,补发等于
+   撒谎——实测让 `restartOnRebuild` 的壳退出、重拉、握手、又被告知该重启,**无限重启环**
+   (dsh 日志里刷了五轮才叫停)。改成只播给当下连着的壳,壳侧再加保险丝:一个进程只自请重启一次,
+   任何环最多转一圈。
+4. **盯文件用两级判据**:每拍只 stat(路径+mtime+size 签名),签名变了才读内容算 hash,hash 才是
+   重建判据。与桥盯 `swift/` 同款;`BuildTimestamp.txt` 两级都要排除,否则每次构建都把自己
+   变成"源码又改了"。
+5. **诊断面板独立于 BootstrapVC**(§8 原计划塞进引导页):引导页只在**没连上 dsh** 时露脸,
+   而"插件第几代/编译过没有/退休了多少 image"恰恰只在**连上之后**才有答案,覆盖面是反的。
+   改成 ⌥⌘D 随时可开的面板,内容可拷贝——蹲终端的人和 agent 都能拿它对账。
+6. 提示条落在**右上角**而不是右下角:底部是网页的输入框与发送按钮,盖不得(第一版盖了,截图立见)。
+
 ---
 
 ## 8. 壳(dash-app/host)终态清单
 
 | 保留(客户端残留) | 迁出 | 删除 |
 |---|---|---|
-| AppDelegate、窗口 + root 槽、boot/诊断视图(BootstrapVC 扩建:桥状态/编译进度/账本/引导页) | 布局/分栏/侧边栏装配(→ dash-layout) | **HarnessProcess/HarnessManager/NodeResolver/Semver**(启动反转,§3) |
+| AppDelegate、窗口 + root 槽、引导页(BootstrapVC)+ **独立诊断面板 ⌥⌘D**(§7.5.1-5) | 布局/分栏/侧边栏装配(→ dash-layout) | **HarnessProcess/HarnessManager/NodeResolver/Semver**(启动反转,§3) |
 | endpoint 定位(flag/发现文件)、BridgeClient | SidebarView 等全部(→ dash-sidebar) | 死代码:`dsharnessSidebar` 分支、DOM DIAG 探针(双侧) |
 | Registry/保管箱/PluginStore/EventBus/CompilerService/Loader/账本(新增) | —— | `EventsBridge.swift`(✅ 已删,通知线整体放弃,§7.3) |
 | 菜单骨架(⌘R/⌘⇧R 改语义/编辑组)、工具栏(动作改经 registry) | `WebViewConversationSurface`(→ layout) | `SettingsWindowController`(Node/更新项皆失效;视余量删或缩为壳偏好) |
@@ -676,7 +696,7 @@ M0 搬家改名(§2.4 常量同步),功能不动。它保持独立插件(纯 cli
 | M5 | dash-layout 接管 root | ✅ **已完成** layout 插件(396 行 Swift);壳交出分栏/工具栏/自适应折叠;fallback = 全出血 WebView | ✅ 三条全过:移除 dash-layout → 完整网页模式(网页 sidebar 回归、渲染与插件模式一致);装回 → 原生布局;插件换代时**页面无重载**(日志无新的加载完成事件) |
 | M6 | dash-sidebar 迁移 | ✅ **已完成** DSHSidebarUI + AppSidebarModel → `dash-sidebar/swift/`(577 行);数据面 SessionStore 进保管箱跨世代复用;显隐联动 | ✅ 功能与迁移前等价(材质/工具栏/tracking separator/宽度记忆/搜索/分组/归档全在);改 SidebarView.swift **1.4s** 热更新且选中高亮与列表都不闪;移除插件 → 优雅回退网页侧边栏 |
 | ~~M7~~ | ~~dash-notifications 迁移~~ | 🗑 **已放弃**(2026-08-25):通知线整体丢弃,`EventsBridge.swift` 直接删除,不迁移(§7.3) | —— |
-| M8 | 壳收缩收尾 | §8 清单落实;dash-app v1(源码变更自动构建);README/CLAUDE.md 重写;死代码清理 | 职责清单达标;改壳源码 → 自动构建 + 提示重启;全功能回归(启动/新建/切换/归档/设置/逃生舱/引导页) |
+| M8 | 壳收缩收尾 | ✅ **已完成** dash-app v1(盯壳源码 → 后台重建 → `app-build` 播报 → 提示条 + 一键重启);⌥⌘D 诊断面板;README/CLAUDE.md 重写;双侧 DOM DIAG 探针删除 | ✅ 改壳源码 → 2s 内发现、1.6~2.5s 重建、右上角提示;`restartOnRebuild` 打开时 pid 92151 → 92403 **一次干净的重启**(修掉补发导致的无限重启环);诊断面板内容经 System Events 读取核对 |
 | M9 | 治理硬化 | 审批+hash 审计;账本阈值+空闲自重启;协议 clientId/seat 字段 | 外来插件首编弹确认;账本可查;阈值触发自重启验证 |
 | M10+ | 后续(不阻塞收官) | sidebar 数据面迁 TS 半身、DSHKit 退役;`setNativeSidebar` 免重载;dash-app v2(编译期贡献接口,§7.5);launchd 化 dsh;iOS 远程线(复用桥协议) | 各自独立验收 |
 
@@ -710,6 +730,8 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 8. ~~**R8 事件名/服务名假设**~~ 大部分随 §7.3 放弃而消失;§1.6 服务语义仍以源码复核为准。
 9. **R9 会话日志污染**:重申 §0.5-6——桥与插件永不 append 自定义 session event(0.1.1-rc.2 硬坑)。
 10. **R10 反转后的运维语义**:dsh 生命周期归用户终端(退出=app 变引导页);⌘⇧R 依赖外层重启机制;
+    壳自请重启这条路(M8)天然带环的风险,靠"不为后来者补发播报 + 一个进程只自请重启一次"两道闸
+    (§7.5.1-3);
     多 profile/多 dsh 实例时 endpoint 文件的归属(v1 假设单实例,文件带 pid/profile 供校验);
     (通知相关的运维问题随 §7.3 放弃而不再存在)。launchd 化是这些问题的统一解,列 M10+。
 
@@ -723,7 +745,7 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | DSHKit | 686 | ✅ M3 升为随 bundle 分发的**共享 dylib**(壳与插件链同一份);源码仍在 `Packages/DSHKit/`(单元测试还在那儿),但不再是 SwiftPM 依赖。M10 视 TS 数据面进展退役 |
 | DSHSidebarUI + AppSidebarModel | 525 | ✅ M6 迁入 `dash-sidebar/swift/`(577 行,近原样;`ConversationSurface`→`DashConversationSurface`,`#if DEBUG`→bundle id 判定),`Packages/DSHSidebarUI` 整包删除 |
 | dsharness-web-adapter | 466 | →dash-web-adapter(改名搬家,功能不动) |
-| BootstrapViewController | 123→178 | M1 已扩建出 guide 态(标题+说明+可拷贝 `dsh web`+重试);M4/M8 再补桥状态/编译进度/账本 |
+| BootstrapViewController | 123→178 | M1 已扩建出 guide 态(标题+说明+可拷贝 `dsh web`+重试)。M8 决定**不再往里塞诊断**——改成独立的 `DiagnosticsPanel`(⌥⌘D),理由见 §7.5.1-5 |
 | SettingsWindowController | 156 | ✅ M1 整件退役删除(Node 路径/更新频率两项皆随 spawn 层失效,壳已无偏好可设);⌘, 改为经页内桥打开 dsh 自己的设置面板 |
 | git 历史 dsh-web-search-firecrawl | — | node 半边写法范本(peerDeps/静态 inject/Config/设置卡),bridge 实现参考 |
 | wire-notes.md / phase1 计划 | — | 保留;M8 随 README 一起校正漂移 |
@@ -738,5 +760,6 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | 2026-08-25 | M4 | `0eddda5` | 桥 + 编译机 + hello 世代循环,五条验收全过:改源码 **2.2s** 换代不重启;编译失败带文件行号进 dsh 终端、旧代留任、壳不崩;重启缓存命中 0 编译;push/invoke 双向通;**R4 解除**(`registerUpgrade` 是裸升级,用 `ws` 的 noServer 模式,`ws` 已在 profiles/node_modules 里)。就地更新:§5.1.1(四条偏差)、§6.2(module 名取自 contentHash,世代隔离与内容寻址合一)、§9(M4 行)、§10-R4。|
 | 2026-08-25 | M5 | `de995de` | dash-layout 接管 root。就地更新:§7.1.1(六条偏差——root 槽用 AppKit NSSplitViewController、工具栏归 layout、sizingOptions=[]、门控不做超时状态机、delegate 留壳因而 R5 不存在、网页侧边栏门控靠 UserDefaults 记忆 + 稳定后核对)、§9(M5 行)、§11。踩坑:覆写 `NSSplitViewController.loadView()` 会让窗口全白。|
 | 2026-08-25 | M6 | `d4a1614` | dash-sidebar 迁移,壳内 0 行侧边栏代码。就地更新:§7.2.1(六条偏差——SessionStore 归插件且跨世代复用、`#if DEBUG` 在插件里不成立、选中高亮走 DashStore、协议换 DashConversationSurface、级联重编实测成立、SDK 补 `DashPlugin.activate` 的 @MainActor)、§9(M6 行)、§11(DSHKit/DSHSidebarUI 两行)。|
+| 2026-08-25 | M8 | `fc48562` `6899096` (+文档) | 壳收缩收尾。dash-app v1 盯壳源码自动重建 + 右上角提示条 + 一键重启;⌥⌘D 诊断面板;双侧 DOM DIAG 探针删除;根 README 重写、wire-notes 标注漂移、CLAUDE.md 更新。就地更新:§7.5.1(六条偏差)、§8、§9(M8 行)、§10-R10、§11。**踩坑**:桥在 hello 时补发最后一次 `app-build` 会导致无限重启环(§7.5.1-3),两道闸修掉。|
 | 2026-08-25 | ~~M7~~ 放弃 | (本次) | **通知线整体丢弃**(用户决策):`EventsBridge.swift` 235 行 + `AppDelegate` 授权请求 + Info.plist `NSUserNotificationUsageDescription` 全部删除,壳不再 import UserNotifications。就地更新:§7.3(改写成"已放弃",留下事件源与"app 未运行"两条事实备将来重做)、§0(概述/目录树/插件树/非目标)、§1.6、§8、§9(M7 行划掉 + M8 回归清单去掉"通知")、§10(R8/R10)、§11。下一个里程碑改为 M8。|
 | 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
