@@ -621,4 +621,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 |---|---|---|---|
 | 2026-08-25 | M2 | `5361621` | **提前于 M1 执行**(§9 允许并行,且它是唯一证伪点)。§6.5 十条断言全通过,R1 解除。就地更新:§5.1-4(级联重编硬约束)、§6.1(dlopen 不需拓扑序、RTLD_LOCAL 必需)、§7.1(门控预算 60s→10s)、§10(R1 解除/R7 不成立)、§9(M2 行)。产出 `docs/native-abi.md` + 可复跑的 `docs/spikes/m2-abi/`。|
 | 2026-08-25 | M0 | `6b20dbb`…`81ed9a4`(6 个) | 按 §2.6 顺序执行，无偏差。补充事实：`dsh plugin --profile web <args>` 直接透传 pnpm（add link:/remove 语法确认）；firecrawl 走 gitignore；旧路径彻底删除不留链接（§2.3 已就地更新）。改名后壳的 Application Support 换成 `io.wenbo.dash/`，壳按既有逻辑自动重装了一份 harness（M1 启动反转后这份即废弃）。|
-| 2026-08-25 | M1 | 见 §12 尾注 | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
+| 2026-08-25 | M1 | `94471c2` | 启动反转交付。壳 -867 行(spawn 层四文件 + Shell + SettingsWindowController),新增 `DashPaths`/`DashEndpoint`/`dash-app` 插件。就地更新:§1.7(logger 无 exporter、`dsh web` 另开浏览器两条新事实,并修掉"PATH 上没有 dsh"这条过时项)、§3.1(实做偏差九条)、§9(M1 行)、§11(五行资产去向)。**未实测**:无 Xcode 的降级路径。|
