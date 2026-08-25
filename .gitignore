@@ -5,6 +5,9 @@ build/
 xcuserdata/
 *.xcuserstate
 
+# 构建时间戳（prebuild 脚本每次生成，入库只会让工作区永远脏）
+DSHarness/Resources/BuildTimestamp.txt
+
 # 本地构建工具（从 GitHub Releases 下载，见 README）
 tools/
 

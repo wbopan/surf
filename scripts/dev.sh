@@ -26,6 +26,9 @@ if [[ "${1:-}" == "--quit-release" ]]; then
   fi
 fi
 
+# 时间戳文件不入库：generate 扫描目录前先创建，否则新克隆的首次构建产物缺该资源。
+scripts/write-build-timestamp.sh
+
 echo "==> Generating Xcode project..."
 ./tools/xcodegen generate
 
