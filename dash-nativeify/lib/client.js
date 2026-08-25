@@ -611,20 +611,25 @@ window.__ModuleLoader__.load({
 					"    inset -14px 0 8px -15px var(--dash-glass-side),",
 					"    inset 0 0 0 100px var(--dash-glass-body);",
 					"}",
+					// 图标不再有自己的 scale（跟着容器走），这里只剩 opacity 要过渡。
 					solidSvg + " {",
-					"  transition: scale var(--dash-dur) var(--dash-ease), opacity var(--dash-dur) var(--dash-ease);",
+					"  transition: opacity var(--dash-dur) var(--dash-ease);",
 					"}",
 
-					// 按压：容器涨、图标缩。这两个方向相反的形变是 Liquid Glass 手感的
-					// 全部秘密——只做其中一个都不像（实测：单独放大像网页 hover，单独
-					// 缩小像 Android ripple 的前摇）。scale 是独立属性、不占布局，
-					// 因此在 flex/grid 里放大不会挤动邻居。
+					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，
+					// 图标本来就跟着涨，不需要也不该再给它写一层。
+					//
+					// 这里曾经给图标补过一条反向的 `scale: 0.88`，注释还称"容器涨、图标缩"是
+					// Liquid Glass 手感的全部秘密 —— **没有这种说法，那条是错的**，仓库里也从来
+					// 没有任何实测支持它。净效果是图标只有 1.06 × 0.88 = 0.93 倍，按下去像被
+					// 捏了一把而不是被按下去。图标只留 opacity 那一档。
+					//
+					// scale 是独立属性、不占布局，所以在 flex/grid 里放大不会挤动邻居。
 					solidActive + " {",
 					"  scale: 1.06;",
 					"  transition-duration: var(--dash-dur-press) !important;",
 					"}",
 					solidActiveSvg + " {",
-					"  scale: 0.88;",
 					"  opacity: 0.7;",
 					"  transition-duration: var(--dash-dur-press);",
 					"}",
@@ -641,7 +646,7 @@ window.__ModuleLoader__.load({
 
 					// 尊重"减少动态效果"：关掉形变，保留配色反馈。
 					"@media (prefers-reduced-motion: reduce) {",
-					"  " + solidActive + ", " + solidActiveSvg + " { scale: 1 !important; }",
+					"  " + solidActive + " { scale: 1 !important; }",
 					"}",
 
 					...fontRules,

@@ -26,7 +26,13 @@ final class LayoutPlugin: DashPlugin {
         // 壳的菜单只喊命令，不做事——会话展示面在这里，所以由本插件接。
         host.events.subscribe(DashEventBus.Topic.menuCommand) { payload in
             switch payload["command"] as? String {
-            case "openSettings": surface.openSettings()
+            case "openSettings":
+                // 有原生设置窗口就让它来（dash-settings 在场时占着 settingsOwner）。
+                // 两边都响应的话，原生窗口开出来的同时主窗口里还会弹一层网页 modal。
+                // 它不在场时页内 modal 是唯一的设置入口——逃生舱模式也得能改设置。
+                if host.objects.object(DashObjects.Key.settingsOwner) == nil {
+                    surface.openSettings()
+                }
             case "newSession": surface.startSession(workspaceId: nil)
             default: break
             }

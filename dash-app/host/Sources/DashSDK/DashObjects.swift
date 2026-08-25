@@ -41,5 +41,9 @@ public final class DashObjects {
         /// 会话展示面。协议由 dash-layout 定义（`DashConversationSurface`），
         /// 消费者需 `import DashLayout` 后转型。
         public static let conversationSurface = "dash.conversationSurface"
+        /// 设置面板的主人（占位对象，取值只看在不在）。dash-settings 在场时占住它，
+        /// dash-layout 见有主就不再用页内 modal 响应 ⌘,——否则原生窗口开出来的同时，
+        /// 主窗口里还会弹一层网页 modal。
+        public static let settingsOwner = "dash.settingsOwner"
     }
 }

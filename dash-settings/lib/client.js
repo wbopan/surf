@@ -176,26 +176,38 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * 打开面板：点侧边栏底部那个 `aria-haspopup="dialog"` 的按钮。
+		 * 让面板**保持**打开。
 		 *
-		 * 它在页面骨架里，被上面的 CSS 藏着也照样能 dispatch click（React 合成
-		 * 事件走的是 document 上的委托，不看可见性）。React 挂载是异步的，所以轮询
-		 * 到出现为止；开出来了就停。
-		 * @returns {() => void} 停止轮询
+		 * 开关是官方组件的局部 state，没有公开服务，所以只能点侧边栏底部那个
+		 * `aria-haspopup="dialog"` 的按钮（dash-layout 的 openSettings 也是这么做的）。
+		 * 它被我们的 CSS 藏着也照样能 dispatch click——React 合成事件走 document
+		 * 上的委托，不看可见性。
+		 *
+		 * 为什么是"保持"而不是"打开一次"：用户在设置窗口里按 Esc，官方 dialog 会
+		 * 自己关掉。这时壳要收到消息去关窗，**页面也得把面板重新开起来**——否则
+		 * 下次 ⌘, 打开的是一个空白窗口。
+		 *
+		 * @param {() => void} onClosed 面板从"开着"变成"没了"时调一次
+		 * @returns {() => void} 停止守护
 		 */
-		function openPanel() {
-			let timer = null;
-			const tick = () => {
-				if (panel.overlay() !== null) { stop(); return; }
+		function keepPanelOpen(onClosed) {
+			let had = false;
+			const ensure = () => {
+				if (markChain()) { had = true; return; }
+				if (had) { had = false; onClosed(); }
 				const trigger = document.querySelector('button[aria-haspopup="dialog"]');
 				if (trigger !== null) trigger.click();
 			};
-			const stop = () => {
-				if (timer !== null) { clearInterval(timer); timer = null; }
+			const observer = new MutationObserver(ensure);
+			observer.observe(document.body, { childList: true, subtree: true });
+			// 兜底：首屏 React 还没挂载时 body 可能一直没有变化（observer 不响），
+			// 点击被吞掉时也需要再试一次。频率低到不值一提。
+			const timer = setInterval(ensure, 500);
+			ensure();
+			return () => {
+				observer.disconnect();
+				clearInterval(timer);
 			};
-			tick();
-			if (panel.overlay() === null) timer = setInterval(tick, 120);
-			return stop;
 		}
 
 		/**
@@ -264,7 +276,16 @@ window.__ModuleLoader__.load({
 		 * 而我们的规则特异度低得多。
 		 */
 		const CSS = `
+/* 链外的兄弟整个不渲染 */
 [data-dash-settings-chain] > *:not([data-dash-settings-keep]) { display: none !important; }
+/*
+ * 链上的祖先只是"路径"，本身一点都不该看见：面板是 position:fixed 的，
+ * 布局上不依赖它们，但它们的背景和边框会从面板底下透出来——网页侧边栏那条
+ * 56px rail 的右边界就是这么在原生窗口里留下一道竖线的。visibility 关掉整棵
+ * 祖先树、再由面板自己打开，比逐个清 background/border 干净得多。
+ */
+[data-dash-settings-keep] { visibility: hidden !important; }
+[data-dash-settings="overlay"] { visibility: visible !important; }
 /* 遮罩没有意义——窗口本身就是这块内容的边界 */
 [data-dash-settings="mask"] { display: none !important; }
 [data-dash-settings="panel"] {
@@ -274,7 +295,6 @@ window.__ModuleLoader__.load({
 	max-height: none !important;
 	border-radius: 0 !important;
 	box-shadow: none !important;
-	background: transparent !important;
 }
 html, body { background: var(--dsw-alias-bg-layer-2) !important; }
 `;
@@ -311,25 +331,8 @@ html, body { background: var(--dsw-alias-bg-layer-2) !important; }
 				return off;
 			}, "dash-settings: 上报目录");
 
-			ctx.effect(() => {
-				const stopOpening = openPanel();
-				// 面板开合、React 重排都要重打标记；面板被关掉（Esc）= 关窗。
-				let had = false;
-				const sync = () => {
-					const has = markChain();
-					if (has !== had) {
-						had = has;
-						if (!has) postToShell({ type: "closed" });
-					}
-				};
-				const observer = new MutationObserver(sync);
-				observer.observe(document.body, { childList: true, subtree: true });
-				sync();
-				return () => {
-					stopOpening();
-					observer.disconnect();
-				};
-			}, "dash-settings: 面板形态");
+			ctx.effect(() => keepPanelOpen(() => postToShell({ type: "closed" })),
+				"dash-settings: 面板形态");
 
 			ctx.effect(() => {
 				window.__dashSettings = {
