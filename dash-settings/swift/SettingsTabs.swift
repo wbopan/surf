@@ -104,7 +104,10 @@ enum SettingsTabs {
         GeneralRow(ns: "permission", path: ["defaultPreset"], dividerBefore: false),
         GeneralRow(ns: "locale", path: ["preference"], dividerBefore: true),
         GeneralRow(ns: "ui-theme", path: ["preference"], dividerBefore: false),
-        GeneralRow(ns: "ui-conversation", path: ["busyEnter"], dividerBefore: true),
+        // **一页最多两条线。** 这里只剩一条（语言之前），另一条留给页尾的
+        // 「配置文件」——那一条分的是"设置项"与"逃生舱"，比把 Enter 单独划一组要紧。
+        // 线多了就不是分组，是把一页切成碎片。
+        GeneralRow(ns: "ui-conversation", path: ["busyEnter"], dividerBefore: false),
     ]
 
     /// 「插件」页的卡片顺序。Web 就这三张，其余 ns 按名字排在后面

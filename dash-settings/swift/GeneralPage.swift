@@ -38,7 +38,7 @@ struct GeneralPage: View {
                 LabeledContent("配置文件：") {
                     VStack(alignment: .leading, spacing: 3) {
                         Button("在编辑器中打开…") { model.openDocument(openPath) }
-                        Text("schema 表达不了的东西（复杂容器、未知类型）在这里改。")
+                        Text("schema 表达不了的字段在这里改。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

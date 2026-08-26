@@ -174,40 +174,52 @@ struct ProviderDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            DetailHeader(title: row.displayName,
-                         subtitle: row.live ? "路由已注册" : "路由未注册",
-                         identifier: row.provider)
+        content
+            // provider 一换，草稿与错误都要清——**不清的话上一个 provider 的错误
+            // 会挂在下一个头上**，看着像刚刚这个也失败了。
+            .onChange(of: row.provider) { _, _ in entry = ""; error = nil; facet = .credential }
+    }
 
-            // **`TabView` 而不是 `Picker(.segmented)`**：分段控件的选中态是一块
-            // 实心 accent 色，在一屏灰白里非常刺眼；而 macOS 的 `NSTabView`
-            // ——SwiftUI 这边就是 `TabView` 的默认样式——选中态是一枚玻璃凸起的
-            // 标签，骑在内容面板的上沿，没有 accent 色。参考图里 Accounts 那三个
-            // 标签就是它，我们这一栏的结构（左列选 provider、右边分栏看详情）
-            // 跟它一模一样，用同一个控件才对得上。
-            if scopedFields.isEmpty {
-                // 只有凭据一栏时不摆标签条——一个只有一格的标签条是个假控件。
+    /// **header 在面板里面**，不在面板上方。它是这一栏详情的标题，跟着内容走；
+    /// 摆在灰框外面就成了"页面的标题"，而页面的标题是窗口工具栏上那个「模型」。
+    @ViewBuilder
+    private var content: some View {
+        if scopedFields.isEmpty {
+            // 只有凭据一栏时不摆标签条——一个只有一格的标签条是个假控件。
+            // 没有标签条也就没有那块面板，header 只好裸着，这是可接受的退化。
+            VStack(alignment: .leading, spacing: 12) {
+                header
                 credentialForm
                 Spacer(minLength: 0)
-            } else {
-                TabView(selection: $facet) {
-                    credentialForm
-                        .padding(10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .tabItem { Text(Facet.credential.title) }
-                        .tag(Facet.credential)
-
-                    settingsForm
-                        .padding(10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .tabItem { Text(Facet.settings.title) }
-                        .tag(Facet.settings)
-                }
+            }
+        } else {
+            TabView(selection: $facet) {
+                pane(Facet.credential) { credentialForm }
+                pane(Facet.settings) { settingsForm }
             }
         }
-        // provider 一换，草稿与错误都要清——**不清的话上一个 provider 的错误
-        // 会挂在下一个头上**，看着像刚刚这个也失败了。
-        .onChange(of: row.provider) { _, _ in entry = ""; error = nil; facet = .credential }
+    }
+
+    /// **状态只在异常时说话。** 正常情况（路由已注册）不写一行字——左列那个绿点
+    /// 已经说过了，再用一句「路由已注册」复述一遍，只是把真正该被看见的那句
+    /// （「路由未注册」）淹在同样的位置、同样的字号里。
+    private var header: some View {
+        DetailHeader(title: row.displayName,
+                     subtitle: row.live ? nil : "路由未注册",
+                     identifier: row.provider)
+    }
+
+    @ViewBuilder
+    private func pane<C: View>(_ facet: Facet, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            content()
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .tabItem { Text(facet.title) }
+        .tag(facet)
     }
 
     private var credentialForm: some View {
@@ -228,8 +240,8 @@ struct ProviderDetail: View {
                             Button("保存", action: save)
                                 .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                         }
-                        Text("存在设置文件之外，引用名 \(row.keyRef)"
-                             + (row.keyRefStored ? "" : "（按命名约定推出来的）"))
+                        Text("引用名 \(row.keyRef)"
+                             + (row.keyRefStored ? "" : "（按约定推出来的）"))
                             .font(.caption).foregroundStyle(.secondary)
                         if let error {
                             Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)

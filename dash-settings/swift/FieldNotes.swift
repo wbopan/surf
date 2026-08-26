@@ -39,14 +39,18 @@ enum FieldNotes {
     }
 
     /// ns → 路径（用 `/` 连接）→ 注解。
+    ///
+    /// **hint 的唯一判据：它说了标签没说的事。** 把字段名换句话再说一遍的一律不写
+    /// ——「权限：新会话默认用哪个权限档位。」这种句子占位、费眼、零信息，一页上有
+    /// 五六条就把真正要紧的那一两条淹掉了。留下来的都是标签推不出来的：改了影不影响
+    /// 在跑的会话、超出上限之后数据去哪、这个值存在哪。
     private static let table: [String: [String: Note]] = [
         // ── 通用页的五行（Web: General）────────────────────────────────
         "agent-presets": [
-            "default": Note("智能体预设",
-                            "新开的会话用这个预设。已经在跑的会话保持它开始时的那个。"),
+            "default": Note("智能体预设", "已经在跑的会话不受影响。"),
         ],
         "permission": [
-            "defaultPreset": Note("权限", "新会话默认用哪个权限档位。", options: [
+            "defaultPreset": Note("权限", options: [
                 "read-only": "只读",
                 "workspace-write": "可写工作区",
                 "danger-full-access": "完全放开",
@@ -62,30 +66,28 @@ enum FieldNotes {
             ]),
         ],
         "ui-conversation": [
-            "busyEnter": Note("忙碌时 Enter 的行为",
-                              "只在忙碌时生效；⌘/Ctrl+Enter 走另一种。",
+            "busyEnter": Note("忙碌时 Enter 的行为", "⌘/Ctrl+Enter 走另一种。",
                               options: ["queue": "排队", "steer": "插话"]),
         ],
 
         // ── 插件页（Web: Plugins → Plugin configuration）───────────────
         "shell": [
-            "timeoutMs": Note("命令超时", "单条命令最多跑多久，超时就终止。", unit: "毫秒"),
+            "timeoutMs": Note("命令超时", unit: "毫秒"),
             "maxOutputBytes": Note("单流输出上限",
                                    "超出的部分溢写到临时文件，不会丢。", unit: "字节"),
             // 下面这些 Web 没露，机械美化会难懂，所以照样给中文。
             "cwd": Note("工作目录"),
             "maxTimeoutMs": Note("超时上限", "调用方能要求的最大超时。", unit: "毫秒"),
             "maxSpillBytes": Note("溢写上限", unit: "字节"),
-            "graceMs": Note("SIGTERM 宽限", "先礼后兵：等这么久再 SIGKILL。", unit: "毫秒"),
+            "graceMs": Note("SIGTERM 宽限", unit: "毫秒"),
         ],
         "agent-loop": [
-            "maxParallelToolCalls": Note("并行工具调用",
-                                         "一步之内最多同时跑几个可并行的调用。"),
+            "maxParallelToolCalls": Note("并行工具调用"),
         ],
         "web-search-deepseek": [
-            "apiKey": Note("API key", "存在设置文件之外。留空 = 保留现有的。"),
+            "apiKey": Note("API key", "存在设置文件之外。"),
             "baseURL": Note("端点", "留空 = 用 provider 的默认值。"),
-            "maxUses": Note("每次请求最多搜几次", "一次请求在必须作答前最多搜几次。"),
+            "maxUses": Note("每次请求最多搜几次"),
         ],
 
         // ── 模型页 ───────────────────────────────────────────────────
