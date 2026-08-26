@@ -2,18 +2,19 @@ import AppKit
 import DashSDK
 import SwiftUI
 
-/// 设置窗口。
+/// 设置窗口：窗框归 AppKit，内容整个是 SwiftUI。
 ///
-/// M0 只有窗框与生命周期：内容是一块占位视图，快照与表单从 M1 起长进来。
-///
-/// **窗口关掉不销毁**：`orderOut` 而已，视图与状态留着，第二次 ⌘, 是秒开。
+/// **窗口关掉不销毁**：`orderOut` 而已，视图与滚动位置留着，第二次 ⌘, 是秒开。
 /// 整代插件退休时才连窗一起收（`SettingsPlugin` 的 handle 释放）。
+@MainActor
 final class SettingsWindowController: NSWindowController {
 
-    private let host: DashHost
+    private let model: SettingsModel
+    private let log: (String) -> Void
 
-    init(host: DashHost) {
-        self.host = host
+    init(model: SettingsModel, log: @escaping (String) -> Void) {
+        self.model = model
+        self.log = log
         super.init(window: nil)
         setupWindow()
     }
@@ -21,18 +22,21 @@ final class SettingsWindowController: NSWindowController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func setupWindow() {
-        let content = NSHostingController(rootView: SettingsPlaceholderView())
+        let root = SettingsRootView(model: model, openPath: { [weak self] path in
+            self?.open(path: path)
+        })
+        let content = NSHostingController(rootView: root)
         // 默认含 .preferredContentSize：SwiftUI 内容的 fitting 尺寸会反过来顶窗口，
         // 用户调好的大小就没了（CLAUDE.md 踩坑记录里那条）。
         content.sizingOptions = []
 
         let window = NSWindow(contentViewController: content)
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = false
         window.title = "设置"
-        window.setContentSize(NSSize(width: 820, height: 600))
-        window.minSize = NSSize(width: 680, height: 440)
-        // 设置窗口不进 ⌘` 的主窗口轮转，但要能被 ⌘W 关掉。关掉只是 orderOut，
-        // 所以必须自己留着——否则第二次 ⌘, 会对着一个已释放的窗口。
+        window.setContentSize(NSSize(width: 860, height: 620))
+        window.minSize = NSSize(width: 700, height: 460)
+        // 关掉只是 orderOut，所以窗口必须留着——否则第二次 ⌘, 会对着一个已释放的窗口。
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("DashSettingsWindow")
         window.identifier = NSUserInterfaceItemIdentifier("settings.window")
@@ -41,30 +45,23 @@ final class SettingsWindowController: NSWindowController {
 
     func present() {
         guard let window else { return }
-        // frameAutosaveName 有记录时别居中：那会覆盖用户上次摆好的位置。
-        if !window.isVisible && window.frame.origin == .zero {
-            window.center()
-        }
+        if !window.isVisible && window.frame.origin == .zero { window.center() }
         showWindow(nil)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: false)
+        // 每次打开都对一次账：窗口关着的这段时间里 dsh 可能重启过。
+        model.refresh()
     }
-}
 
-/// M0 的占位内容。M1 把它换成 ns 快照的只读列表。
-struct SettingsPlaceholderView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "gearshape")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text("设置")
-                .font(.title3)
-            Text("接线已通，内容从 M1 起长进来。")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    /// 打开配置文件。
+    ///
+    /// **路径来自 dsh、由壳来 open**：只有 `NSWorkspace` 认用户的默认编辑器。
+    /// 这里不采信页面/远端给的任何路径分量之外的东西——它就是 host 报的绝对路径。
+    private func open(path: String) {
+        let url = URL(fileURLWithPath: path)
+        if !NSWorkspace.shared.open(url) {
+            log("打开配置文件失败：\(path)")
+            model.notice = "打开失败：\(path)"
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("settings.placeholder")
     }
 }
