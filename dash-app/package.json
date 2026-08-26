@@ -1,21 +1,24 @@
 {
-  "name": "dash-app",
+  "name": "@wenbo/dash-app",
   "version": "0.1.0",
-  "private": true,
   "description": "dash macOS 壳的宿主插件：以 host/ 的 Xcode 工程为载荷，按需构建、写 endpoint 发现文件、拉起 dash.app，并 provide 'dashApp'。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "host/project.yml",
+    "host/Sources",
+    "host/Packages",
+    "host/scripts"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
   }
 }

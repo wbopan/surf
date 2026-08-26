@@ -25,7 +25,7 @@
  * 升级 dsh 后若失效，优先核对该语义名。
  */
 window.__ModuleLoader__.load({
-	id: "dash-nativeify",
+	id: "@wenbo/dash-nativeify",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;

@@ -1,7 +1,0 @@
-# dash-nativeify 的 bundle patch 层：
-# `dsh plugin --profile web add` 安装本包后，reconcile 会把包名写进
-# dsh.profile.bundles，本文件随之作为一个 patch 层生效——插入自己的浏览器插件 row。
-# 本插件无配置项（一段无条件生效的 CSS），row 只需要包名。
-- insert:
-    - id: ui-dash-nativeify
-      name: dash-nativeify

@@ -1,18 +1,18 @@
 {
-	"name": "dash-sidebar",
+	"name": "@wenbo/dash-sidebar",
 	"version": "0.1.0",
-	"private": true,
 	"description": "dash 的原生会话侧边栏：占 dash-layout 的 sidebar 槽，数据面走 DSHKit 的会话镜像",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {
 		".": "./lib/index.js",
-		"./cordis.patch.yml": "./cordis.patch.yml",
 		"./package.json": "./package.json"
 	},
-	"dsh": {
-		"bundle": {
-			"patch": "./cordis.patch.yml"
-		}
+	"files": [
+		"lib",
+		"swift"
+	],
+	"publishConfig": {
+		"access": "public"
 	}
 }

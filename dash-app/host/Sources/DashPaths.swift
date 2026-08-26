@@ -24,5 +24,10 @@ enum DashPaths {
     static let logURL = logsDir.appendingPathComponent("dash.log")
 
     /// dash-app 插件在 dsh 启动时写、退出时删；壳三级定位的第二级。
-    static let endpointURL = appSupport.appendingPathComponent("endpoint.json")
+    ///
+    /// **一个 profile 一份**（`endpoints/<profile>.json`）。一台机器上可以同时
+    /// 跑好几个 dsh——每个 git worktree 一套插件、一个 profile、一个 App 实例；
+    /// 共用一份文件的话后启动的会把先启动的抹掉。壳这边因此是"扫目录取候选"，
+    /// 而不是"读一个文件"（见 `EndpointLocator.discoveredEndpoints`）。
+    static let endpointsDir = appSupport.appendingPathComponent("endpoints", isDirectory: true)
 }

@@ -15,7 +15,8 @@ dash-app/host/build-sdk/
 tools/
 
 # 插件依赖解析：指向 harness @deepseek-ai 的本地 symlink（机器相关，勿入库）
-node_modules/
+# 不带斜杠：`./dev` 在仓库根补的是一条**符号链接**，带斜杠的规则只匹配真目录，会漏。
+node_modules
 
 # 邻居插件：纯本地运行时插件，不由本仓库维护（web profile 直接 link 它）
 /dsh-web-search-firecrawl/
@@ -35,10 +36,12 @@ skills/
 docs/spikes/*/out/
 
 # hover spike 的可执行产物（每个都有同名 .swift，run.sh 可重编）
-docs/spikes/hover/HoverProbe
-docs/spikes/hover/diffmap
-docs/spikes/hover/mean
-docs/spikes/hover/warp
+# hover spike 改成白名单：只收源码、脚本与说明。逐个列可执行文件的写法
+# 每加一个探针就漏一个（meanabs 就这么漏进来过）。
+docs/spikes/hover/*
+!docs/spikes/hover/*.swift
+!docs/spikes/hover/*.sh
+!docs/spikes/hover/*.md
 
 # 壳工程目录下的调试截图残留（shot.sh 随手落的，不是工程文件）
 /dash-app/host/*.png

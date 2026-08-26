@@ -59,5 +59,5 @@ export default createSwiftPlugin({
 不含用户插件，包名 import 要么靠 npm workspace 要么靠手工 symlink——两者都是机器本地状态，
 新克隆的仓库拿不到。相对路径在"所有 dash-\* 是同一仓库里的兄弟目录"这个前提下永远成立。
 
-Swift 半身见 `dash-hello/swift/HelloPlugin.swift`（最小样例）与
+Swift 半身见 `dash-sidebar/swift/SidebarPlugin.swift`（最小的槽插件入口）与
 `dash-app/host/Sources/DashSDK/`（SDK 本体，含纪律说明）。

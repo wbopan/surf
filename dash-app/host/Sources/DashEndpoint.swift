@@ -35,10 +35,13 @@ enum EndpointLocator {
     // MARK: - 候选
 
     /// 按优先级排出所有候选；调用方逐个 probe，第一个健康的即答案。
+    ///
+    /// flag 永远最优先：它是拉起本进程的那个 dsh 亲手递过来的，在多 worktree
+    /// 并存时也只会指向"我这一套"。发现文件是给手动双击起来的壳兜底的。
     static func candidates() -> [DashEndpoint] {
         var out: [DashEndpoint] = []
         if let flag = flagEndpoint() { out.append(flag) }
-        if let disc = discoveredEndpoint(), !out.contains(where: { $0.httpBase == disc.httpBase }) {
+        for disc in discoveredEndpoints() where !out.contains(where: { $0.httpBase == disc.httpBase }) {
             out.append(disc)
         }
         return out
@@ -63,14 +66,28 @@ enum EndpointLocator {
         return nil
     }
 
-    /// endpoint 发现文件。dash-app 插件在 dsh 启动时写、退出时删。
-    /// 文件在但内容坏 = 当作没有（不崩、不报错，probe 会兜底）。
-    static func discoveredEndpoint() -> DashEndpoint? {
-        guard let data = try? Data(contentsOf: DashPaths.endpointURL),
+    /// endpoint 发现文件，一个 profile 一份。dash-app 插件在 dsh 启动时写、
+    /// 退出时删；被 kill -9 的 dsh 会留下陈旧的一份，所以这里只管排出候选，
+    /// 死活交给 `probe` 判——扫不到、读坏了、JSON 不成形都当作没有，不崩不报错。
+    ///
+    /// 按 `startedAt` 倒序：多个 dsh 同时活着（一个 worktree 一个）而本进程
+    /// 又没拿到 flag 时，最近起来的那个是最可能被用户当成"当前这套"的。
+    static func discoveredEndpoints() -> [DashEndpoint] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: DashPaths.endpointsDir, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap(decodeEndpoint)
+            .sorted { ($0.startedAt ?? "") > ($1.startedAt ?? "") }
+    }
+
+    /// 单份发现文件 → 候选。内容坏 = nil。
+    private static func decodeEndpoint(_ url: URL) -> DashEndpoint? {
+        guard let data = try? Data(contentsOf: url),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let base = obj["httpBase"] as? String,
-              let url = URL(string: base), url.host != nil else { return nil }
-        return DashEndpoint(httpBase: url,
+              let httpURL = URL(string: base), httpURL.host != nil else { return nil }
+        return DashEndpoint(httpBase: httpURL,
                             bridgePath: obj["bridgePath"] as? String ?? defaultBridgePath,
                             pid: obj["pid"] as? Int,
                             startedAt: obj["startedAt"] as? String,

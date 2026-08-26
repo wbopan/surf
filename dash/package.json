@@ -1,0 +1,32 @@
+{
+	"name": "@wenbo/dash",
+	"version": "0.1.0",
+	"description": "dash：把 dsh 的 Web UI 装进 macOS 原生壳。伞 bundle——本包不含运行时代码，只有一张编排表（cordis.patch.yml）和一个安装器（bin/dash.js）。",
+	"type": "module",
+	"bin": {
+		"dash": "./bin/dash.js"
+	},
+	"files": [
+		"bin",
+		"cordis.patch.yml"
+	],
+	"exports": {
+		"./cordis.patch.yml": "./cordis.patch.yml",
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@wenbo/dash-app": "^0.1.0",
+		"@wenbo/dash-bridge": "^0.1.0",
+		"@wenbo/dash-layout": "^0.1.0",
+		"@wenbo/dash-sidebar": "^0.1.0",
+		"@wenbo/dash-nativeify": "^0.1.0"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		}
+	}
+}

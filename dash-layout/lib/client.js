@@ -22,7 +22,7 @@
  * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中。
  */
 window.__ModuleLoader__.load({
-	id: "dash-layout",
+	id: "@wenbo/dash-layout",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;

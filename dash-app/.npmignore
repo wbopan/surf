@@ -1,0 +1,5 @@
+# files 白名单已经把 host/build、host/tools、host/build-sdk 挡在外面了，
+# 这里只收拾白名单**内部**的构建残留（npm 只认包根的忽略文件，
+# 仓库根那份 .gitignore 对本包不生效）。
+host/Packages/**/.build/
+host/Sources/Resources/BuildTimestamp.txt

@@ -1,0 +1,42 @@
+# dash 的编排表——本仓库唯一一处决定"装哪些插件、什么顺序、什么配置"的地方。
+#
+# 结构照 @deepseek-ai/dsh-web-app 的样子：bundle 不是代码容器，是一张表。
+# 真正的代码在下面 name 指向的那五个包里，它们各自**不再**声明 dsh.bundle
+# ——编排权集中在这里，一处真相。
+#
+# 这张表叠在 @deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app 之上，
+# 三者平级，profile 的 cordis.patch.yml 在其后，可覆盖这里的任何 config。
+- insert:
+    # 桥必须先于任何带 Swift 载荷的插件挂载。cordis 的依赖解析（那些插件
+    # inject 'dashBridge'）已经保证了这一点，这里的位置只影响诊断树的可读性。
+    - id: dash-bridge
+      name: "@wenbo/dash-bridge"
+      config:
+        path: /dash/bridge
+        pollIntervalMs: 500
+
+    - id: dash-app
+      name: "@wenbo/dash-app"
+      config:
+        # 构建哪个配置。Debug 产物是 "dash Dev.app"（bundle id io.wenbo.dash.dev），
+        # Release 是 "dash.app"——两者可并存运行。开发期默认 Debug；
+        # 日常使用者应在自己的 profile patch 里覆写成 Release。
+        configuration: Debug
+        # 源码变了就重建（无 Xcode 时自动降级为"只探测既有产物"）。
+        build: true
+        # 构建/探测到产物后自动拉起（已在运行则跳过）。
+        launch: true
+        # dsh 运行期间盯着壳源码，改了就后台重建，经桥提示「有新版，重启生效」。
+        watch: true
+        # 重建成功后不等用户点，直接让壳退出并重拉。开发期图省事可以打开，
+        # 代价是每次改壳源码都会丢掉页面状态（滚动位置、输入框里没发出去的字）。
+        restartOnRebuild: false
+
+    - id: dash-layout
+      name: "@wenbo/dash-layout"
+
+    - id: dash-sidebar
+      name: "@wenbo/dash-sidebar"
+
+    - id: ui-dash-nativeify
+      name: "@wenbo/dash-nativeify"

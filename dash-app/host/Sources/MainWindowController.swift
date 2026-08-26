@@ -694,7 +694,14 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         lines.append("")
         lines.append("── 路径 ──")
         lines.append("日志：\(DashPaths.logsDir.path)")
-        lines.append("发现文件：\(DashPaths.endpointURL.path)")
+        lines.append("发现文件：\(DashPaths.endpointsDir.path)")
+        // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 dash 在跑"。
+        let discovered = EndpointLocator.discoveredEndpoints()
+        let discoveredText = discovered.isEmpty
+            ? "无"
+            : discovered.map { "\($0.profile ?? "?") → \($0.httpBase.absoluteString)" }
+                .joined(separator: "，")
+        lines.append("发现的 dsh：\(discoveredText)")
         return lines.joined(separator: "\n")
     }
 

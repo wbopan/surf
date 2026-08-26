@@ -51,8 +51,17 @@ export const Config = z.object({
 /** 壳的 Application Support 根目录，与 Swift 侧 `DashPaths.appSupport` 必须一致。 */
 const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.dash");
 
-/** endpoint 发现文件；Swift 侧 `DashPaths.endpointURL`。 */
-const ENDPOINT_FILE = join(APP_SUPPORT, "endpoint.json");
+/**
+ * endpoint 发现文件的目录；Swift 侧 `DashPaths.endpointsDir`。
+ *
+ * **一个 profile 一份**（`endpoints/<profile>.json`），不是全局单文件：
+ * 一台机器上可以同时跑好几个 dsh——每个 git worktree 一套插件、一个 profile、
+ * 一个 App 实例。共用一份文件的话，后启动的那个会把先启动的抹掉，被抹掉的
+ * 那个 dsh 就再也没法被手动双击起来的壳找到了。
+ *
+ * 同名 profile 重启会覆盖自己那一份，所以文件不会越积越多。
+ */
+const ENDPOINTS_DIR = join(APP_SUPPORT, "endpoints");
 
 /**
  * 桥路径的兜底值。**真相在 dash-bridge 的 config.path**——它才是挂 WS 的那一方，
@@ -376,6 +385,16 @@ function resolveHttpBase(webServer) {
 	return `http://${host}:${webServer.port}`;
 }
 
+/**
+ * 本进程那一份发现文件的路径。文件名用 profile 名，因为它正是"这套 dash 是
+ * 哪一套"的天然标识；取不到（不该发生，但 argv 毕竟是外部输入）时退回 pid，
+ * 宁可留个不会被复用的文件名，也不要和别的 dsh 抢同一个。
+ */
+function endpointFilePath() {
+	const profile = resolveProfileName();
+	return join(ENDPOINTS_DIR, `${profile ?? `pid-${process.pid}`}.json`);
+}
+
 /** 原子写：先写临时文件再 rename，app 永远读不到半截 JSON。 */
 function writeEndpointFile({ httpBase, bridgePath, logger }) {
 	const payload = {
@@ -385,24 +404,29 @@ function writeEndpointFile({ httpBase, bridgePath, logger }) {
 		startedAt: new Date().toISOString(),
 		profile: resolveProfileName(),
 	};
+	const file = endpointFilePath();
 	try {
-		mkdirSync(APP_SUPPORT, { recursive: true });
-		const tmp = `${ENDPOINT_FILE}.${process.pid}.tmp`;
+		mkdirSync(ENDPOINTS_DIR, { recursive: true });
+		const tmp = `${file}.${process.pid}.tmp`;
 		writeFileSync(tmp, `${JSON.stringify(payload, undefined, "\t")}\n`);
-		renameSync(tmp, ENDPOINT_FILE);
-		logger.info(`endpoint 发现文件已写入：${ENDPOINT_FILE} → ${httpBase}`);
+		renameSync(tmp, file);
+		logger.info(`endpoint 发现文件已写入：${file} → ${httpBase}`);
 	} catch (error) {
 		logger.warn(`写 endpoint 发现文件失败（手动启动的 app 将找不到本进程）：${errorText(error)}`);
 	}
 }
 
-/** 只删自己写的那一份：两个 dsh 并存时，先退的不该把后来者的文件删掉。 */
+/**
+ * 只删自己写的那一份。分片之后同名 profile 才可能撞车（比如上一次被 kill -9
+ * 没清理干净），pid 这一道校验依然值得留着：先退的不该把后来者的文件删掉。
+ */
 function removeEndpointFile(logger) {
+	const file = endpointFilePath();
 	try {
-		const raw = readTextOrUndefined(ENDPOINT_FILE);
+		const raw = readTextOrUndefined(file);
 		if (raw === undefined) return;
 		if (JSON.parse(raw)?.pid !== process.pid) return;
-		rmSync(ENDPOINT_FILE, { force: true });
+		rmSync(file, { force: true });
 	} catch (error) {
 		logger.warn(`清理 endpoint 发现文件失败：${errorText(error)}`);
 	}
@@ -410,7 +434,10 @@ function removeEndpointFile(logger) {
 
 /**
  * profile 名。dsh 不把它放进环境变量，只能从 argv 反推
- * （`dsh web` 是 `--profile web` 的别名）——纯诊断字段，取不到就留空。
+ * （`dsh web` 是 `--profile web` 的别名）。
+ *
+ * 从"纯诊断字段"升格成了发现文件的文件名（见 {@link endpointFilePath}），
+ * 所以取不到时调用方必须有兜底——这里仍然只负责如实返回 undefined。
  */
 function resolveProfileName() {
 	const argv = process.argv.slice(2);
