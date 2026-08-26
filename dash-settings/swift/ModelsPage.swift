@@ -179,25 +179,31 @@ struct ProviderDetail: View {
                          subtitle: row.live ? "路由已注册" : "路由未注册",
                          identifier: row.provider)
 
-            // 只有一栏内容时不摆分段控件——一个只有一段的分段控件是个假控件。
-            if !scopedFields.isEmpty {
-                // **靠左**：它切的是这一栏详情的内容，不是整页——居中会读成页级导航，
-                // 跟插件页顶上那条页级分段撞在一起。
-                Picker("", selection: $facet) {
-                    ForEach(Facet.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-            }
-
-            if facet == .credential || scopedFields.isEmpty {
+            // **`TabView` 而不是 `Picker(.segmented)`**：分段控件的选中态是一块
+            // 实心 accent 色，在一屏灰白里非常刺眼；而 macOS 的 `NSTabView`
+            // ——SwiftUI 这边就是 `TabView` 的默认样式——选中态是一枚玻璃凸起的
+            // 标签，骑在内容面板的上沿，没有 accent 色。参考图里 Accounts 那三个
+            // 标签就是它，我们这一栏的结构（左列选 provider、右边分栏看详情）
+            // 跟它一模一样，用同一个控件才对得上。
+            if scopedFields.isEmpty {
+                // 只有凭据一栏时不摆标签条——一个只有一格的标签条是个假控件。
                 credentialForm
+                Spacer(minLength: 0)
             } else {
-                settingsForm
-            }
+                TabView(selection: $facet) {
+                    credentialForm
+                        .padding(10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .tabItem { Text(Facet.credential.title) }
+                        .tag(Facet.credential)
 
-            Spacer(minLength: 0)
+                    settingsForm
+                        .padding(10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .tabItem { Text(Facet.settings.title) }
+                        .tag(Facet.settings)
+                }
+            }
         }
         // provider 一换，草稿与错误都要清——**不清的话上一个 provider 的错误
         // 会挂在下一个头上**，看着像刚刚这个也失败了。

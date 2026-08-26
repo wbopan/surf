@@ -79,7 +79,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return nil
         case .models: return 430
-        case .plugins: return 480
+        case .plugins: return 520   // 含 TabView 面板的边框与 tab 条
         case .presets: return 360
         }
     }

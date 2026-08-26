@@ -22,24 +22,18 @@ struct PluginsPage: View {
     @State private var section: Section = .configuration
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Spacer(minLength: 0)
-                Picker("", selection: $section) {
-                    ForEach(Section.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityIdentifier("settings.plugins.section")
-                Spacer(minLength: 0)
-            }
+        TabView(selection: $section) {
+            PluginConfigurationList(model: model)
+                .padding(12)
+                .tabItem { Text(Section.configuration.title) }
+                .tag(Section.configuration)
 
-            switch section {
-            case .configuration: PluginConfigurationList(model: model)
-            case .inventory: PluginInventoryList(model: model)
-            }
+            PluginInventoryList(model: model)
+                .padding(12)
+                .tabItem { Text(Section.inventory.title) }
+                .tag(Section.inventory)
         }
+        .accessibilityIdentifier("settings.plugins.section")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
