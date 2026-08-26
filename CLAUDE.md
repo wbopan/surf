@@ -289,7 +289,18 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-`endpoint` 发现文件**已经按 profile 分片**（`endpoints/<profile>.json`），不再互相覆盖。
+**`<AppSupport>/io.wenbo.dash/` 下的三样东西都已经按实例分片**，别再假设"日志只有一份"：
+
+| 文件 | 分片键 | 不分片会怎样 |
+|---|---|---|
+| `endpoints/<profile>.json` | profile | 后启动的抹掉先启动的，被抹的那套再也接不到手动双击的壳 |
+| `logs/dash.<worktree>.log`（壳自己写） | **产物所在 worktree 目录名**（`DashPaths.instanceTag` 从 bundle 路径里抠） | 两个 App 实例 bundle id 相同、追加写同一文件，**邻居 worktree 的插件编译错误混进你的日志**，长得和自己的一模一样 |
+| `logs/dash-app-build.<profile>.<配置>.log`（node 侧写） | profile | 这份是**覆盖写**：邻居一构建就把你整份换掉，终端指给你的路径里躺着别人的错误 |
+
+壳的日志跟着**产物**分片而不是跟着连上的 dsh：断连重连可以换 dsh，跑的代码始终是自己那份。
+装到 `/Applications` 的 Release 全机只有一份，仍是无后缀的 `dash.log`。
+拿不准该看哪个文件就开 ⌥⌘D，「路径」一栏写的是本进程日志的**全路径**。
+（分片是新增的，老的 `dash.log` / `dash-app-build.<配置>.log` 还躺在目录里，删掉即可。）
 
 **新 worktree 有两样本地状态不在库里，`./dev` 替你补齐**，别手动折腾：
 
@@ -301,7 +312,7 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 
 第 2 条缺了会**安静地**毁掉整个壳：dsh 照常起、HTTP 200，只是
 `spawn …/tools/xcodegen ENOENT` 埋在
-`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.Debug.log` 里，
+`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.<profile>.Debug.log` 里，
 终端只留一句"dash-app 优雅缺席"。`bin/dash.js` 的 `ensureXcodegen` 现在按
 **同仓库的其它 worktree → PATH 上的 `xcodegen`** 的顺序取件并拷过来；两处都没有
 就打印补法（`brew install xcodegen`）而不是让它静默缺席。三个调用点也各自加了
@@ -339,6 +350,15 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
 "我这一套"。发现文件是给手动双击起来的壳兜底的——**别删它**：用户 ⌘Q 之后 dsh
 不会再拉起 App（`launch` 只在 activate 时跑一次），双击是唯一的回来路径，而双击
 没有 flag。
+
+**没有 flag 时，候选先按"是不是我这一套"排，再按 `startedAt` 倒序。**
+判据是硬事实而不是名字推断：dash-app 把自己的 `dash-app/host` 绝对路径写进发现文件
+（`hostDir`），壳从自己的 bundle 路径算出同一个值比对（`DashPaths.ownHostDir` ↔
+`DashEndpoint.isOwn`）。只按 `startedAt` 排会**安静地连错**：双击起来的壳挑中邻居
+worktree 最近启动的那个 dsh，于是去编译**邻居的**插件源码——编译失败时那条错误
+原样落进自己的日志，读日志的人完全看不出它属于别人家（实测过，日志里冒出本
+worktree 根本没有的插件名）。自己那套没在跑时仍然会退到邻居（总比引导页有用），
+但接入那行日志与 ⌥⌘D 都会标出「⚠️ 不是本 worktree 那一套」。
 
 **壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底、
 替网页把下载与外链落地。

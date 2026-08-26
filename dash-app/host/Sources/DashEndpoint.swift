@@ -14,7 +14,22 @@ struct DashEndpoint: Equatable {
     let pid: Int?
     let startedAt: String?
     let profile: String?
+    /// 写这份发现文件的那个 dsh 的 `dash-app/host` 目录（老版本插件没有这个字段）。
+    let hostDir: String?
     let source: Source
+
+    /// 这套 dsh 是不是"我这一套"——它的 dash-app 与本产物出自同一个 worktree。
+    ///
+    /// **多 worktree 并存时这件事必须问清楚**：插件源码由 dsh 那边的桥登记、
+    /// 由壳这边编译装载，连错 dsh = 编译并跑起邻居 worktree 的插件，
+    /// 而失败时那条编译错误会原样落进本进程的日志，看上去就像是自己写坏了。
+    /// flag 递来的端点天然是自己那套（拉起本进程的就是它），所以直接算真。
+    var isOwn: Bool {
+        if source == .flag { return true }
+        guard let own = DashPaths.ownHostDir, let hostDir else { return false }
+        return URL(fileURLWithPath: hostDir).standardizedFileURL.path
+            == URL(fileURLWithPath: own).standardizedFileURL.path
+    }
 
     /// 描述给引导页/日志看的一行。
     var summary: String {
@@ -22,6 +37,7 @@ struct DashEndpoint: Equatable {
         if let profile { s += "（profile \(profile)" }
         if let pid { s += profile == nil ? "（pid \(pid)" : "，pid \(pid)" }
         if profile != nil || pid != nil { s += "）" }
+        if !isOwn { s += " ⚠️ 不是本 worktree 那一套" }
         return s
     }
 }
@@ -55,7 +71,7 @@ enum EndpointLocator {
               let url = URL(string: raw), url.scheme != nil, url.host != nil else { return nil }
         return DashEndpoint(httpBase: url,
                             bridgePath: value(of: "--dash-bridge-path", in: args) ?? defaultBridgePath,
-                            pid: nil, startedAt: nil, profile: nil, source: .flag)
+                            pid: nil, startedAt: nil, profile: nil, hostDir: nil, source: .flag)
     }
 
     private static func value(of flag: String, in args: [String]) -> String? {
@@ -70,15 +86,24 @@ enum EndpointLocator {
     /// 退出时删；被 kill -9 的 dsh 会留下陈旧的一份，所以这里只管排出候选，
     /// 死活交给 `probe` 判——扫不到、读坏了、JSON 不成形都当作没有，不崩不报错。
     ///
-    /// 按 `startedAt` 倒序：多个 dsh 同时活着（一个 worktree 一个）而本进程
-    /// 又没拿到 flag 时，最近起来的那个是最可能被用户当成"当前这套"的。
+    /// **先按"是不是我这一套"（`isOwn`），再按 `startedAt` 倒序。**
+    ///
+    /// 只按 startedAt 排的话，多 worktree 并存时手动双击起来的壳会连上
+    /// 最近启动的那个 dsh——很可能是邻居的。那不是个安静的错误：壳会去编译
+    /// 邻居 worktree 的插件源码，编译失败时错误落进自己的日志，读日志的人
+    /// 完全看不出它属于别人家。同 worktree 的那套永远该排在最前。
+    ///
+    /// 自己那套没在跑时仍然会退到邻居（总比引导页有用），但 `summary` 会标出来。
     static func discoveredEndpoints() -> [DashEndpoint] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: DashPaths.endpointsDir, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.pathExtension == "json" }
             .compactMap(decodeEndpoint)
-            .sorted { ($0.startedAt ?? "") > ($1.startedAt ?? "") }
+            .sorted {
+                if $0.isOwn != $1.isOwn { return $0.isOwn }
+                return ($0.startedAt ?? "") > ($1.startedAt ?? "")
+            }
     }
 
     /// 单份发现文件 → 候选。内容坏 = nil。
@@ -92,6 +117,7 @@ enum EndpointLocator {
                             pid: obj["pid"] as? Int,
                             startedAt: obj["startedAt"] as? String,
                             profile: obj["profile"] as? String,
+                            hostDir: obj["hostDir"] as? String,
                             source: .discovery)
     }
 

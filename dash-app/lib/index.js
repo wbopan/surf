@@ -338,7 +338,7 @@ async function ensureBuilt({ configuration, logger, isDisposed }) {
  * 一种结果，调用方各有各的善后。
  */
 async function runBuild({ configuration, logger, isDisposed }) {
-	const logPath = join(APP_SUPPORT, "logs", `dash-app-build.${configuration}.log`);
+	const logPath = buildLogPath(configuration);
 	mkdirSync(dirname(logPath), { recursive: true });
 	// 盯文件的重建走的也是这里，绕过了 ensureBuilt 的那道检查——不拦一下，
 	// 日志里就只有一句 ENOENT。
@@ -371,6 +371,19 @@ async function runBuild({ configuration, logger, isDisposed }) {
 		writeFileSync(logPath, log);
 		return { ok: false, log, logPath };
 	}
+}
+
+/**
+ * 构建日志的路径，**按 profile 分片**（`dash-app-build.<profile>.<配置>.log`）。
+ *
+ * 多 worktree 并存时每个 worktree 一个 dsh，各构建各的壳；这份日志是**覆盖写**，
+ * 共用一个文件名的话，邻居一构建就把你这份整个换掉——终端说"构建失败，完整日志见
+ * <路径>"，你打开看到的却是邻居的编译错误，而且看不出来。分片与 endpoint 发现
+ * 文件同一套兜底（见 {@link endpointFilePath}）。
+ */
+function buildLogPath(configuration) {
+	const shard = resolveProfileName() ?? `pid-${process.pid}`;
+	return join(APP_SUPPORT, "logs", `dash-app-build.${shard}.${configuration}.log`);
 }
 
 /** 不构建时的产物探测：先本地 build/，再 /Applications 的 Release 安装。 */
@@ -427,6 +440,11 @@ function writeEndpointFile({ httpBase, bridgePath, logger }) {
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
 		profile: resolveProfileName(),
+		// 壳凭这个认出"哪一份是我这一套"：它自己的 bundle 就躺在
+		// `<hostDir>/build/Build/Products/<配置>/`，两边算出同一个绝对路径。
+		// 没有它，手动双击起来的壳只能按 startedAt 挑，多 worktree 时就会
+		// 连上邻居的 dsh、编译邻居的插件源码（见 Swift 侧 DashEndpoint.isOwn）。
+		hostDir: HOST_DIR.replace(/\/$/, ""),
 	};
 	const file = endpointFilePath();
 	try {

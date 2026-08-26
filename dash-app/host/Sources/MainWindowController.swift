@@ -693,7 +693,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
         lines.append("")
         lines.append("── 路径 ──")
-        lines.append("日志：\(DashPaths.logsDir.path)")
+        // 日志一个实例一份，写全路径而不是目录——多 worktree 时"我该看哪个文件"
+        // 正是最容易搞错的一步。
+        lines.append("日志：\(DashPaths.logURL.path)")
         lines.append("发现文件：\(DashPaths.endpointsDir.path)")
         // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 dash 在跑"。
         let discovered = EndpointLocator.discoveredEndpoints()
