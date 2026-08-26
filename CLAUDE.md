@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 dev                一行启动本 worktree 的整套 dash（薄封装，逻辑在 dash/bin/dash.js）
 dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，不含运行时代码
-  cordis.patch.yml 装哪五个插件、什么顺序、什么配置——改编排只改这里
+  cordis.patch.yml 装哪六个插件、什么顺序、什么配置——改编排只改这里
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
@@ -30,6 +30,8 @@ dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS 
 dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具栏；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
+dash-settings/     原生设置窗口：不占槽、自己一扇窗；数据面在 dsh 进程里直接
+                   消费 ctx.settings（权威计划 docs/dash-settings-plan.md）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
                    按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
                    （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
@@ -39,7 +41,7 @@ docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结�
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
-五个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
+六个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
 "去掉 scope"）。**它们自己都不再声明 `dsh.bundle`**——编排权集中在伞包那张表上，
 一处真相。详见下面「profile 与伞 bundle」。
 
@@ -51,7 +53,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 ./dev --help       # 其余选项
 ```
 
-`./dev` 幂等，随便重复跑。它会把本 worktree 的五个插件 + 伞包 link 进
+`./dev` 幂等，随便重复跑。它会把本 worktree 的六个插件 + 伞包 link 进
 profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。dash-app 随之
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
@@ -234,13 +236,13 @@ npm workspace 或手工 symlink，那是机器本地状态，新克隆的仓库�
 1. **`@deepseek-ai/dsh-web-app` 得手动列进 `bundles`。** dsh 的 `PROFILE_TEMPLATES`
    只给 `web` 和 `headless` 两个名字配了模板，别的 profile 初始化时只拿到
    `dsh-base`，web 那一层不会自己出现。
-2. **五个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
+2. **六个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
    列上去会让 `loadProfile` 直接 fails loud（"列为 bundle 却没有声明"是配置错误，
    不是"没有 patch"）。从旧结构升级上来的 profile 尤其要清。
 
-### 为什么开发期要单独 link 那五个插件
+### 为什么开发期要单独 link 那六个插件
 
-`./dev` 会把五个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
+`./dev` 会把六个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
 **pnpm 对 `link:` 依赖不会去装被 link 目标自己的 dependencies**，而 cordis loader
 解析插件包名时的锚点是 **profile 目录**——伞包自带的 `node_modules` 根本不在
 Node 的向上查找链上。不 link 它们，启动即炸：
@@ -249,7 +251,7 @@ Node 的向上查找链上。不 link 它们，启动即炸：
 Cannot find package '@wenbo/dash-bridge' imported from ~/.dsh/profiles/dash/
 ```
 
-发布之后没有这个问题：那时五个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
+发布之后没有这个问题：那时六个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
 profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，因为编排权
 始终在伞包那张表上——这正是摘掉子包 `dsh.bundle` 声明换来的好处。
 
@@ -340,6 +342,12 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   实际把 `dash-nativeify/tools/dump-css.mjs` 这份源码工具一起吞了——README 里教人跑它，
   文件却从来没进过库。**失败是静默的**：`git status` 干净，克隆出来才发现少文件。
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
+- **dsh 的设置 modal 渲染在侧边栏列内部，不是 portal 到 body**：DOM 链是
+  `_sidebarCol > … > _settingsArea > _overlay > _panel`。dash-layout 的原生侧边栏模式
+  给整列上 `visibility: hidden`，于是 modal 点得中、挂载成功、就是看不见，且不报错
+  ——而它正是 dash-settings 缺席时 ⌘, 唯一的入口。client.js 里给 `_overlay` 留了
+  `visibility: visible` 的例外（overlay 是 `position: fixed`，不受 frame 平移影响）。
+  推论：**给某个容器整体隐形之前，先查清有没有别人往里面挂 portal 之外的浮层。**
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
 - **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现
