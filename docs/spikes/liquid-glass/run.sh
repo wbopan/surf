@@ -16,7 +16,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>26.0</string>
 </dict></plist>
 PLIST
-swiftc -parse-as-library -target arm64-apple-macos26.0 \
+swiftc -parse-as-library -target arm64-apple-macos27.0 \
   -o "$APP/Contents/MacOS/GlassProbe" Probe.swift
 codesign -s - -f "$APP" >/dev/null 2>&1 || true
 open "$APP"

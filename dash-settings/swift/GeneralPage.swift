@@ -48,20 +48,21 @@ struct GeneralPage: View {
     }
 }
 
-/// 外观：和这一页其余四行一样的下拉框。
+/// 外观：`Picker` + **`.tabs`**（macOS 27 新增的样式）。
 ///
-/// 这一行换过两版，两版都错：
+/// 这一行换过三版：三张 76×50 的图标卡片（那是**系统设置**那个全屏应用的写法，
+/// 在偏好设置窗口里占三倍高度还得自己发明选中态）、`.segmented`、下拉框。
 ///
-/// 1. 三张 76×50 的图标卡片——那是**系统设置**（Ventura 之后那个全屏应用）的写法，
-///    不是**偏好设置窗口**的写法，在这套语法里占三倍高度还得自己发明选中态。
-/// 2. `Picker(.segmented)`——一行搞定，但它的选中态是**一整块实心 accent 色**，
-///    在一页灰白里是唯一一块饱和色，非常抢眼；而这一页另外四行（智能体预设、
-///    权限、语言、忙碌时 Enter）全是下拉框，就它一个是分段，读起来像另一种东西。
+/// `.segmented` 的问题是选中态是**一整块实心 accent 色**，在一页灰白里是唯一一块
+/// 饱和色。那不是"Liquid Glass 没生效"——玻璃是浮层的材质，表单里的控件按设计
+/// 拿不到——而是 AppKit 对分段控件的两种**角色**给了两种外观，macOS 27 起可以
+/// 显式指定：`NSSegmentedControl.Role` 的 `.tabs`（浅色凸起，像标签）与
+/// `.valueSelection`（accent 填充）。SwiftUI 这边就是 `.pickerStyle(.tabs)`。
 ///
-/// 顺带回答一个问题：这块蓝**不是"没拿到 Liquid Glass"**。玻璃是浮在内容之上
-/// 那一层的材质——工具栏、sidebar、sheet、浮动控件条——嵌在表单里的控件按设计
-/// 就不该有，也拿不到。同一个 `Picker(.segmented)` 放进工具栏会变成玻璃胶囊，
-/// 放进 `Form` 就是扁平方角，对照台在 `docs/spikes/liquid-glass/`（可复跑）。
+/// **这里用的是 `.tabs` 的外观而不是它的语义**：严格说「浅色/深色/跟随系统」是选值，
+/// 不是切页。借它是因为这一行有「外观：」这个标签把语义钉死了，不会被读成导航，
+/// 而换来的是整页没有一块突兀的饱和色。对照台在 `docs/spikes/liquid-glass/`，
+/// `.segmented` / `.tabs` / 工具栏里的分段控件三者并排，跑一次就看得出差别。
 struct AppearanceRow: View {
     @ObservedObject var model: SettingsModel
     let snapshot: NamespaceSnapshot
@@ -91,6 +92,7 @@ struct AppearanceRow: View {
                             .tag(raw)
                     }
                 }
+                .pickerStyle(.tabs)
                 .labelsHidden()
                 .fixedSize()
                 .disabled(!model.writable)
@@ -177,3 +179,4 @@ struct PresetPickerRow: View {
         }
     }
 }
+

@@ -186,6 +186,10 @@ scripts/embed-modules.sh   → Contents/Frameworks/lib<M>.dylib（壳按 @rpath 
 ```
 
 两个脚本都挂在 project.yml 的 pre/postBuildScripts 上，源码没变则秒过。
+**`build-modules.sh` 的跳过判据里含构建参数（TARGET、swiftc 版本），不只是源码 hash**
+——只按源码算的话，改了部署目标而源码没动会被判成"未变动，跳过"，`.swiftinterface`
+里还写着旧三元组，插件跟着用旧目标编，新 API 报 "only available in macOS 27.0 or
+newer"，而脚本刚刚打印了"跳过"。**报错在插件那边，原因在这个脚本的缓存里。**
 **改 DashSDK 会让所有插件的 contentHash 失效、全量重编**（工具链指纹里含它的
 `.swiftinterface` 摘要），这是对的：`.swiftmodule` 对不上比慢几秒糟得多。
 

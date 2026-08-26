@@ -15,13 +15,26 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            group("① Form 里的 Picker(.segmented)（我们「外观」那行用的就是它）") {
+            group("① Form 里的 Picker：.segmented vs .tabs（macOS 27 新增）") {
                 Form {
-                    LabeledContent("外观：") {
+                    LabeledContent(".segmented：") {
                         Picker("", selection: $inForm) {
                             ForEach(Pick.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    }
+                    LabeledContent(".tabs：") {
+                        Picker("", selection: $inForm) {
+                            ForEach(Pick.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.tabs).labelsHidden().fixedSize()
+                    }
+                    LabeledContent(".segmented + 玻璃：") {
+                        Picker("", selection: $inForm) {
+                            ForEach(Pick.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden().fixedSize()
+                        .glassEffect()
                     }
                 }
                 .formStyle(.columns)
@@ -58,7 +71,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(width: 560, height: 520, alignment: .topLeading)
+        .frame(width: 560, height: 600, alignment: .topLeading)
         // ⑤ 工具栏里的同一个分段控件——对照组的关键：同样的控件，换个层就换个材质。
         .toolbar {
             ToolbarItem(placement: .principal) {

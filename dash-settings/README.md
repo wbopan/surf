@@ -85,8 +85,10 @@ tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
 
 表单里的按钮和分段控件"没有玻璃效果"**不是没启用**。玻璃属于浮在内容之上那一层
 ——工具栏、sidebar、sheet、浮动控件条——自动获得；嵌在 `Form` 里的控件按设计拿不到。
-同一个 `Picker(.segmented)` 放进工具栏是玻璃胶囊，放进 `Form` 就是扁平方角、选中态
-一块实心 accent 色。对照台在 [`docs/spikes/liquid-glass/`](../docs/spikes/liquid-glass/)，
+
+但**那块刺眼的蓝是另一回事，它去得掉**：AppKit 对分段控件的两种角色给了两种外观，
+macOS 27 起可以显式指定——`.pickerStyle(.tabs)` 是浅色凸起的标签样，
+`.pickerStyle(.segmented)` 是 accent 填充。「外观」那一行用的就是 `.tabs`。对照台在 [`docs/spikes/liquid-glass/`](../docs/spikes/liquid-glass/)，
 `run.sh` 一跑就看得见。
 
 推论有两条：窗口工具栏那四个标签本来就是玻璃，不用管；页内该用玻璃的地方只有导航层，
