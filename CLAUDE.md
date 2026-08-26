@@ -33,6 +33,8 @@ dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
                    按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
                    （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
+tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
+                   工具归那个插件（如 dash-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
@@ -119,11 +121,12 @@ Swift 里名字统一走 `AppInfo.displayName`（读 Info.plist，随 PRODUCT_NA
 **给 dash 窗口截图**（不需要它在前台，也不怕被别的窗口盖住）：
 
 ```bash
-dash-app/host/scripts/shot.sh build/shot.png   # --list 看有哪些窗口
-                                               # --app 换目标，--scale 2 出 Retina
+tools/shot.sh                 # 省略路径就落 .scratch/shot.png
+tools/shot.sh --list          # 看有哪些窗口；--app 换目标，--scale 2 出 Retina
 ```
 
-首次运行编译 `scripts/shot.swift`（约 1s），之后源码没变直接跑缓存二进制。
+首次运行编译 `tools/shot.swift`（约 1s），之后源码没变直接跑缓存二进制
+（缓存在 `tools/.cache/shot`）。
 WKWebView 的内容照样截得到。三条实测硬事实（都写在源码注释里了）：
 
 1. **`screencapture -l <windowID>` 在 macOS 26 上已经废了**，只会返回
@@ -332,6 +335,11 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
 
 ## 踩坑记录
 
+- **`.gitignore` 里给构建产物写规则必须带路径锚点**：`tools/`（无斜杠前缀）匹配的是
+  **任意层级**的同名目录。那条规则本意只挡 `dash-app/host/tools/` 的 xcodegen 二进制，
+  实际把 `dash-nativeify/tools/dump-css.mjs` 这份源码工具一起吞了——README 里教人跑它，
+  文件却从来没进过库。**失败是静默的**：`git status` 干净，克隆出来才发现少文件。
+  新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
 - **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现

@@ -4,7 +4,7 @@
 # 可靠；窗口内部从一枚按钮直接跳到另一枚，AppKit 那边不一定收得到移动事件。
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SHOT="$HERE/../../../dash-app/host/scripts/shot.sh"
+SHOT="$HERE/../../../tools/shot.sh"
 PARK="60 700"
 ./HoverProbe --hold > targets.txt 2>/dev/null &
 PROBE=$!

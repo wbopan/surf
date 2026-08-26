@@ -4,7 +4,7 @@
 # 那时候量出来的一切都是错的。
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SHOT="$HERE/../../../dash-app/host/scripts/shot.sh"
+SHOT="$HERE/../../../tools/shot.sh"
 for R in 0 1 2 3; do
   LOG="$HERE/press_$R.log"; : > "$LOG"
   ./HoverProbe --hold --press $R > "$LOG" 2>/dev/null &

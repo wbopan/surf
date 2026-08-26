@@ -65,7 +65,7 @@ final class Harness: NSObject {
     }
 }
 
-// 命令行进程碰 AppKit 前必须先初始化 NSApplication（同 scripts/shot.swift 的教训）。
+// 命令行进程碰 AppKit 前必须先初始化 NSApplication（同 tools/shot.swift 的教训）。
 // main.swift 的顶层不是 MainActor 上下文，AppKit 那几步得显式跳进去。
 nonisolated(unsafe) var live: AnyObject?   // 保活：否则 harness 出了作用域就被回收
 

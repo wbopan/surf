@@ -21,7 +21,7 @@ import SwiftUI
 
 // MARK: - 自动化标识符
 //
-// 本视图给关键元素挂了 `.accessibilityIdentifier`，供 scripts/shot.sh 之外的
+// 本视图给关键元素挂了 `.accessibilityIdentifier`，供 tools/shot.sh 之外的
 // GUI 自动化（peekaboo 等走 Accessibility API 的工具）按稳定 ID 定位，
 // 而不是靠中文文案模糊匹配——文案一改匹配就断。命名规范：
 //

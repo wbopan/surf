@@ -10,7 +10,7 @@ swiftc -O bbox.swift      -o bbox        # 找蓝/红连通块的包围盒
 
 ./TintProbe --hold &                     # --hold = 反复抢 key，截激活态
 sleep 3
-../../../dash-app/host/scripts/shot.sh tint.png --app TintProbe --scale 3
+../../../tools/shot.sh tint.png --app TintProbe --scale 3
 kill %1
 
 ./bbox   tint.png                        # 四枚按钮的 y/x 区间

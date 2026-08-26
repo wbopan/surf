@@ -11,8 +11,10 @@ dash-app/host/Sources/Resources/BuildTimestamp.txt
 # 共享 module 编译产物（scripts/build-modules.sh 每次构建重生成）
 dash-app/host/build-sdk/
 
-# 本地构建工具（从 GitHub Releases 下载，见 README）
-tools/
+# xcodegen 二进制（从 GitHub Releases 下载，见 README）。
+# **必须带路径锚点**：无锚点的 `tools/` 匹配任意层级的同名目录，会把源码工具
+# 一起吞掉——dash-nativeify/tools/dump-css.mjs 就这么在库外躺了一阵子。
+/dash-app/host/tools/
 
 # 插件依赖解析：指向 harness @deepseek-ai 的本地 symlink（机器相关，勿入库）
 # 不带斜杠：`./dev` 在仓库根补的是一条**符号链接**，带斜杠的规则只匹配真目录，会漏。
@@ -30,6 +32,9 @@ node_modules
 # Swift Package Manager (unused so far)
 .build/
 .swiftpm/
+
+# 外来工具在本目录里生成的东西（gws generate-skills 会往 skills/ 里灌一堆
+# SKILL.md）。跟本仓库无关，别让它随手漏进来。
 skills/
 
 # spike 产物（dylib/截图，可由 build.sh 重生成）
@@ -43,5 +48,11 @@ docs/spikes/hover/*
 !docs/spikes/hover/*.sh
 !docs/spikes/hover/*.md
 
-# 壳工程目录下的调试截图残留（shot.sh 随手落的，不是工程文件）
+# 截图等临时输出的统一落点（tools/shot.sh 不给 out 参数时就落这儿）
+/.scratch/
+
+# shot.sh 自己的二进制缓存（源码没变就复用，改了自动重编）
+/tools/.cache/
+
+# 兜底：给 shot.sh 传了相对路径、又恰好 cd 在壳工程根时的残留
 /dash-app/host/*.png

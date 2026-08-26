@@ -39,13 +39,15 @@ while let arg = argv.first {
         scale = d; argv.removeFirst()
     case "-h", "--help":
         print("""
-        usage: shot.sh [--app <name-substring>] [--scale <n>] [out.png]
-               shot.sh --list
+        usage: tools/shot.sh [--app <name-substring>] [--scale <n>] [out.png]
+               tools/shot.sh --list
 
           --app    窗口所属 App 名 / bundle id / 标题的子串，默认 "dash Dev"
                    （匹配到多个时取面积最大的那个，也就是主窗口）
           --scale  相对窗口点尺寸的倍数，默认 1（Retina 原生是 2，给模型看用 1 就够）
           --list   列出当前可截的窗口
+
+          out.png  省略时落在 .scratch/shot.png（相对仓库根）
         """)
         exit(0)
     default:
@@ -107,7 +109,7 @@ let image: CGImage = try await withCheckedThrowingContinuation { cont in
     }
 }
 
-let destination = outPath ?? "build/shot.png"
+let destination = outPath ?? ".scratch/shot.png"
 let url = URL(fileURLWithPath: destination)
 try? FileManager.default.createDirectory(
     at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
