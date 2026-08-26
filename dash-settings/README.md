@@ -66,6 +66,17 @@ tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
 （`fixedSize(horizontal:)` + 居中 frame），前提是每条 hint 都有 `maxWidth` 上限，
 否则"理想宽度"就成了最长那句注解的全长。
 
+### Liquid Glass 是浮层的材质，不是控件的材质
+
+表单里的按钮和分段控件"没有玻璃效果"**不是没启用**。玻璃属于浮在内容之上那一层
+——工具栏、sidebar、sheet、浮动控件条——自动获得；嵌在 `Form` 里的控件按设计拿不到。
+同一个 `Picker(.segmented)` 放进工具栏是玻璃胶囊，放进 `Form` 就是扁平方角、选中态
+一块实心 accent 色。对照台在 [`docs/spikes/liquid-glass/`](../docs/spikes/liquid-glass/)，
+`run.sh` 一跑就看得见。
+
+推论有两条：窗口工具栏那四个标签本来就是玻璃，不用管；页内该用玻璃的地方只有导航层，
+也就是下面这条。
+
 ### 页内分栏用 `TabView`，不用 `Picker(.segmented)`
 
 分段控件的选中态是**一整块实心 accent 色**，在一屏灰白里非常刺眼，而且它本来是
