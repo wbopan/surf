@@ -159,6 +159,11 @@ struct PresetPickerRow: View {
                 }
                 if let hint = FieldNotes.note(ns: snapshot.ns, path: path)?.hint {
                     Text(hint).font(.caption).foregroundStyle(.secondary)
+                    // **限宽**：不限的话这行小字的"理想宽度"就是它的全长，
+                    // `Form(.columns)` 按各行理想宽度算控件列，一句长注解能把整页
+                    // 撑到框外去（通用页居中之后一眼看得出来：分隔线跑出了版心）。
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 if let error = status.error {
                     Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)

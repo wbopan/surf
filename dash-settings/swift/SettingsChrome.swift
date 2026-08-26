@@ -37,64 +37,129 @@ struct FormRule: View {
 }
 
 extension View {
-    /// 主从版式左边那根**带边框的源列表**，底下可以挂一条 `+ −`。
+    /// 主从版式左边那根**源列表**：白底、一圈细边框、圆角，底下可以收一条 `+ −`。
     ///
-    /// `.listStyle(.bordered)` 就是参考设计里 Accounts 那一列：一圈细边框、圆角、
-    /// 选中整行着色，键盘上下键与 ⌘/⇧ 多选都是系统给的。
+    /// **外框是自己画的，没用 `.listStyle(.bordered)`。** 本来用的是 bordered，
+    /// 但那样 `+ −` 只能挂在框外——`.safeAreaInset` 塞不进 bordered list 的边框，
+    /// 得到的是一条没对齐、还比列表宽的浮条。而参考里的 Accounts 那一列，
+    /// 加减按钮明明在框**里面**（框底一条横线，按钮在线下）。想要那个形状，
+    /// 只能 `.plain` + 自己给背景、圆角、描边。
     ///
-    /// **不开 `alternatesRowBackgrounds`**：隔行底色是给多列的表用的（参考设计里
-    /// 「共享给你」那张），单列源列表开了只是吵。同一个开关，两种控件，结论相反。
-    ///
-    /// footer 走 `VStack` 而**不是 `.safeAreaInset`**：SwiftUI 的 bordered list
-    /// 不把 inset 收进自己那圈边框里，`.safeAreaInset` 只会得到一条**没对齐、
-    /// 还比列表宽**的浮条（实测：`+ −` 跑到列表左边缘外面去了）。macOS 这一代的
-    /// 写法本来也是按钮在框外下方（用户与群组、Mimestream 都是），照做就行。
+    /// 行分隔线由各页在 row 上 `.listRowSeparator(.hidden)` 关掉：源列表是一串
+    /// 平级的东西，条条画线只是把它切碎；分隔线是给多列的表用的。
     func sourceListChrome<Footer: View>(width: CGFloat,
                                         @ViewBuilder footer: () -> Footer) -> some View {
-        VStack(spacing: 5) {
-            listStyle(.bordered).frame(maxWidth: .infinity, maxHeight: .infinity)
-            footer()
+        VStack(spacing: 0) {
+            sourceListBody()
+            Divider()
+            // `NSViewRepresentable` 在 SwiftUI 里默认居中，得自己顶到左边去。
+            HStack(spacing: 0) {
+                footer()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
         }
-        .frame(width: width)
+        .sourceListFrame(width: width)
     }
 
     func sourceListChrome(width: CGFloat) -> some View {
-        sourceListChrome(width: width) { EmptyView() }
+        sourceListBody().sourceListFrame(width: width)
+    }
+
+    private func sourceListBody() -> some View {
+        listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func sourceListFrame(width: CGFloat) -> some View {
+        background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+            }
+            .frame(width: width)
     }
 }
 
-/// 源列表底下那条 `+ −`。
+/// 源列表底下那条 `+ −`——**在框里面**，紧贴底边那条横线下方。
 ///
-/// 一对无边框小按钮，靠左，紧贴列表下沿——**没有背景条也没有中缝竖线**。
-/// 加了 `.background(.bar)` 会把它变成半截工具条，跟上面那圈细边框对不上，
-/// 看着像掉下来的另一个控件。
-struct SourceListFooter: View {
+/// 用的是真的 `NSSegmentedControl`（`.smallSquare` + momentary），不是两个
+/// `Button` 摆一起。参考图里那对加减中间有一条竖分隔线，那正是分段控件的段间线；
+/// 手搓两个按钮再补一条 `Divider()` 能画得很像，但按下态、段宽、图标度量、
+/// 禁用时的灰度全得自己维护，而且**永远差一点**——macOS 每代都在改这些材质。
+/// 这是整扇窗里"看着像自己画的"最明显的一处，换成系统控件就没有这个问题了。
+struct SourceListFooter: NSViewRepresentable {
     var add: (() -> Void)?
     var addHelp = ""
     var remove: (() -> Void)?
     var removeHelp = ""
     var canRemove = false
 
-    var body: some View {
-        HStack(spacing: 2) {
-            if let add { button("plus", help: addHelp, enabled: true, action: add) }
-            if let remove { button("minus", help: removeHelp, enabled: canRemove, action: remove) }
-            Spacer(minLength: 0)
-        }
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.segmentCount = 2
+        control.segmentStyle = .smallSquare
+        // momentary = 按下就弹回，不留选中态。源列表页脚是动作，不是模式开关。
+        control.trackingMode = .momentary
+        control.setImage(NSImage(systemSymbolName: "plus", accessibilityDescription: "添加"),
+                         forSegment: 0)
+        control.setImage(NSImage(systemSymbolName: "minus", accessibilityDescription: "移除"),
+                         forSegment: 1)
+        control.setWidth(26, forSegment: 0)
+        control.setWidth(26, forSegment: 1)
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.fire(_:))
+        control.setAccessibilityIdentifier("settings.sourcelist")
+        return control
     }
 
-    private func button(_ symbol: String, help: String,
-                        enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 22, height: 18)
-                .contentShape(Rectangle())
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.add = add
+        context.coordinator.remove = remove
+        control.setEnabled(add != nil, forSegment: 0)
+        control.setEnabled(remove != nil && canRemove, forSegment: 1)
+        control.setToolTip(addHelp.isEmpty ? nil : addHelp, forSegment: 0)
+        control.setToolTip(removeHelp.isEmpty ? nil : removeHelp, forSegment: 1)
+    }
+
+    /// **必须实现**：不给 `sizeThatFits`，`NSViewRepresentable` 会吃掉父容器给的
+    /// 全部宽度，于是这对加减在列表底下居中——`HStack { footer; Spacer() }` 也顶不动它，
+    /// 因为它自己就撑满了。返回控件的固有尺寸，靠左才有意义。
+    func sizeThatFits(_ proposal: ProposedViewSize,
+                      nsView: NSSegmentedControl,
+                      context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject {
+        var add: (() -> Void)?
+        var remove: (() -> Void)?
+
+        @objc func fire(_ sender: NSSegmentedControl) {
+            switch sender.selectedSegment {
+            case 0: add?()
+            case 1: remove?()
+            default: break
+            }
         }
-        .buttonStyle(.borderless)
-        .disabled(!enabled)
-        .help(help)
-        .accessibilityIdentifier("settings.sourcelist.\(symbol)")
+    }
+}
+
+/// 源列表里的分组头。
+///
+/// 行分隔线撤掉之后，`Section` 自带的头部间距就不够了——「创造模式」和下一组的
+/// 「自定义」几乎贴在一起，读不出这是两组。补一点上间距，让分组靠留白成立，
+/// 而不是靠一条横线。
+struct SourceListSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title).padding(.top, 8)
     }
 }
 
@@ -164,11 +229,18 @@ struct NativeSearchField: NSViewRepresentable {
 }
 
 /// 状态点。绿 = 好，红 = 缺东西，灰 = 不知道 / 没在跑。
+///
+/// 用 SF Symbol 而不是 `Circle()`：同样是个圆点，但符号走系统的字形度量，
+/// 跟着行内文字的基线和字号走，也跟着系统的符号渲染设置变。手画的 `Circle`
+/// 得自己钉一个 7×7 并祈祷它在每个字号下都对得上行高。
 struct StatusDot: View {
     let color: Color
     var help: String = ""
 
     var body: some View {
-        Circle().fill(color).frame(width: 7, height: 7).help(help)
+        Image(systemName: "circle.fill")
+            .font(.system(size: 7))
+            .foregroundStyle(color)
+            .help(help)
     }
 }

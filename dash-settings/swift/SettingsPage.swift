@@ -21,7 +21,7 @@ struct SettingsPage: View {
             banners
             content
         }
-        .frame(width: tab.width, alignment: .top)
+        .frame(width: SettingsTab.windowWidth, alignment: .top)
         .accessibilityIdentifier("settings.page.\(tab.rawValue)")
     }
 
@@ -38,13 +38,17 @@ struct SettingsPage: View {
             // 定高的页：页内的 List / Table 自己会滚，外面不能再套一层量高度的
             // 滚动容器（见 SettingsTab.height 的注释）。
             page
-                .frame(width: tab.width - 52, height: height, alignment: .topLeading)
+                .frame(width: SettingsTab.contentWidth, height: height, alignment: .topLeading)
                 .padding(.vertical, 20)
                 .padding(.horizontal, 26)
         } else {
             SelfSizingScroll(maxHeight: maxHeight) {
                 page
-                    .frame(width: tab.width - 52, alignment: .leading)
+                    // 纯表单页在 720 里**取自己的理想宽度再居中**，别摊成一条横线。
+                    // `fixedSize` 之所以安全，是因为每条 hint 都有 `maxWidth` 上限
+                    // ——否则"理想宽度"就成了最长那句注解的全长，居中反而更歪。
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: SettingsTab.contentWidth, alignment: .center)
                     .padding(.vertical, 20)
                     .padding(.horizontal, 26)
             }

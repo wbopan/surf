@@ -84,12 +84,18 @@ struct PluginConfigurationList: View {
                 List(selection: $selection) {
                     ForEach(featured, id: \.ns) { row($0) }
                     if !rest.isEmpty {
-                        SwiftUI.Section("其余") {
+                        SwiftUI.Section(header: SourceListSectionHeader(title: "其余")) {
                             ForEach(rest, id: \.ns) { row($0) }
                         }
                     }
                 }
                 .sourceListChrome(width: 196)
+                // **选中项要写回 binding**，不能只让详情栏"回落到第一个"：
+                // 那样详情显示着「终端」，左列却一行都没高亮，看着像坏了。
+                .onChange(of: namespaces.map(\.ns)) { _, list in
+                    if selection == nil || !list.contains(selection!) { selection = list.first }
+                }
+                .onAppear { if selection == nil { selection = namespaces.first?.ns } }
 
                 if let current {
                     PluginDetail(model: model, snapshot: current)
@@ -104,6 +110,7 @@ struct PluginConfigurationList: View {
         Text(NamespaceNotes.title(ns: snapshot.ns))
             .lineLimit(1)
             .tag(snapshot.ns)
+            .listRowSeparator(.hidden)
             .accessibilityIdentifier("settings.plugin.\(snapshot.ns)")
     }
 }

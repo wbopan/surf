@@ -52,14 +52,16 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var width: CGFloat {
-        switch self {
-        case .general: return 620
-        case .models: return 700
-        case .plugins: return 720
-        case .presets: return 700
-        }
-    }
+    /// **窗口宽度是常量，四页共用。**
+    ///
+    /// 让每页各报各的宽度看着挺合理，实际效果是切一次标签窗口就横着抽一下
+    /// ——macOS 上没有任何一个偏好设置窗口这么干：高度跟着内容变，宽度钉死在
+    /// **最宽那页需要的宽度**上。所以取插件页那 720，其余三页在里面排。
+    static let windowWidth: CGFloat = 720
+
+    /// 内容区左右各留 26。
+    static let contentWidth: CGFloat = windowWidth - 52
+
 
     /// 定高的页返回高度，自适应的页返回 nil。
     ///

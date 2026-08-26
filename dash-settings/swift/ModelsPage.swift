@@ -67,6 +67,7 @@ struct ModelsPage: View {
                 Text(row.displayName).lineLimit(1).truncationMode(.middle)
             }
             .tag(row.provider)
+            .listRowSeparator(.hidden)
             .accessibilityIdentifier("settings.provider.\(row.provider)")
         }
         .sourceListChrome(width: 196) {
@@ -80,6 +81,11 @@ struct ModelsPage: View {
                 removeHelp: "清除这个 provider 的 API key",
                 canRemove: current.map { $0.credentialWritable && $0.credentialConfigured == true } ?? false)
         }
+        // 选中项写回 binding——详情栏"回落到第一个"不该让左列一行都不高亮。
+        .onChange(of: configured.map(\.provider)) { _, list in
+            if selection == nil || !list.contains(selection!) { selection = list.first }
+        }
+        .onAppear { if selection == nil { selection = configured.first?.provider } }
     }
 
     @ViewBuilder

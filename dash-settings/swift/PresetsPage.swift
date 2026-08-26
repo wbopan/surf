@@ -34,10 +34,10 @@ struct PresetsPage: View {
         } else {
             HStack(alignment: .top, spacing: 16) {
                 List(selection: $selection) {
-                    SwiftUI.Section("内建") {
+                    SwiftUI.Section(header: SourceListSectionHeader(title: "内建")) {
                         ForEach(builtIn) { row($0) }
                     }
-                    SwiftUI.Section("自定义") {
+                    SwiftUI.Section(header: SourceListSectionHeader(title: "自定义")) {
                         if custom.isEmpty {
                             Text("还没有").foregroundStyle(.tertiary).selectionDisabled()
                         } else {
@@ -46,6 +46,10 @@ struct PresetsPage: View {
                     }
                 }
                 .sourceListChrome(width: 196)
+                .onChange(of: model.presets.map(\.id)) { _, list in
+                    if selection == nil || !list.contains(selection!) { selection = list.first }
+                }
+                .onAppear { if selection == nil { selection = model.presets.first?.id } }
 
                 if let current {
                     PresetDetail(model: model, row: current, openPath: openPath)
@@ -66,6 +70,7 @@ struct PresetsPage: View {
             Text(preset.displayName).lineLimit(1)
         }
         .tag(preset.id)
+        .listRowSeparator(.hidden)
         .accessibilityIdentifier("settings.preset.\(preset.id)")
     }
 }

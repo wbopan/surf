@@ -58,6 +58,30 @@ tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
   办法是给 model 加一个 `String` 计算属性（`statusText`）按它排——顺带保证
   **排的和显示的是同一个东西**。
 
+### 窗口宽度是常量
+
+`SettingsTab.windowWidth = 720`，四页共用。让每页各报各的宽度看着合理，实际效果是
+**切一次标签窗口就横着抽一下**——macOS 上没有一个偏好设置窗口这么干：高度跟着内容
+变，宽度钉死在最宽那页需要的宽度上。纯表单的通用页在 720 里取自己的理想宽度再居中
+（`fixedSize(horizontal:)` + 居中 frame），前提是每条 hint 都有 `maxWidth` 上限，
+否则"理想宽度"就成了最长那句注解的全长。
+
+### 别自己画系统控件
+
+源列表底下那对 `+ −` 是真的 `NSSegmentedControl`（`.smallSquare` + momentary），
+不是两个 `Button` 加一条 `Divider()`。参考图里那对加减中间的竖线正是分段控件的段间
+线；手搓能画得很像，但按下态、段宽、图标度量、禁用灰度全得自己维护，而且每代 macOS
+都在改这些材质。同理状态点用 SF Symbol `circle.fill` 而不是 `Circle()`——符号走系统
+字形度量，跟着行内文字的基线和字号走。
+
+`NSViewRepresentable` 记得实现 `sizeThatFits`：不实现它就会吃掉父容器给的全部宽度，
+于是那对加减在列表底下**居中**，外面套 `HStack { …; Spacer() }` 也顶不动。
+
+### 选中项要写回 binding
+
+详情栏"选中项没了就回落到第一个"是对的，但**只回落详情不写回 `selection`**，左列就
+一行都不高亮——看着像坏了。三页都在 `.onAppear` / `.onChange(of:)` 里把它补上。
+
 ### 定高页与自量高页
 
 `SettingsTab.height` 非空的页是定高的（模型 430 / 插件 480 / 预设 360），只有纯表单

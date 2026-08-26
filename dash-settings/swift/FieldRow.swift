@@ -66,6 +66,11 @@ struct FieldRow: View {
             }
             if let hint = note?.hint {
                 Text(hint).font(.caption).foregroundStyle(.secondary)
+                // **限宽**：不限的话这行小字的"理想宽度"就是它的全长，
+                // `Form(.columns)` 按各行理想宽度算控件列，一句长注解能把整页
+                // 撑到框外去（通用页居中之后一眼看得出来：分隔线跑出了版心）。
+                .frame(maxWidth: 280, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             }
             statusLine
         }
@@ -105,8 +110,10 @@ struct FieldRow: View {
                         .frame(width: 120)
                 }
             case .string:
+                // **不钉宽度**：钉了就会出现"详情栏里的框撑满、页级表单里的框只有
+                // 320"这种同窗两种右边缘。让它跟着控件列走，右边缘自然对齐。
                 TextEntryField(model: model, snapshot: snapshot, path: path, kind: .string)
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: .infinity)
             case .const(let constant, _):
                 // 单个 const 没什么可改的——显示它，别给一个假装能改的控件。
                 Text(constant.summary).foregroundStyle(.secondary)
