@@ -143,14 +143,21 @@ WKWebView 的内容照样截得到。三条实测硬事实（都写在源码注�
 
 ```bash
 PID=$(pgrep -f "dash Dev.app/Contents/MacOS" | head -1)
-peekaboo see   --pid "$PID" --json      # 元素树，JSON 里带 identifier 字段
+peekaboo see   --pid "$PID" --tree --no-screenshot   # 元素树 → elem_N
 peekaboo click --pid "$PID" --on elem_140
 ```
 
 **一定要用 `--pid` 而不是 `--app "dash Dev"`**：按名字解析会撞
 "Application inventory was incomplete"（某些进程缺 process-generation
-identity），`--pid` 没这问题。点击默认走后台投递，**不抢焦点、不动光标**，
-dash 全程不会被拉到前台。
+identity）。但 `--pid` 只救得了 `see` 和 `click`——**`verify` 内部仍会全量枚举
+应用**，照样撞、返回 `unknown`。要确认状态就截图，别指望 verify。
+
+**别用文本 query 点击**（`peekaboo click "会话"`）：它把文案解析成*坐标*，经常落在
+死点上，报 "No pressable accessibility element was found"。这句极易被误读成"这个
+控件不可访问"，其实控件好好的、只是坐标错了——**先 `--tree` 拿 `elem_N` 再
+`--on`**。`--json` 在 4.2.2 是坏的（整个 `data` 回来是 `null`），所以上面用 `--tree`。
+
+点击默认走后台投递，**不抢焦点、不动光标**，dash 全程不会被拉到前台。
 
 AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 web 元素树，
 所以侧边栏和 dsh Web UI 用同一套 AX 就能驱动，不必为 WebView 另走 JS 注入。
@@ -270,6 +277,25 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 
 `endpoint` 发现文件**已经按 profile 分片**（`endpoints/<profile>.json`），不再互相覆盖。
 
+**新 worktree 有两样本地状态不在库里，`./dev` 替你补齐**，别手动折腾：
+
+1. `node_modules` 那条符号链接（解析 `@deepseek-ai/*`，见上一节）。
+2. **`dash-app/host/tools/xcodegen`**——二进制，被 `.gitignore` 那条带锚点的
+   `/dash-app/host/tools/` 挡在库外（规则是对的，二进制不该入库），于是新克隆和
+   新 worktree 里都没有它，而 `dash-app/lib/index.js` 与
+   `host/scripts/{dev,build}.sh` 都直接 spawn 它。
+
+第 2 条缺了会**安静地**毁掉整个壳：dsh 照常起、HTTP 200，只是
+`spawn …/tools/xcodegen ENOENT` 埋在
+`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.Debug.log` 里，
+终端只留一句"dash-app 优雅缺席"。`bin/dash.js` 的 `ensureXcodegen` 现在按
+**同仓库的其它 worktree → PATH 上的 `xcodegen`** 的顺序取件并拷过来；两处都没有
+就打印补法（`brew install xcodegen`）而不是让它静默缺席。三个调用点也各自加了
+存在性检查，报错直接说补法。
+
+拷贝而不是链接，是为了"主 worktree 被删掉也不会突然变回 ENOENT"；
+**拷进去不会触发壳的全量重建**——`HASHED_ROOTS` 明确把 `tools/` 排除在源码 hash 之外。
+
 ### 分发形态
 
 用户装是一行：
@@ -340,6 +366,8 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   实际把 `dash-nativeify/tools/dump-css.mjs` 这份源码工具一起吞了——README 里教人跑它，
   文件却从来没进过库。**失败是静默的**：`git status` 干净，克隆出来才发现少文件。
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
+  反过来，**被正确挡住的构建输入也要有人补**：`dash-app/host/tools/xcodegen` 就是
+  这样一份"该挡、但缺了整个壳就没了"的文件，兜底在 `./dev` 里（见「多 worktree」）。
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
 - **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现
