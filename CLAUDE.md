@@ -24,12 +24,14 @@ dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
-  host/            Xcode 工程载荷：project.yml / Sources/ / Packages/DSHKit / scripts/ / tools/
+  host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
-dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具栏；
+dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
+                   （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏。**数据面在 node 半边**
+                   （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
 dash-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
                    数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
                    agentPresets / pluginInventory（权威计划 docs/dash-settings-plan.md）
@@ -101,7 +103,15 @@ dash-app/host/scripts/dev.sh [--quit-release]
 dash-app/host/scripts/build.sh [--keep-open]
 ```
 
-无测试套件（`Packages/DSHKit` 里有几个解码单元测试，不在常规流程里跑）。
+无测试套件。唯一一处单元测试在 dash-sidebar 的 node 半边（分叉标题规则 +
+会话数据源的分组/去抖/翻牌行为，后者拿假 apiProxy 跑，不需要 dsh）：
+
+```sh
+node --test dash-sidebar/test/*.test.js   # 零依赖、约 2s，不在常规流程里跑
+```
+
+给 `--test` 一个**目录**在 node 26 上会直接 `MODULE_NOT_FOUND`（它去 require 那个
+目录本身而不是遍历），别省那个通配符。
 Debug 与 Release 是两个不同 App，可并存运行：
 
 | | Debug（日常开发） | Release（正式） |
@@ -146,14 +156,21 @@ WKWebView 的内容照样截得到。三条实测硬事实（都写在源码注�
 
 ```bash
 PID=$(pgrep -f "dash Dev.app/Contents/MacOS" | head -1)
-peekaboo see   --pid "$PID" --json      # 元素树，JSON 里带 identifier 字段
+peekaboo see   --pid "$PID" --tree --no-screenshot   # 元素树 → elem_N
 peekaboo click --pid "$PID" --on elem_140
 ```
 
 **一定要用 `--pid` 而不是 `--app "dash Dev"`**：按名字解析会撞
 "Application inventory was incomplete"（某些进程缺 process-generation
-identity），`--pid` 没这问题。点击默认走后台投递，**不抢焦点、不动光标**，
-dash 全程不会被拉到前台。
+identity）。但 `--pid` 只救得了 `see` 和 `click`——**`verify` 内部仍会全量枚举
+应用**，照样撞、返回 `unknown`。要确认状态就截图，别指望 verify。
+
+**别用文本 query 点击**（`peekaboo click "会话"`）：它把文案解析成*坐标*，经常落在
+死点上，报 "No pressable accessibility element was found"。这句极易被误读成"这个
+控件不可访问"，其实控件好好的、只是坐标错了——**先 `--tree` 拿 `elem_N` 再
+`--on`**。`--json` 在 4.2.2 是坏的（整个 `data` 回来是 `null`），所以上面用 `--tree`。
+
+点击默认走后台投递，**不抢焦点、不动光标**，dash 全程不会被拉到前台。
 
 AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 web 元素树，
 所以侧边栏和 dsh Web UI 用同一套 AX 就能驱动，不必为 WebView 另走 JS 注入。
@@ -172,10 +189,10 @@ AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 w
 `.accessibilityElement(children: .ignore)` + 显式 label 收口的；
 加新 identifier 后**务必 dump 一次 AX 确认没被拼重**。
 
-## 共享 module（DashSDK / DSHKit）
+## 共享 module（DashSDK）
 
-这两个 module 必须**全进程只有一份**：壳链接它们，运行时编出来的插件 dylib 也链接同一份
-（经 app bundle 内的同一个文件），类型身份才对得上。所以它们不走 SwiftPM 静态链接进壳，
+共享 module 必须**全进程只有一份**：壳链接它，运行时编出来的插件 dylib 也链接同一份
+（经 app bundle 内的同一个文件），类型身份才对得上。所以它不走 SwiftPM 静态链接进壳，
 而是：
 
 ```
@@ -186,6 +203,11 @@ scripts/embed-modules.sh   → Contents/Frameworks/lib<M>.dylib（壳按 @rpath 
 ```
 
 两个脚本都挂在 project.yml 的 pre/postBuildScripts 上，源码没变则秒过。
+机制本身是多 module 的，**但眼下只剩 DashSDK 一个**：另一个曾经的住户 DSHKit
+（dsh 的 wire 模型 + 会话镜像）随 M10 整体退役——数据面搬进 dash-sidebar 的 node
+半边了。`embed-modules.sh` 只拷不删，所以在旧的 `build/` 里可能还躺着
+`libDSHKit.dylib` 的残骸；`rm -rf build` 重来一次就干净了。
+
 **`build-modules.sh` 的跳过判据里含构建参数（TARGET、swiftc 版本），不只是源码 hash**
 ——只按源码算的话，改了部署目标而源码没动会被判成"未变动，跳过"，`.swiftinterface`
 里还写着旧三元组，插件跟着用旧目标编，新 API 报 "only available in macOS 27.0 or
@@ -275,7 +297,37 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-`endpoint` 发现文件**已经按 profile 分片**（`endpoints/<profile>.json`），不再互相覆盖。
+**`<AppSupport>/io.wenbo.dash/` 下的三样东西都已经按实例分片**，别再假设"日志只有一份"：
+
+| 文件 | 分片键 | 不分片会怎样 |
+|---|---|---|
+| `endpoints/<profile>.json` | profile | 后启动的抹掉先启动的，被抹的那套再也接不到手动双击的壳 |
+| `logs/dash.<worktree>.log`（壳自己写） | **产物所在 worktree 目录名**（`DashPaths.instanceTag` 从 bundle 路径里抠） | 两个 App 实例 bundle id 相同、追加写同一文件，**邻居 worktree 的插件编译错误混进你的日志**，长得和自己的一模一样 |
+| `logs/dash-app-build.<profile>.<配置>.log`（node 侧写） | profile | 这份是**覆盖写**：邻居一构建就把你整份换掉，终端指给你的路径里躺着别人的错误 |
+
+壳的日志跟着**产物**分片而不是跟着连上的 dsh：断连重连可以换 dsh，跑的代码始终是自己那份。
+装到 `/Applications` 的 Release 全机只有一份，仍是无后缀的 `dash.log`。
+拿不准该看哪个文件就开 ⌥⌘D，「路径」一栏写的是本进程日志的**全路径**。
+（分片是新增的，老的 `dash.log` / `dash-app-build.<配置>.log` 还躺在目录里，删掉即可。）
+
+**新 worktree 有两样本地状态不在库里，`./dev` 替你补齐**，别手动折腾：
+
+1. `node_modules` 那条符号链接（解析 `@deepseek-ai/*`，见上一节）。
+2. **`dash-app/host/tools/xcodegen`**——二进制，被 `.gitignore` 那条带锚点的
+   `/dash-app/host/tools/` 挡在库外（规则是对的，二进制不该入库），于是新克隆和
+   新 worktree 里都没有它，而 `dash-app/lib/index.js` 与
+   `host/scripts/{dev,build}.sh` 都直接 spawn 它。
+
+第 2 条缺了会**安静地**毁掉整个壳：dsh 照常起、HTTP 200，只是
+`spawn …/tools/xcodegen ENOENT` 埋在
+`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.<profile>.Debug.log` 里，
+终端只留一句"dash-app 优雅缺席"。`bin/dash.js` 的 `ensureXcodegen` 现在按
+**同仓库的其它 worktree → PATH 上的 `xcodegen`** 的顺序取件并拷过来；两处都没有
+就打印补法（`brew install xcodegen`）而不是让它静默缺席。三个调用点也各自加了
+存在性检查，报错直接说补法。
+
+拷贝而不是链接，是为了"主 worktree 被删掉也不会突然变回 ENOENT"；
+**拷进去不会触发壳的全量重建**——`HASHED_ROOTS` 明确把 `tools/` 排除在源码 hash 之外。
 
 ### 分发形态
 
@@ -291,7 +343,7 @@ npx @wenbo/dash
 
 **发布前还没解决的一件事**：`dash-app` 的模型是"从源码 xcodebuild 构建壳"，
 而用户多半没有 Xcode（`hasXcode()` 失败会优雅缺席，结果就是没有壳）。真要分发
-得 ship 预编译产物。包体积已经准备好了——`files` 白名单只收 `HASHED_ROOTS` 那四项，
+得 ship 预编译产物。包体积已经准备好了——`files` 白名单只收 `HASHED_ROOTS` 那几项，
 `.npmignore` 再挡一道，2.8MB（不设的话 `host/build` 一个人就 393MB）。
 
 ## 架构速览
@@ -307,13 +359,27 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
 不会再拉起 App（`launch` 只在 activate 时跑一次），双击是唯一的回来路径，而双击
 没有 flag。
 
+**没有 flag 时，候选先按"是不是我这一套"排，再按 `startedAt` 倒序。**
+判据是硬事实而不是名字推断：dash-app 把自己的 `dash-app/host` 绝对路径写进发现文件
+（`hostDir`），壳从自己的 bundle 路径算出同一个值比对（`DashPaths.ownHostDir` ↔
+`DashEndpoint.isOwn`）。只按 `startedAt` 排会**安静地连错**：双击起来的壳挑中邻居
+worktree 最近启动的那个 dsh，于是去编译**邻居的**插件源码——编译失败时那条错误
+原样落进自己的日志，读日志的人完全看不出它属于别人家（实测过，日志里冒出本
+worktree 根本没有的插件名）。自己那套没在跑时仍然会退到邻居（总比引导页有用），
+但接入那行日志与 ⌥⌘D 都会标出「⚠️ 不是本 worktree 那一套」。
+
 **壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底、
 替网页把下载与外链落地。
 
 - `dash-app/lib/index.js`：宿主插件。源码内容 hash 决定是否重建，marker 落
   `host/build/.dash-app-source-hash.<配置>`。
 - `dash-app/host/Sources/DashSDK/`：壳↔插件的 ABI 词汇（`DashPlugin` 是唯一的跨 dylib
-  协议见证表；registry/objects/store/events/bridge 的实现都在 SDK dylib 里）。
+  协议见证表；registry/contributions/objects/store/events/bridge 的实现都在 SDK dylib 里）。
+  **两种槽，别混**：`DashRegistry` 是单占用"替换槽"（一槽一主，后来者覆盖，
+  给 root/sidebar 这种独占表面用）；`DashContributions` 是多占用"贡献槽"
+  （一槽 N 条，`(owner, id)` 是身份，各家追加互不影响，给工具栏按钮这种
+  "谁都可以来一条"的表面用）。贡献槽只收容器不收词汇——载荷就是视图工厂
+  加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里。
 - `dash-app/host/Sources/Native/`：BridgeClient（WS）、CompilerService（内容寻址编译）、
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
   全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）。
@@ -326,6 +392,9 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
 - `dash-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
+  页内桥**不设白名单**：`postMessage({type, ...})` 的任意 type 一律广播成
+  `dash.page.<type>`（`DashEventBus.Topic.pagePrefix`），插件订阅即可，不用改壳。
+  ready/currentSession/debug 留特化分支只因为壳自己也要用它们。
 - `dash-app/host/Sources/DiagnosticsPanel.swift`：⌥⌘D 的诊断面板（端点/桥/插件世代/
   module 名/退休 image 数/最近构建播报，可拷贝）。查"我现在跑的到底是哪份代码"用它。
 - 插件门控：UA 含 `Dash/`（带斜杠，防普通子串误命中）且 URL 带 `?dash-native-sidebar=1`；
@@ -347,6 +416,8 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   实际把 `dash-nativeify/tools/dump-css.mjs` 这份源码工具一起吞了——README 里教人跑它，
   文件却从来没进过库。**失败是静默的**：`git status` 干净，克隆出来才发现少文件。
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
+  反过来，**被正确挡住的构建输入也要有人补**：`dash-app/host/tools/xcodegen` 就是
+  这样一份"该挡、但缺了整个壳就没了"的文件，兜底在 `./dev` 里（见「多 worktree」）。
 - **别把清理逻辑只挂在 `DashPluginHandle` 的析构上**。壳换代时 `loaded[name]` 一换、
   旧 `LoadedPlugin` 本该是最后一个强引用，但实测四十多次换代里 handle 只 deinit 过三次
   ——注册撤销之所以没出事，是因为 registry 用 token 校验兜住了"新的赢"，跟析构没关系。

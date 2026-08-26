@@ -13,8 +13,10 @@ public final class DashHost {
     /// 本次装载的世代号。注册槽时原样传给 `DashRegistry.register`。
     public let generation: Int
 
-    /// 槽注册表（共享）。
+    /// 槽注册表（共享）。单占用："谁占了这个表面"。
     public let registry: DashRegistry
+    /// 贡献槽注册表（共享）。多占用："谁往这个表面加了一条"。
+    public let contributions: DashContributions
     /// 宿主对象保管箱（共享）。
     public let objects: DashObjects
     /// 进程内事件总线（共享）。
@@ -26,9 +28,12 @@ public final class DashHost {
 
     private let logger: (String) -> Void
 
+    /// `contributions` 有默认值（SDK dylib 里的进程级单例），壳不必显式接线；
+    /// 想自己持有就传进来覆盖。其余参数一律由壳提供。
     public init(plugin: String,
                 generation: Int,
                 registry: DashRegistry,
+                contributions: DashContributions = .shared,
                 objects: DashObjects,
                 events: DashEventBus,
                 store: DashStore,
@@ -37,6 +42,7 @@ public final class DashHost {
         self.plugin = plugin
         self.generation = generation
         self.registry = registry
+        self.contributions = contributions
         self.objects = objects
         self.events = events
         self.store = store
@@ -44,7 +50,8 @@ public final class DashHost {
         self.logger = log
     }
 
-    /// 写一行进壳的日志（`<AppSupport>/logs/dash.log`），自动带插件名与世代号。
+    /// 写一行进壳的日志（`<AppSupport>/logs/dash.<worktree>.log`，一个 App 实例一份），
+    /// 自动带插件名与世代号。
     public func log(_ message: String) {
         logger(message)
     }
@@ -53,5 +60,20 @@ public final class DashHost {
     @discardableResult
     public func register(slot: String, make: @escaping () -> AnyView) -> DashDisposable {
         registry.register(slot: slot, owner: plugin, version: generation, make: make)
+    }
+
+    /// 往贡献槽加一条的糖：世代号与插件名自动带上。
+    ///
+    /// `id` 只需在自己名下唯一——`(plugin, id)` 才是身份，所以第三方插件
+    /// 起什么 id 都不会撞上别人。同一 id 再调 = 覆盖自己那一条（换代姿势）。
+    @discardableResult
+    public func contribute(to slot: String,
+                           id: String,
+                           order: Double = 0,
+                           metadata: [String: Any] = [:],
+                           make: @escaping () -> AnyView) -> DashDisposable {
+        contributions.register(contributionTo: slot, owner: plugin, id: id,
+                               order: order, version: generation,
+                               metadata: metadata, make: make)
     }
 }

@@ -693,7 +693,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
         lines.append("")
         lines.append("── 路径 ──")
-        lines.append("日志：\(DashPaths.logsDir.path)")
+        // 日志一个实例一份，写全路径而不是目录——多 worktree 时"我该看哪个文件"
+        // 正是最容易搞错的一步。
+        lines.append("日志：\(DashPaths.logURL.path)")
         lines.append("发现文件：\(DashPaths.endpointsDir.path)")
         // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 dash 在跑"。
         let discovered = EndpointLocator.discoveredEndpoints()
@@ -732,7 +734,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
             default:
-                break // 防御式：未知消息忽略
+                // 去白名单：壳不认得的 type 一律原样广播成 `dash.page.<type>`。
+                // 上面三条留特化分支是因为壳自己也要用（ready 关掉超时警告、
+                // debug 落日志），不是因为它们特殊到需要壳批准。
+                // 第三方插件接一条新页内消息 = 页面 postMessage + 插件 subscribe，
+                // 壳与 SDK 一个字都不用改（壳是预编译产物，第三方改不了它）。
+                // 防御式仍在：body 不是字典、type 不是字符串，上面两个 guard 已经拦掉。
+                nativeHost.events.emit(DashEventBus.Topic.pagePrefix + type, body)
             }
 
         default:

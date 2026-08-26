@@ -74,8 +74,17 @@ const DEFAULT_BRIDGE_PATH = "/dash/bridge";
 /** Xcode 工程载荷根（本包的 `host/`）。 */
 const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
 
+/**
+ * xcodegen 二进制。**被 .gitignore 挡在库外**（`/dash-app/host/tools/`），
+ * 所以新克隆 / 新 worktree 里它不存在——`dash/bin/dash.js` 的 ensureXcodegen
+ * 会在 `./dev` 时从别的 worktree 或 PATH 拷一份补上。这里做一次显式存在性检查，
+ * 是因为不做的话失败长成 `spawn …/tools/xcodegen ENOENT`：一句既不说明原因
+ * 也不说明补法的话，还埋在构建日志里。
+ */
+const XCODEGEN = join(HOST_DIR, "tools", "xcodegen");
+
 /** 参与源码 hash 的子树；`tools/`（xcodegen 二进制）与 `build/`（产物）不算源码。 */
-const HASHED_ROOTS = ["project.yml", "Sources", "Packages", "scripts"];
+const HASHED_ROOTS = ["project.yml", "Sources", "scripts"];
 
 /** 每次构建都会被 prebuild 脚本重写，进 hash 会让"源码没变"永远不成立。 */
 const HASH_EXCLUDED = new Set(["Sources/Resources/BuildTimestamp.txt"]);
@@ -299,6 +308,13 @@ async function ensureBuilt({ configuration, logger, isDisposed }) {
 		return locateExistingProduct(configuration);
 	}
 
+	if (!existsSync(XCODEGEN)) {
+		logger.error(`缺 ${XCODEGEN}（该二进制不入库，新克隆 / 新 worktree 里没有），跳过构建。`
+			+ ` 补法：在仓库根跑一次 ./dev（会自动从同仓库的其它 worktree 或 PATH 拷一份），`
+			+ ` 或 brew install xcodegen 后把它拷到上面那个路径。`);
+		return locateExistingProduct(configuration);
+	}
+
 	logger.info(`壳源码有变动，开始构建 ${configuration}（首次约需分钟级）…`);
 	const startedAt = Date.now();
 	const result = await runBuild({ configuration, logger, isDisposed });
@@ -322,13 +338,21 @@ async function ensureBuilt({ configuration, logger, isDisposed }) {
  * 一种结果，调用方各有各的善后。
  */
 async function runBuild({ configuration, logger, isDisposed }) {
-	const logPath = join(APP_SUPPORT, "logs", `dash-app-build.${configuration}.log`);
+	const logPath = buildLogPath(configuration);
 	mkdirSync(dirname(logPath), { recursive: true });
+	// 盯文件的重建走的也是这里，绕过了 ensureBuilt 的那道检查——不拦一下，
+	// 日志里就只有一句 ENOENT。
+	if (!existsSync(XCODEGEN)) {
+		const log = `缺 ${XCODEGEN}（该二进制不入库）。补法：在仓库根跑一次 ./dev，`
+			+ ` 或 brew install xcodegen 后把它拷到该路径。`;
+		writeFileSync(logPath, log);
+		return { ok: false, log, logPath };
+	}
 	try {
 		// 时间戳文件不入库，须在 generate 扫描目录前落地。
 		await run(join(HOST_DIR, "scripts", "write-build-timestamp.sh"), [], HOST_DIR);
 		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
-		await run(join(HOST_DIR, "tools", "xcodegen"), ["generate"], HOST_DIR);
+		await run(XCODEGEN, ["generate"], HOST_DIR);
 		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
 		// -derivedDataPath build 是硬约束：产物必须落在 build/Build/Products/，
 		// 换位置会造成"BUILD SUCCEEDED 但改动永不生效"。
@@ -347,6 +371,19 @@ async function runBuild({ configuration, logger, isDisposed }) {
 		writeFileSync(logPath, log);
 		return { ok: false, log, logPath };
 	}
+}
+
+/**
+ * 构建日志的路径，**按 profile 分片**（`dash-app-build.<profile>.<配置>.log`）。
+ *
+ * 多 worktree 并存时每个 worktree 一个 dsh，各构建各的壳；这份日志是**覆盖写**，
+ * 共用一个文件名的话，邻居一构建就把你这份整个换掉——终端说"构建失败，完整日志见
+ * <路径>"，你打开看到的却是邻居的编译错误，而且看不出来。分片与 endpoint 发现
+ * 文件同一套兜底（见 {@link endpointFilePath}）。
+ */
+function buildLogPath(configuration) {
+	const shard = resolveProfileName() ?? `pid-${process.pid}`;
+	return join(APP_SUPPORT, "logs", `dash-app-build.${shard}.${configuration}.log`);
 }
 
 /** 不构建时的产物探测：先本地 build/，再 /Applications 的 Release 安装。 */
@@ -403,6 +440,11 @@ function writeEndpointFile({ httpBase, bridgePath, logger }) {
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
 		profile: resolveProfileName(),
+		// 壳凭这个认出"哪一份是我这一套"：它自己的 bundle 就躺在
+		// `<hostDir>/build/Build/Products/<配置>/`，两边算出同一个绝对路径。
+		// 没有它，手动双击起来的壳只能按 startedAt 挑，多 worktree 时就会
+		// 连上邻居的 dsh、编译邻居的插件源码（见 Swift 侧 DashEndpoint.isOwn）。
+		hostDir: HOST_DIR.replace(/\/$/, ""),
 	};
 	const file = endpointFilePath();
 	try {

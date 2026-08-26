@@ -29,7 +29,7 @@
  * @module @wenbo/dash/bin
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,12 @@ const UMBRELLA_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** 伞包自己的包名——profile 的 bundles 里认的就是它。 */
 const UMBRELLA = "@wenbo/dash";
+
+/**
+ * xcodegen 二进制在仓库里的位置（相对仓库根）。dash-app/lib/index.js 与
+ * `dash-app/host/scripts/{dev,build}.sh` 都写死这条路径，改它要三处一起改。
+ */
+const XCODEGEN_REL = "dash-app/host/tools/xcodegen";
 
 /** 必须在 bundles 里、且必须排在最前的三层 patch。dsh 自带的两个不用装。 */
 const REQUIRED_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", UMBRELLA];
@@ -58,7 +64,10 @@ function main() {
 		? `registry 模式（从 npm 装）→ profile ${profile}`
 		: `link 模式（本地源码 ${repoRoot}）→ profile ${profile}`);
 
-	if (repoRoot !== undefined) ensureModuleResolution(repoRoot);
+	if (repoRoot !== undefined) {
+		ensureModuleResolution(repoRoot);
+		ensureXcodegen(repoRoot);
+	}
 	installInto(profile, repoRoot, pluginNames);
 	fixBundles(profile, pluginNames);
 
@@ -208,6 +217,77 @@ function ensureModuleResolution(repoRoot) {
 	}
 	symlinkSync(target, link, "dir");
 	say(`已补上 node_modules → ${target}（仓库在 profiles/ 之外时的解析桥）`);
+}
+
+/**
+ * 保证本 worktree 有 `dash-app/host/tools/xcodegen`。
+ *
+ * 那个二进制**被 .gitignore 挡在库外**（二进制不该入库，规则本身是对的），
+ * 于是任何新克隆 / 新 worktree 里它都不存在，而 dash-app 和两个构建脚本都直接
+ * spawn 它。失败模式极不友好：dsh 照常起、HTTP 200，只是壳静默缺席
+ * （`spawn …/tools/xcodegen ENOENT` 埋在构建日志里），而 CLAUDE.md 承诺的是
+ * "在任意 worktree 里跑 ./dev 即可"。所以这里和上面那条 node_modules 链接一样，
+ * 属于"把机器本地状态补齐"的兜底。
+ *
+ * 取件顺序：同仓库的其它 worktree（版本必然一致）→ PATH 上的 xcodegen。
+ * 一律**拷贝**而不是链接：14MB 一次性开销换"主 worktree 被删掉也不会突然
+ * 变回 ENOENT"，而且 dash-app 的 HASHED_ROOTS 明确把 `tools/` 排除在源码 hash
+ * 之外，多这个文件不会触发壳的全量重建。
+ *
+ * 找不到时**只警告不中止**：没装 Xcode 的机器本来就该优雅缺席，
+ * 为了一个可选的壳把 dsh 拦下来是本末倒置。
+ */
+function ensureXcodegen(repoRoot) {
+	const local = join(repoRoot, XCODEGEN_REL);
+	if (existsSync(local)) return;
+
+	const source = findXcodegen(repoRoot);
+	if (source === undefined) {
+		say(`⚠ 缺 ${XCODEGEN_REL}——壳构建会失败，dash-app 优雅缺席（只有浏览器，没有 App）。`);
+		say(`  补法（二选一，然后重跑本命令）：`);
+		say(`    brew install xcodegen`);
+		say(`    从 https://github.com/yonaskolb/XcodeGen/releases 下载 xcodegen.zip，`);
+		say(`      把里面的 bin/xcodegen 拷到 ${local} 并 chmod +x`);
+		return;
+	}
+
+	mkdirSync(dirname(local), { recursive: true });
+	copyFileSync(source, local);
+	chmodSync(local, 0o755);
+	say(`已补上 ${XCODEGEN_REL} ← ${source}`);
+}
+
+/** 先问同仓库的其它 worktree，再问 PATH。都没有就 undefined。 */
+function findXcodegen(repoRoot) {
+	for (const dir of otherWorktrees(repoRoot)) {
+		const candidate = join(dir, XCODEGEN_REL);
+		if (existsSync(candidate)) return candidate;
+	}
+	return whichXcodegen();
+}
+
+/**
+ * 同一个 git 仓库的其它 worktree 目录。`git worktree list` 在任何 worktree 里
+ * 跑都会把主 worktree 排在第一个，所以"从主仓库拷"这件事不必单独推路径。
+ */
+function otherWorktrees(repoRoot) {
+	try {
+		const self = realpath(repoRoot);
+		return git(repoRoot, ["worktree", "list", "--porcelain"])
+			.split("\n")
+			.filter((line) => line.startsWith("worktree "))
+			.map((line) => line.slice("worktree ".length))
+			.filter((dir) => realpath(dir) !== self);
+	} catch {
+		// 不是 git 仓库、或 git 不可用：还有 PATH 那条路。
+		return [];
+	}
+}
+
+function whichXcodegen() {
+	const result = spawnSync("which", ["xcodegen"], { encoding: "utf8" });
+	const path = result.stdout?.trim();
+	return result.status === 0 && path !== undefined && path !== "" ? path : undefined;
 }
 
 function realpath(path) {

@@ -21,6 +21,16 @@ import Foundation
 
 /// ABI 版本。壳装载插件前比对；不匹配即拒绝装载而不是崩在半路。
 /// 改动 SDK 里任何 public 声明的语义时 +1。
+///
+/// **v1 之后的纯追加（不 bump）**——已有声明的语义一个字没变，老插件原样能跑：
+/// - `DashContributions`（多占用"贡献槽"注册表）+ `DashHost.contributions`
+///   + `DashHost.contribute(to:id:order:metadata:make:)`。给"N 个插件各往一个
+///   表面加一条"用（工具栏按钮是第一个消费者，在 dash-layout）。
+/// - `DashEventBus.Topic.pagePrefix`：页内桥的未知消息不再被壳白名单挡掉，
+///   一律以 `dash.page.<type>` 广播。
+///
+/// 注意：dylib 里的 `contentHash` 指纹含 DashSDK 的 `.swiftinterface` 摘要，
+/// 所以追加声明照样会让全部插件重编一次——这跟 ABI 版本号是两回事。
 public let dashABIVersion = 1
 
 /// 插件的唯一入口协议。
@@ -40,8 +50,8 @@ public protocol DashPlugin: AnyObject {
     /// 装载后立即调用一次。
     ///
     /// `@MainActor` 是这里唯一一处 actor 标注：插件干的全是 UI 的活，壳也确实只在
-    /// 主线程调它，标出来能让插件直接使用 AppKit / SwiftUI / `@MainActor` 的
-    /// DSHKit 类型而不必到处写 `assumeIsolated`。SDK 的那些 class（registry /
+    /// 主线程调它，标出来能让插件直接使用 AppKit / SwiftUI 等 `@MainActor`
+    /// 类型而不必到处写 `assumeIsolated`。SDK 的那些 class（registry /
     /// objects / events）仍然不标——从隔离上下文调非隔离代码永远合法，
     /// 而反过来（在 dylib 之间跨 actor 边界）是 M2 没验证过的领域。
     ///
