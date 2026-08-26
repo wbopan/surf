@@ -10,7 +10,7 @@ struct PluginSource {
     let files: [String: String]
     /// Swift module 依赖（插件名），按拓扑序已排在本插件之前。
     let deps: [String]
-    /// 本插件声明用到的共享 module（`DSHKit` 等，桥已排序去重）。
+    /// 本插件声明用到的共享 module（桥已排序去重；DSHKit 退役后暂无住户，机制保留）。
     /// **不含 `DashSDK`**——那是无条件的 ABI，见 `CompilerService`。
     let sharedModules: [String]
     /// 桥算的内容 hash（**已折进依赖的 hash**，级联重编靠它）。
@@ -73,7 +73,7 @@ actor CompilerService {
     /// + 本机工具链基线 + **本插件声明用到的**共享 module 的接口摘要。
     ///
     /// 换 Xcode 或重编 DashSDK 之后必须全量重编，否则 `.swiftmodule` 会对不上。
-    /// 但重编 DSHKit 只该波及 `import DSHKit` 的插件——所以共享 module 的摘要
+    /// 但重编某个共享 module 只该波及 import 它的插件——所以共享 module 的摘要
     /// 按声明逐个折进来，而不是把 `DashModules/` 里的东西一股脑算成一个数。
     func contentHash(for source: PluginSource) async -> String {
         var hasher = SHA256Hasher()
@@ -133,7 +133,7 @@ actor CompilerService {
         // 共享 module：编译期 -I 找 .swiftmodule，链接期 -L 找 bundle 里的 dylib，
         // 运行期靠 -rpath 落到同一个文件上（同一份 image = 类型身份一致）。
         // DashSDK 无条件（它是 ABI 本身）；其余按插件声明加，没声明的不链接
-        // ——写 `import DSHKit` 却忘了声明 sharedModules，swiftc 会带行号报错，
+        // ——import 了共享 module 却忘了声明 sharedModules，swiftc 会带行号报错，
         // 比默认全给更早暴露问题。
         args += ["-I", modulesDir.path, "-L", frameworksDir.path, "-l\(Self.abiModule)"]
         for module in source.sharedModules where module != Self.abiModule {
@@ -205,9 +205,9 @@ actor CompilerService {
     /// **所有**插件共享的编译基线：ABI 版本 + swiftc 版本 + DashSDK 的接口。
     ///
     /// 只有 DashSDK 在这里。它是壳↔插件的 ABI 本身，每个插件都链接它，变了谁都得重编。
-    /// 其余共享 module（DSHKit…）按插件声明单独折进 `contentHash`
-    /// ——把整个 `DashModules/` 一股脑算进来，就等于让改一行 DSHKit 把从不 import 它的
-    /// 插件也全量重编一遍。
+    /// 其余共享 module 按插件声明单独折进 `contentHash`
+    /// ——把整个 `DashModules/` 一股脑算进来，就等于让改一行共享 module 把从不
+    /// import 它的插件也全量重编一遍。
     private func toolchainFingerprint() async -> String {
         if let cached = toolchainFingerprintCache { return cached }
         var hasher = SHA256Hasher()

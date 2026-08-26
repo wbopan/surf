@@ -324,7 +324,7 @@ npx @wenbo/dash
 
 **发布前还没解决的一件事**：`dash-app` 的模型是"从源码 xcodebuild 构建壳"，
 而用户多半没有 Xcode（`hasXcode()` 失败会优雅缺席，结果就是没有壳）。真要分发
-得 ship 预编译产物。包体积已经准备好了——`files` 白名单只收 `HASHED_ROOTS` 那四项，
+得 ship 预编译产物。包体积已经准备好了——`files` 白名单只收 `HASHED_ROOTS` 那几项，
 `.npmignore` 再挡一道，2.8MB（不设的话 `host/build` 一个人就 393MB）。
 
 ## 架构速览

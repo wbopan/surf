@@ -84,7 +84,7 @@ const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
 const XCODEGEN = join(HOST_DIR, "tools", "xcodegen");
 
 /** 参与源码 hash 的子树；`tools/`（xcodegen 二进制）与 `build/`（产物）不算源码。 */
-const HASHED_ROOTS = ["project.yml", "Sources", "Packages", "scripts"];
+const HASHED_ROOTS = ["project.yml", "Sources", "scripts"];
 
 /** 每次构建都会被 prebuild 脚本重写，进 hash 会让"源码没变"永远不成立。 */
 const HASH_EXCLUDED = new Set(["Sources/Resources/BuildTimestamp.txt"]);

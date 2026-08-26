@@ -15,7 +15,7 @@
  *   inject: ["dash-layout"],              // cordis 依赖 = 挂载时序
  *   swiftDir: new URL("../swift/", import.meta.url),
  *   swiftDeps: ["dash-layout"],           // Swift module 依赖（import DashLayout）
- *   sharedModules: ["DSHKit"],            // 随 bundle 分发的共享 module（DashSDK 无需声明）
+ *   sharedModules: [],                    // 随 bundle 分发的共享 module（DashSDK 无需声明）
  *   subscribe: ({ ctx, push }) => { ... },
  *   expose: { archive: (payload, { ctx }) => { ... } },
  * });
@@ -38,8 +38,8 @@ import { fileURLToPath } from "node:url";
  * @param {string[]} [options.inject] 额外的 cordis 依赖（`dashBridge` 会自动加上）。
  * @param {URL|string} options.swiftDir Swift 载荷目录。
  * @param {string[]} [options.swiftDeps] Swift module 依赖（必须同时出现在 inject 里）。
- * @param {string[]} [options.sharedModules] 用到的共享 module（随 app bundle 分发的那些，
- *        目前是 `DSHKit`）。**`DashSDK` 不用写**——它是壳↔插件的 ABI，无条件链接。
+ * @param {string[]} [options.sharedModules] 用到的共享 module（随 app bundle 分发的那些；
+ *        DSHKit 退役后暂无住户，机制保留）。**`DashSDK` 不用写**——它是壳↔插件的 ABI，无条件链接。
  *        没声明的 module 既不 `-l` 也不进本插件的内容 hash，所以它变动时本插件不会
  *        白白全量重编；反过来，声明了就意味着"它变了我必须重编"。
  * @param {number} [options.schemaVersion] 本插件与 Swift 半身之间数据形状的版本。

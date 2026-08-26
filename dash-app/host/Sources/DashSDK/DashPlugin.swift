@@ -50,8 +50,8 @@ public protocol DashPlugin: AnyObject {
     /// 装载后立即调用一次。
     ///
     /// `@MainActor` 是这里唯一一处 actor 标注：插件干的全是 UI 的活，壳也确实只在
-    /// 主线程调它，标出来能让插件直接使用 AppKit / SwiftUI / `@MainActor` 的
-    /// DSHKit 类型而不必到处写 `assumeIsolated`。SDK 的那些 class（registry /
+    /// 主线程调它，标出来能让插件直接使用 AppKit / SwiftUI 等 `@MainActor`
+    /// 类型而不必到处写 `assumeIsolated`。SDK 的那些 class（registry /
     /// objects / events）仍然不标——从隔离上下文调非隔离代码永远合法，
     /// 而反过来（在 dylib 之间跨 actor 边界）是 M2 没验证过的领域。
     ///

@@ -12,7 +12,6 @@
     "lib",
     "host/project.yml",
     "host/Sources",
-    "host/Packages",
     "host/scripts"
   ],
   "publishConfig": {
