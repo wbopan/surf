@@ -63,11 +63,12 @@ dsh web --no-open
 
 ```
 dash-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App + 盯壳源码
-  host/            Xcode 工程（project.yml / Sources/ / Packages/DSHKit / scripts/）
+  host/            Xcode 工程（project.yml / Sources/ / scripts/ / tools/）
 dash-bridge/       唯一的特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯 swift/ 目录
 dash-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具栏；
                    client 半边装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边
+                   （订 dsh 的内部 API，投影经桥推给 Swift；Swift 只管画）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App 的样式插件（纯 client 半边，有 HMR）
 docs/              迁移计划、ABI 实测结论、可复跑的 spike
 ```
@@ -84,6 +85,10 @@ export default createSwiftPlugin({
   swiftDeps: ["dash-layout"],   // 桥：上游换代时我自动跟着重编
 });
 ```
+
+（真正的 `dash-sidebar` 比这多一截：它的 node 半边还拿着整个数据面，
+经 `subscribe`/`expose` 与 Swift 半身对话。数据放在这一侧是有意的——
+壳随 app bundle 冻结，node 半边随 npm 可更新。）
 
 Swift 半边导出一个 C 入口，拿到 `host` 就往槽里塞视图：
 
@@ -115,8 +120,8 @@ final class SidebarPlugin: DashPlugin {
    代码页泄漏式退休，实例由 ARC 正常回收。
 2. **上游换代、下游没重编 = 沉默的认知分裂**：下游不崩不报错，只是继续调旧代的代码。
    所以桥把上游的 hash 折进下游的 hash——级联重编由数据结构保证，不靠传播逻辑。
-3. `DashSDK` / `DSHKit` 必须**全进程只有一份 dylib**，壳和插件链同一个文件，
-   类型身份才对得上。
+3. 共享 module（眼下只有 `DashSDK`）必须**全进程只有一份 dylib**，壳和插件链同一个
+   文件，类型身份才对得上。
 
 坏插件不许拖垮系统：编译失败保持上一代在役；没有任何插件占 `root` 槽时，
 壳退化成整窗 WebView——功能不缺，只是没有原生外壳。

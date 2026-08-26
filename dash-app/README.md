@@ -14,7 +14,7 @@ dash macOS 壳的宿主插件。载荷是 `host/` 里的整个 Xcode 工程—�
 2. **按需构建**：源码 hash 变了或产物缺失 → `write-build-timestamp.sh` +
    `xcodegen generate` + `xcodebuild -derivedDataPath build`（与 `scripts/dev.sh`
    同一套步骤）。hash 只看内容不看 mtime，换 git 分支不会被误判成"改过"。
-   共享 module（DashSDK / DSHKit）由工程自己的 pre/postBuild 脚本管，本插件不用操心。
+   共享 module（眼下只有 DashSDK）由工程自己的 pre/postBuild 脚本管，本插件不用操心。
 3. **拉起**：产物就绪且 app 未运行 → `open <app> --args --dash-endpoint <httpBase>`。
 
 然后 provide `dashApp = {appPath, freshness, configuration, httpBase, bridgePath}`。
@@ -28,7 +28,6 @@ dash macOS 壳的宿主插件。载荷是 `host/` 里的整个 Xcode 工程—�
 | `host/Sources/DashSDK/` | 壳↔插件的 ABI 词汇。编成独立 dylib 随 bundle 分发，全进程只有一份 |
 | `host/Sources/Native/` | BridgeClient（连 dash-bridge 的 WS）、CompilerService（内容寻址地跑 swiftc）、NativePluginHost（dlopen + activate + 世代账）、ShellRootView（root 槽 + 全出血 WebView 兜底） |
 | `host/Sources/MainWindowController.swift` | 窗口、菜单、连接状态机、页内桥消息转 EventBus。没有业务 UI |
-| `host/Packages/DSHKit` | 仅 Foundation 的 dsh API 层，同样是共享 dylib |
 
 没有任何插件占 `root` 槽时（没装 dash-layout、或它编译失败还没有过成功世代），
 ShellRootView 退化成整窗 WebView——功能不缺，只是没有原生分栏和侧边栏。
