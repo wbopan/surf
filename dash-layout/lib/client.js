@@ -29,8 +29,21 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
 		const STYLE_ID = "dash-layout-style";
+		const NATIVE_ATTR = "data-dash-native-sidebar";
+		const OCCUPANCY_VAR = "--dash-sidebar-occupancy";
 		// ui-layout computeColumns：折叠（sidebar 偏好为 0）时轨道仍占 56px rail。
 		const RAIL_PX = 56;
+
+		/**
+		 * 每次 effect 启动生成的实例 token，写进全局状态当所有权标记。
+		 * client 半边 HMR 的重载顺序是「新实例先启、旧实例后清」，无条件
+		 * 清理会让后跑的旧 cleanup 砍掉新实例刚装好的东西（属性一摘，
+		 * 隐藏 web 侧边栏的整套 CSS 就地失效，rail 或整条侧边栏露出来）。
+		 * @returns {string}
+		 */
+		function makeToken() {
+			try { return "dl" + Math.random().toString(36).slice(2, 10); } catch { return "dl0"; }
+		}
 
 		function insideDash() {
 			try {
@@ -74,10 +87,13 @@ window.__ModuleLoader__.load({
 		 *     useState），回退为点击侧边栏设置触发按钮 button[aria-haspopup="dialog"]。
 		 * ctx.inject([...], cb) 在服务可用时（含已可用）启动子 fiber；服务缺席则
 		 * 该能力静默缺失，ready 上报里如实反映。子 fiber 随本插件 fiber 一起卸载。
+		 * 每次启动都重装：新实例的服务接线才是活的，沿用上一代的 window.__dash
+		 * 等于留一个 fiber 已卸载的僵尸桥（点原生侧边栏没反应）。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
+		 * @param {string} token 实例所有权标记
+		 * @returns {() => void} 清理函数
 		 */
-		function installBridge(ctx) {
-			if (typeof window.__dash !== "undefined") return; // 幂等（HMR 重载）
+		function installBridge(ctx, token) {
 			const bridge = {
 				selectSession: null,
 				startSession: null,
@@ -164,6 +180,7 @@ window.__ModuleLoader__.load({
 				selectSession: delegate("selectSession"),
 				startSession: delegate("startSession"),
 				openSettings: delegate("openSettings"),
+				__dashToken: token,
 			};
 
 			// ready 上报：caps 反映实际接通的槽位（非委托对象键），接线变化时补报。
@@ -181,11 +198,22 @@ window.__ModuleLoader__.load({
 				} catch { /* 静默 */ }
 			};
 			// 固定节奏补报（覆盖服务迟到窗口，最长 30s）+ 每次接线时立即补报。
+			const timers = [];
 			for (const delay of [500, 1500, 3000, 6000, 10000, 15000, 20000, 30000]) {
-				setTimeout(postReady, delay);
+				timers.push(setTimeout(postReady, delay));
 			}
 			onWired = postReady;
 			postReady();
+
+			return () => {
+				for (const t of timers) clearTimeout(t); // 卸载后别再补报，否则壳收到过期 caps
+				try {
+					// 只收回自己装的那份（见 makeToken）。
+					if (window.__dash && window.__dash.__dashToken === token) delete window.__dash;
+				} catch {
+					try { window.__dash = undefined; } catch { /* 静默 */ }
+				}
+			};
 		}
 
 		/* ------------------------------------------------------------------ *
@@ -207,9 +235,15 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * 经 ctx.layout.toggleSidebar()（ui-layout 的公开面板动作面）反复收起
-		 * 侧边栏，直到 AppFrame 根带 data-sidebar-collapsed。用
-		 * MutationObserver 监听该属性：视图/偏好把侧边栏重新展开时自动再收。
+		 * 经 ctx.layout.toggleSidebar()（ui-layout 的公开面板动作面）把侧边栏
+		 * 维持在收起态。两条互补的触发：MutationObserver 盯
+		 * data-sidebar-collapsed（偏好被改时即刻回收），加一条常驻低频巡检。
+		 *
+		 * **巡检不能在首次收起成功后停**：AppFrame 是 React 组件，root entry
+		 * 重注册（client HMR 等）会把它整个重建成新的 DOM 节点，observer 却
+		 * 还盯着脱离文档的旧节点——守护就此永久失效，而新的 layout store 从
+		 * 默认 sidebar:280 起步 = 侧边栏完整展开，与原生侧边栏并排出现。
+		 * 巡检每轮比对 frame 身份，换了就把 observer 迁过去。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 * @returns {() => void} 清理函数
 		 */
@@ -220,35 +254,31 @@ window.__ModuleLoader__.load({
 					const layout = lctx.layout;
 					postToShell({ type: "debug", msg: "layout fiber fired; toggle=" + typeof layout?.toggleSidebar });
 					if (!layout || typeof layout.toggleSidebar !== "function") return;
-					const collapseIfExpanded = () => {
-						const frame = pickAppFrame();
-						if (!frame) return false;
-						if (frame.hasAttribute("data-sidebar-collapsed")) return true;
-						try { layout.toggleSidebar(); } catch { /* root entry 未挂载时静默 */ }
-						return false;
-					};
-					// SPA 挂载晚于插件执行：轮询到 AppFrame 首次出现并收起成功，
-					// 随后交给 MutationObserver 维持收起状态。
 					let observer = null;
-					let timer = null;
-					let attempts = 0;
-					const startObserving = (frame) => {
-						if (observer) return;
-						observer = new MutationObserver(() => collapseIfExpanded());
-						observer.observe(frame, { attributes: true, attributeFilter: ["data-sidebar-collapsed"] });
-					};
-					timer = setInterval(() => {
-						if (collapseIfExpanded()) {
-							clearInterval(timer);
-							timer = null;
-							startObserving(pickAppFrame());
-						} else if (++attempts > 120) {
-							clearInterval(timer);
-							timer = null;
+					let observed = null; // observer 当前绑定的 frame 节点
+					let lastToggle = 0;
+					const sync = () => {
+						const frame = pickAppFrame();
+						if (!frame) return;
+						if (frame !== observed) {
+							observer?.disconnect();
+							observer = new MutationObserver(sync);
+							observer.observe(frame, { attributes: true, attributeFilter: ["data-sidebar-collapsed"] });
+							observed = frame;
 						}
-					}, 500);
+						if (frame.hasAttribute("data-sidebar-collapsed")) return;
+						// toggleSidebar 是开关不是「收起」，但两种模式下（宽视口翻
+						// sidebar 偏好、窄视口翻 narrowExpanded）一次翻转都收敛到
+						// 收起，不会震荡。节流只防病态情形（展开态被外力按住）空转。
+						const now = Date.now();
+						if (now - lastToggle < 250) return;
+						lastToggle = now;
+						try { layout.toggleSidebar(); } catch { /* root entry 未挂载时静默 */ }
+					};
+					const timer = setInterval(sync, 500);
+					sync();
 					disposers.push(() => {
-						if (timer) clearInterval(timer);
+						clearInterval(timer);
 						observer?.disconnect();
 					});
 				});
@@ -258,33 +288,38 @@ window.__ModuleLoader__.load({
 
 		/**
 		 * 测量折叠后 sidebarCol 实际占位（rail 宽），写入 CSS 变量供轨道抵消
-		 * 用。默认 56px（computeColumns 的 rail 常量）。SPA 挂载晚：轮询到首挂。
+		 * 用。默认 56px（computeColumns 的 rail 常量）。
+		 *
+		 * 巡检常驻、且比对 col 身份，理由同 forceSidebarCollapsed：AppFrame
+		 * 重建后 ResizeObserver 会绑在脱离文档的旧列上，变量停在过期值。
 		 * @returns {() => void} 清理函数
 		 */
 		function trackSidebarOccupancy() {
 			let observer = null;
-			let pollTimer = null;
+			let observed = null; // observer 当前绑定的 sidebarCol 节点
+			let timer = null;
 			try {
 				const root = document.documentElement;
 				const setVar = (px) => {
-					try { root.style.setProperty("--dash-sidebar-occupancy", Math.max(0, Math.round(px)) + "px"); } catch { /* 静默 */ }
+					try { root.style.setProperty(OCCUPANCY_VAR, Math.max(0, Math.round(px)) + "px"); } catch { /* 静默 */ }
 				};
-				const attach = () => {
+				const sync = () => {
 					const col = document.querySelector('[class*="_sidebarCol"]');
-					if (!col) return false;
-					setVar(col.getBoundingClientRect().width);
-					if (typeof ResizeObserver !== "undefined") {
-						observer = new ResizeObserver(() => setVar(col.getBoundingClientRect().width));
-						observer.observe(col);
+					if (!col) return;
+					if (col !== observed) {
+						observer?.disconnect();
+						observed = col;
+						if (typeof ResizeObserver !== "undefined") {
+							observer = new ResizeObserver(() => setVar(col.getBoundingClientRect().width));
+							observer.observe(col);
+						}
 					}
-					return true;
+					setVar(col.getBoundingClientRect().width);
 				};
-				if (!attach()) {
-					pollTimer = setInterval(() => { if (attach()) { clearInterval(pollTimer); pollTimer = null; } }, 500);
-					setTimeout(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }, 30000);
-				}
+				timer = setInterval(sync, 500);
+				sync();
 			} catch { /* 静默 */ }
-			return () => { if (pollTimer) clearInterval(pollTimer); observer?.disconnect(); };
+			return () => { if (timer) clearInterval(timer); observer?.disconnect(); };
 		}
 
 		/**
@@ -295,6 +330,7 @@ window.__ModuleLoader__.load({
 			if (!insideDash()) return;
 			const native = nativeSidebarMode();
 			ctx.effect(() => {
+				const token = makeToken();
 				let style = null;
 				let cleanupCollapse = () => {};
 				let cleanupOccupancy = () => {};
@@ -308,29 +344,37 @@ window.__ModuleLoader__.load({
 						// 无法部分覆盖，因此整体把 frame 向左平移 rail 宽（实时测量入
 						// --dash-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
 						// 会话列从窗口左缘起排。frame 自带 overflow:hidden，不会外溢。
-						":root { --dash-sidebar-occupancy: " + RAIL_PX + "px; }",
-						'html[data-dash-native-sidebar] [class*="_frame"] {',
-						"  margin-left: calc(-1 * var(--dash-sidebar-occupancy)) !important;",
-						"  width: calc(100% + var(--dash-sidebar-occupancy)) !important;",
+						":root { " + OCCUPANCY_VAR + ": " + RAIL_PX + "px; }",
+						"html[" + NATIVE_ATTR + '] [class*="_frame"] {',
+						"  margin-left: calc(-1 * var(" + OCCUPANCY_VAR + ")) !important;",
+						"  width: calc(100% + var(" + OCCUPANCY_VAR + ")) !important;",
 						"}",
 						// 双保险：侧边栏列内容（rail 图标等）不可交互、不绘制。
-						'html[data-dash-native-sidebar] [class*="_sidebarCol"] {',
+						"html[" + NATIVE_ATTR + '] [class*="_sidebarCol"] {',
 						"  visibility: hidden !important;",
 						"  pointer-events: none !important;",
 						"}",
 					].join("\n");
 					document.head.appendChild(style);
-					try { document.documentElement.setAttribute("data-dash-native-sidebar", ""); } catch { /* 静默 */ }
+					// 属性值 = 实例 token：cleanup 据此判断这份全局状态还是不是自己的。
+					try { document.documentElement.setAttribute(NATIVE_ATTR, token); } catch { /* 静默 */ }
 					cleanupCollapse = forceSidebarCollapsed(ctx);
 					cleanupOccupancy = trackSidebarOccupancy();
 				}
-				installBridge(ctx);
+				const cleanupBridge = installBridge(ctx, token);
 				return () => {
 					style?.remove();
-					cleanupCollapse(); cleanupOccupancy();
-					try { document.documentElement.removeAttribute("data-dash-native-sidebar"); } catch { /* 静默 */ }
-					try { document.documentElement.style.removeProperty("--dash-sidebar-occupancy"); } catch { /* 静默 */ }
-					try { delete window.__dash; } catch { try { window.__dash = undefined; } catch { /* 静默 */ } }
+					cleanupCollapse(); cleanupOccupancy(); cleanupBridge();
+					// 所有权检查（见 makeToken）：HMR 下新实例可能已经接管全局状态，
+					// 这里无条件清理就等于替它把自己的 CSS 开关摘掉——症状是 web
+					// 侧边栏（或其 56px rail）与原生侧边栏并排出现，⌘R 才恢复。
+					try {
+						const root = document.documentElement;
+						if (root.getAttribute(NATIVE_ATTR) === token) {
+							root.removeAttribute(NATIVE_ATTR);
+							root.style.removeProperty(OCCUPANCY_VAR);
+						}
+					} catch { /* 静默 */ }
 				};
 			});
 		}

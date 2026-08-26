@@ -1,8 +1,0 @@
-TARGET glass light col=0 280 995
-TARGET glass light col=1 440 995
-TARGET glass dark col=0 280 1065
-TARGET glass dark col=1 440 1065
-TARGET prominent light col=0 280 1135
-TARGET prominent light col=1 440 1135
-TARGET prominent dark col=0 280 1205
-TARGET prominent dark col=1 440 1205

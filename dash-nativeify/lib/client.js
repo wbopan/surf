@@ -70,6 +70,11 @@ window.__ModuleLoader__.load({
 		const SOLID_BORDERED = [
 			'button[class*="_sessionLogButton"]',  // 会话头部 Session log ⬇（1px border）
 			'button[class*="_newSession"]',        // 侧边栏新建会话（白底 + 1px border）
+			// 会话流「回到底部」浮动圆钮（34×34，自带 1px border + 浮起投影）。
+			// **不写 `button[...]` 前缀**：从 bundle 里确认不了它到底是 <button> 还是
+			// role=button 的 div，去掉标签限定两种都能命中。代价是得手动排掉外层的
+			// `_toBottomSlot` 容器 —— 属性选择器只有「包含」，没有「以…结尾」。
+			'[class*="_toBottom"]:not([class*="Slot"])',
 		];
 		const SOLID_PLAIN = [
 			'button[class*="_primary"]',           // composer 发送键（实心强调色，无 border）
@@ -83,6 +88,16 @@ window.__ModuleLoader__.load({
 		const ENABLED = ':not(:disabled):not([aria-disabled="true"])';
 		const join = (suffix) => SOLID_BUTTONS.map((s) => s + suffix).join(",\n");
 		const joinPlain = (suffix) => SOLID_PLAIN.map((s) => s + suffix).join(",\n");
+		// **给色只能有一处，那一处是 background-color。**
+		// `_primary` 是唯一自带强调色的按钮，它的色由 dsh 自己画，我们碰都不碰，
+		// 只补结构层；其余几枚的色由我们出，写进 background-color。
+		// 这里以前是一层 `inset 0 0 0 100px var(--dash-glass-fill)`，理由写的是
+		// 「不碰 background，dsh 自己的底色照常生效」—— 结果就是**两处都在给色**：
+		// 半透明白压在 dsh 的强调蓝上，把发送键洗成藕荷色。少一个能给色的地方，
+		// 这个 bug 在结构上就不可能再出现。
+		const TINTED = ['button[class*="_primary"]'];
+		const neutral = SOLID_BUTTONS.filter((sel) => !TINTED.includes(sel)).join(",\n");
+		const tinted = TINTED.join(",\n");
 		const solid = join("");
 		const solidPlain = joinPlain("");
 		const solidHover = join(ENABLED + ":hover");
@@ -90,6 +105,8 @@ window.__ModuleLoader__.load({
 		// 失活时给按钮整体去饱和用。前缀必须逐条加 —— 逗号串上只写一次
 		// 只会命中第一条选择器。
 		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-dash-blur] ' + sel).join(",\n");
+		// 切焦点那一帧用的「禁过渡」选择器，同样得逐条加前缀。
+		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-dash-nofx] ' + sel).join(",\n");
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -395,7 +412,20 @@ window.__ModuleLoader__.load({
 
 		function watchWindowFocus() {
 			const root = document.documentElement;
-			const sync = () => root.toggleAttribute("data-dash-blur", !document.hasFocus());
+			// **激活 ↔ 失活必须是瞬时的，不能补间。** 窗口换焦点时系统是重绘，不是动画；
+			// 而按钮上挂着 box-shadow / background-color / filter 的过渡（那是给 hover 和
+			// 按下用的），焦点一变就会顺带把整摞玻璃层做成 160ms 淡入淡出 —— 一眼假。
+			//
+			// 老办法：先挂 data-dash-nofx（配套 CSS 把过渡整个关掉）→ 改值 →
+			// **读一次 offsetHeight 强制刷新样式**，让新值以「无过渡」落定 → 摘掉标记。
+			// 那次读取是整段的关键，删了就等于没加：不强制刷新，浏览器会把加标记、改值、
+			// 摘标记合成一次样式计算，过渡照旧发生。
+			const sync = () => {
+				root.setAttribute("data-dash-nofx", "");
+				root.toggleAttribute("data-dash-blur", !document.hasFocus());
+				void root.offsetHeight;
+				root.removeAttribute("data-dash-nofx");
+			};
 			addEventListener("focus", sync);
 			addEventListener("blur", sync);
 			sync();
@@ -403,6 +433,7 @@ window.__ModuleLoader__.load({
 				removeEventListener("focus", sync);
 				removeEventListener("blur", sync);
 				root.removeAttribute("data-dash-blur");
+				root.removeAttribute("data-dash-nofx");
 			};
 		}
 
@@ -526,7 +557,10 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-glow-b: 0.795;",
 					"  --dash-glass-glow-d: 0.45;",
 					"  --dash-glass-side: rgba(0, 0, 0, 0.119);",
-					"  --dash-glass-body: rgba(252, 252, 252, 0.5272);",
+					// 底色 = 元素的 background-color（不是阴影层）。**这是唯一的给色处**；
+					// 半透明 = 页面透上来，压到 1 就是实色。名字以前叫 -body，读起来像"玻璃本体"，
+					// 正是那个"再叠一层材料"的错误心智模型的来源，已改名。
+					"  --dash-glass-fill: rgba(252, 252, 252, 0.5272);",
 					// 按压亮光。**浅色档几乎没有余量**：本体已经 248/255，纯白也只抬得动 7 级，
 					// 所以给到 1.0 仍然是"淡淡一片"。真想按下去更明显，把它换成一点点黑
 					// （rgba(0,0,0,.10)）读起来强得多 —— 那是"压下去"不是"泛起光"，看要哪个。
@@ -567,7 +601,7 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-glow-b: 0.06;",
 					"  --dash-glass-glow-d: 0.5;",
 					"  --dash-glass-side: rgba(0, 0, 0, 0);",
-					"  --dash-glass-body: rgba(255, 255, 255, 0.137);",
+					"  --dash-glass-fill: rgba(255, 255, 255, 0.137);",
 					// 深色档余量大得多，扫过 .20/.30/.40/.55 后取 .30：再高就白成一块。
 					"  --dash-press-glow: rgba(255, 255, 255, 0.17);",
 					// 深色档 hover 提亮。系统实测 66.6 → 88.5（+21.9），**按下与悬停逐像素
@@ -604,14 +638,14 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-glow-t: 0;",
 					"  --dash-glass-glow-b: 0;",
 					"  --dash-glass-side: transparent;",
-					"  --dash-glass-body: rgba(0, 0, 0, 0.059);",
+					"  --dash-glass-fill: rgba(0, 0, 0, 0.059);",
 					"}",
 					":root[data-dash-blur] body[data-ds-dark-theme] {",
 					"  --dash-glass-edge: rgba(255, 255, 255, 0);",
 					"  --dash-glass-glow-t: 0;",
 					"  --dash-glass-glow-b: 0;",
 					"  --dash-glass-side: transparent;",
-					"  --dash-glass-body: rgba(255, 255, 255, 0.094);",
+					"  --dash-glass-fill: rgba(255, 255, 255, 0.094);",
 					"}",
 
 					// 表面换成平色只做了一半 —— **失活时按钮里的内容也得褪色**。系统在失活窗口里
@@ -621,6 +655,13 @@ window.__ModuleLoader__.load({
 					// 只给白名单里那五个按钮，不给整页：系统灰的是**控件**，正文该什么色还是什么色。
 					blurSolid + " {",
 					"  filter: grayscale(1);",
+					"}",
+
+					// 切焦点那一帧把过渡整个关掉。只在 sync() 里挂着，读一次 offsetHeight
+					// 之后立刻摘掉，所以它只影响那一次样式落定 —— hover / 按下的过渡照旧。
+					// `!important` 是必须的：上面那条 transition 自己就是 !important 的。
+					nofxSolid + " {",
+					"  transition: none !important;",
 					"}",
 
 					// 统一过渡。dsh 给按钮写的是 transition: all，会把 scale 一起卷进它
@@ -637,9 +678,16 @@ window.__ModuleLoader__.load({
 					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
 					"    inset 0 0 0 100px var(--dash-tint),",
 					"    inset 14px 0 8px -15px var(--dash-glass-side),",
-					"    inset -14px 0 8px -15px var(--dash-glass-side),",
-					"    inset 0 0 0 100px var(--dash-glass-body);",
+					"    inset -14px 0 8px -15px var(--dash-glass-side);",
 					"  box-shadow: var(--dash-surface), 0 1px 2px var(--dash-glass-drop);",
+					"}",
+					// 底色 = 元素自己的 background-color。`!important` 是必须的：dsh 在更具体的
+					// 规则里用 `background` 简写，不加会被静默清掉，连报错都没有。
+					// **`_primary` 不在这条里** —— 它的色是 dsh 画的，我们再盖一层就是两处给色。
+					neutral + " {",
+					"  background-color: var(--dash-glass-fill) !important;",
+					"}",
+					solid + " {",
 					"  transition:",
 					"    scale var(--dash-dur) var(--dash-ease),",
 					"    background-color var(--dash-dur-fast) linear,",
@@ -661,8 +709,29 @@ window.__ModuleLoader__.load({
 					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
 					"    inset 0 0 0 100px var(--dash-tint),",
 					"    inset 14px 0 8px -15px var(--dash-glass-side),",
-					"    inset -14px 0 8px -15px var(--dash-glass-side),",
-					"    inset 0 0 0 100px var(--dash-glass-body);",
+					"    inset -14px 0 8px -15px var(--dash-glass-side);",
+					"}",
+
+					// 强调键的高光要跟着它自己的色走，不能用白的。
+					// 白高光在近白的玻璃上第一行只抬 3.1 级（看不见），压到饱和蓝上抬 51.3 级 ——
+					// 硬边几何叠层只在底色与高光颜色接近时才连续，底色一饱和立刻变成条带，
+					// 那圈"贴上去的白帽子"就是这么来的。**改底色不改高光等于没修。**
+					//
+					// 值取自系统实测的 .glassEffect(.regular.tint(.blue))：峰值是同色系更亮的一档
+					// （浅 #00C0FF / 深 #00CBFF），不是白 —— 蓝键的 R 通道从头到尾是 0，
+					// 掺白会把 R 拉起来，对不上。衰减也比无色档慢（.5 对 .45）。
+					//
+					// 这里写死了蓝：dsh 的强调色藏在 --dsw-alias-brand-primary → neutral-bluish
+					// 的别名链后面，而高光变量吃的是"通道三元组"（配 rgb(... / calc(...))），
+					// 塞不进一个 var(--色)。dsh 换主题色的话这圈边会偏色，到那时再说。
+					tinted + " {",
+					"  --dash-glass-glow-c: 0 192 255;",
+					"  --dash-glass-glow-t: 0.6;",
+					"  --dash-glass-glow-b: 0.6;",
+					"  --dash-glass-glow-d: 0.5;",
+					"}",
+					"body[data-ds-dark-theme] " + tinted + " {",
+					"  --dash-glass-glow-c: 0 203 255;",
 					"}",
 
 					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，

@@ -14,7 +14,8 @@ func load(_ p: String) -> ([UInt8], Int, Int) {
 let a = CommandLine.arguments
 let (A, w, h) = load(a[1]); let (B, _, _) = load(a[2])
 let s = Double(a[3])!, blk = Int((a.count > 4 ? Double(a[4])! : 5) * s), thr = a.count > 5 ? Int(a[5])! : 2
-var ox = w, oy = h
+// 找品红原点标记；真实 App 的截图没有标记，那就退回绝对坐标（0,0）。
+var ox = 0, oy = 0
 outer: for y in 0..<h { for x in 0..<w { let i=(y*w+x)*4
     if A[i] > 240 && A[i+1] < 20 && A[i+2] > 240 { ox = x; oy = y; break outer } } }
 var y = 0
