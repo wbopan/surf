@@ -404,3 +404,45 @@ Web 每个 ns 只露手挑的几个字段（`shell` 六个只露两个），这�
 **验收（M2/M3 的判据，这轮才真正跑通）**：在原生窗口点「深色」→
 `~/.dsh/settings.yaml` 的 `ui-theme.preference` 当场变成 `dark` →
 浏览器里开着的 dsh Web UI 实时换肤。改完已恢复原值。
+
+### M7 补齐两栏：智能体预设 + 插件列表 —— 2026-08-26 完成
+
+M6 说"编排照抄 Web"，但只抄了看得见的那一半。用户连着指出两处漏抄，两处都是
+**我没查就下结论**造成的：
+
+**一、智能体预设整栏漏掉。** 我当时判定"没有数据面"就跳过了——错的。
+`agent-presets` 这个 ns 里确实只有 `default` 一个字段，但预设画廊的数据根本不在
+settings 里，而在 `ctx.agentPresets`（`@deepseek-ai/dsh-agent-presets` 注册的服务）。
+教训：**"settings 里没有" ≠ "宿主没有"**，dsh 的服务面比设置面大得多，
+下"做不了"的结论前先 `ls ~/.dsh/profiles/node_modules/@deepseek-ai/`。
+
+顺带在这轮发现 `installPresets(api)` **只 import 了没有调用**——预设频道从来没推过，
+那一页即使写好了也永远是空的。node 半边没有 HMR，这种"少一行"不会有任何报错。
+
+**二、插件页只抄了 Plugin configuration，Plugin list 整栏漏掉。**
+补上之后与 Web 逐条比对过：171 条、Loader 顺序一致、29 条停用的名单与顺序一致。
+
+关于"能不能启停"——**Web 那边也不能**。`@deepseek-ai/dsh-host-plugin-inventory`
+的包描述就是 "Read-only Remote projection"，整个服务只有一个 `list()`；
+客户端包的 README 在 Known Limitations 里写死了 "Read-only Loader view … does not
+add plugin mutation controls"。那个「已启用/已停用」标签是编排表的**投影**，
+不是开关。所以这里也只显示不写——给一个点了不动的开关比没有开关糟得多。
+
+三个实测坑：
+
+1. **`SelfSizingScroll` 必须显式 `.defaultScrollAnchor(.top)`**。它先以无穷高布局
+   （那时 `measured` 还是 0），再被 `min(measured, maxHeight)` 收窄——收窄时 SwiftUI
+   默认保住的是**底部**锚点。症状是一进插件列表就停在第 171 条上，搜索框和标题都在
+   视口外，看着像"页面自己滚下去了"。
+2. **短名只砍第一个斜杠（scope 那个），不砍最后一个**。Web 把
+   `@deepseek-ai/dsh-tool-subagent-control/list-agents` 显示成
+   `tool-subagent-control/list-agents`；按最后一个斜杠切只剩 `list-agents`，
+   而列表里同时还有一个真正的 `tool-subagent-control`。
+3. **拿标题当 key 去比对两边的列表会得出假的差异**。Loader 里有四条都叫
+   `tool-subagent` 的条目，`{title: enabled}` 这种 map 后写覆盖前写，
+   于是我一度以为原生与 Web 对 `tool-bash` 的启用状态不一致——其实一模一样。
+   条目的身份是 `entryId`，不是显示名。
+
+**顺手对齐的一处**：`agent-presets.default` 的 schema 就是个自由字符串，照直渲染
+是个让人手敲 id 的文本框；Web 是下拉框且显示「标准模式」而不是 `standard`。
+预设清单这轮已经在手上，直接借过来做成 Picker，清单读不到时回落成文本框。

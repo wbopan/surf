@@ -20,6 +20,8 @@
  */
 import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
 import { installModels, setCredential, unsetCredential } from "./models.js";
+import { installPresets } from "./presets.js";
+import { installInventory } from "./inventory.js";
 
 /**
  * schemastery 的序列化壳子（`{uid, refs}`，refs 里每项是
@@ -116,6 +118,9 @@ export default createSwiftPlugin({
 
 		// 模型页的数据面：`llm` / `credentials` 到位才装，缺了只是那一页不出现。
 		installModels(api);
+		// 预设画廊、插件列表同理，各自可选：服务不在只是那一页说不可用。
+		installPresets(api);
+		installInventory(api);
 
 		api.pushSettings = pushSettings;
 	},
@@ -132,6 +137,8 @@ export default createSwiftPlugin({
 		refresh: async (payload, api) => {
 			api.pushSettings?.();
 			await api.pushProviders?.();
+			await api.pushPresets?.();
+			api.pushInventory?.();
 			ack(api, payload, { ok: true });
 		},
 

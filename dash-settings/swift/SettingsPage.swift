@@ -41,6 +41,7 @@ struct SettingsPage: View {
                     case .general: GeneralPage(model: model, openPath: openPath)
                     case .models: ModelsPage(model: model)
                     case .plugins: PluginsPage(model: model)
+                    case .presets: PresetsPage(model: model, openPath: openPath)
                     }
                 }
                 .frame(width: tab.width - 52, alignment: .leading)
@@ -81,6 +82,11 @@ struct SelfSizingScroll<Content: View>: View {
             content
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured = $0 }
         }
+        // **必须显式钉在顶上**：这个 ScrollView 先以无穷高布局一次（那时 measured
+        // 还是 0），再被 min(measured, maxHeight) 收窄——收窄时 SwiftUI 默认保住
+        // 的是**底部**锚点，于是一进插件列表就停在第 171 条上，搜索框和标题全在
+        // 视口外面。看着像"页面自己滚下去了"，其实是被裁的方向反了。
+        .defaultScrollAnchor(.top)
         .frame(height: measured <= 0 ? nil : min(measured, maxHeight))
         .scrollDisabled(measured <= maxHeight)
     }

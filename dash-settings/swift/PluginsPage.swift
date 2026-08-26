@@ -1,6 +1,53 @@
 import SwiftUI
 
-/// 「插件」页——对齐 dsh Web 的 Plugins → Plugin configuration。
+/// 「插件」页——对齐 dsh Web 的 Plugins，**两栏都要**。
+///
+/// Web 这一页顶上有两个 tab：Plugin configuration（能改的那些设置）和
+/// Plugin list（这套部署装了哪 171 个插件、启没启用、挂没挂上）。
+/// 先前只镜像了前者，整个后者漏掉了——两栏问的是完全不同的问题，
+/// "我能改什么" vs "我这儿到底跑着什么"，缺一栏就等于缺一半。
+///
+/// 分栏用 segmented picker 而不是再套一层 tab：`.preference` 工具栏已经是一层，
+/// 窗口里再来一条 tab 条就是两套导航打架。
+struct PluginsPage: View {
+    @ObservedObject var model: SettingsModel
+
+    /// 两栏。**默认停在配置栏**——那是唯一能改东西的一栏。
+    private enum Section: String, CaseIterable, Identifiable {
+        case configuration, inventory
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .configuration: return "插件配置"
+            case .inventory: return "插件列表"
+            }
+        }
+    }
+
+    @State private var section: Section = .configuration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("配置与查看这套部署里装着的插件。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Picker("", selection: $section) {
+                ForEach(Section.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("settings.plugins.section")
+
+            switch section {
+            case .configuration: PluginConfigurationList(model: model)
+            case .inventory: PluginInventoryList(model: model)
+            }
+        }
+    }
+}
+
+/// 「插件配置」——对齐 Web 的 Plugin configuration。
 ///
 /// 一个命名空间一张手风琴卡片：标题 + 一句说明 + 精选字段。Web 就三张
 /// （终端 / 智能体循环 / 网页搜索），排在前面；**其余 ns 排在后面而不是消失**
@@ -8,7 +55,7 @@ import SwiftUI
 ///
 /// **默认展开第一张**：Web 全部收起，进来是三条横杠什么也看不见。
 /// 一张卡片摊开着能告诉人"点开是这个样子"，这一点上不照抄。
-struct PluginsPage: View {
+struct PluginConfigurationList: View {
     @ObservedObject var model: SettingsModel
 
     private var namespaces: [NamespaceSnapshot] {
@@ -17,15 +64,16 @@ struct PluginsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("配置与查看这套部署里装着的插件。")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
             if namespaces.isEmpty {
                 Text("没有可配置的插件。").foregroundStyle(.secondary)
             } else {
-                ForEach(Array(namespaces.enumerated()), id: \.element.ns) { index, snapshot in
-                    PluginCard(model: model, snapshot: snapshot, initiallyOpen: index == 0)
+                // **按 ns 身份判定"第一张"而不是按下标**：`providers` 是后到的，
+                // 它一到 `pluginNamespaces` 的结果就变，下标跟着重排——于是先后有
+                // 好几张卡片当过 index 0，各自把自己记成"默认展开"，最后整页全摊开。
+                let first = namespaces.first?.ns
+                ForEach(namespaces, id: \.ns) { snapshot in
+                    PluginCard(model: model, snapshot: snapshot,
+                               initiallyOpen: snapshot.ns == first)
                 }
             }
         }

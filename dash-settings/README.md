@@ -1,21 +1,25 @@
 # dash-settings
 
 一扇真正的原生设置窗口：**窗框、导航、控件全是 AppKit/SwiftUI**，不加载任何网页。
-数据面由跑在 dsh 进程里的 node 半边直接消费 host 服务（`ctx.settings` /
-`ctx.llm` / credentials），桥上只走 JSON 快照与动作。
+数据面由跑在 dsh 进程里的 node 半边直接消费 host 服务（`ctx.settings` / `ctx.llm` /
+credentials / `ctx.agentPresets` / `ctx.pluginInventory`），桥上只走 JSON 快照与动作。
 
 权威计划在 [`docs/dash-settings-plan.md`](../docs/dash-settings-plan.md)——
 动手前先读它，尤其 §1（三条走不通的路，别重走）、§4（编辑器语义）、§5（三条红线）。
 
-**当前进度：M0～M6 全部完成**，功能可用，全链路实测过：在原生窗口点一下「深色」，
-`~/.dsh/settings.yaml` 当场变、浏览器里的 dsh Web UI 当场跟着换肤。
+**当前进度：M0～M7 全部完成**，四栏与 Web 逐条对齐。全链路实测过：在原生窗口点一下
+「深色」，`~/.dsh/settings.yaml` 当场变、浏览器里的 dsh Web UI 当场跟着换肤；
+插件列表 171 条、Loader 顺序与 29 条停用名单都与 Web 逐条比对一致。
 
 ```
-lib/index.js   快照往下推（describe → 有序 JSON）、单字段 op 往上收、ack 配对
-lib/models.js  模型页数据面：llm × credentials 运行时嵌套，缺了只是那一页不出现
-swift/         SettingsSchema/JSONValue（解码）· SettingsModel（状态）·
-               FieldView/ScalarListEditor（七种编辑器语义）·
-               NamespacePage/GeneralPage/ModelsPage（三类页面）· FieldNotes（注解表）
+lib/index.js     快照往下推（describe → 有序 JSON）、单字段 op 往上收、ack 配对
+lib/models.js    模型页数据面：llm × credentials，运行时嵌套
+lib/presets.js   预设画廊数据面：agentPresets（**不是** ctx.settings）
+lib/inventory.js 插件列表数据面：pluginInventory，只读
+swift/           SettingsSchema/JSONValue（解码）· SettingsModel（状态）·
+                 FieldRow/FieldControls/ScalarListEditor（七种编辑器语义）·
+                 GeneralPage/ModelsPage/PluginsPage/PresetsPage（四栏）·
+                 PluginInventoryList（插件列表）· FieldNotes（注解表）
 tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
 ```
 
@@ -43,19 +47,28 @@ modal。一个设置界面缺席时的正确姿态是让位给还能用的那个
 
 ## 编排照抄 Web，外壳照抄 macOS
 
-**内容编排以 dsh Web 设置对话框为准**（General / Models / Plugins 三栏，逐行同序同文案），
+**内容编排以 dsh Web 设置对话框为准**（General / Models / Plugins / Agent presets 四栏，
+逐行同序同文案；Plugins 底下 Plugin configuration 与 Plugin list 两小栏也都在），
 **窗框以 macOS 偏好设置为准**（`NSWindow.toolbarStyle = .preference` +
 `NSTabViewController(tabStyle: .toolbar)`，切页时窗口动画到该页的尺寸）。
 这两件事互不冲突：一致的是"东西在哪儿"，不是"长什么样"。
 
-映射表在 [`swift/SettingsTabs.swift`](swift/SettingsTabs.swift)，两处**有意的分歧**写在那里：
+映射表在 [`swift/SettingsTabs.swift`](swift/SettingsTabs.swift)，**有意的分歧**写在那里：
 
 | | Web | 这里 | 为什么 |
 |---|---|---|---|
 | 提交 | 每张卡片 Discard / Save | 即时生效 | 计划 D1，macOS 惯例 |
 | 字段 | 每个 ns 只露手挑的几个（`shell` 六个只露两个） | 精选照露，其余进「更多设置」折叠 | 零遗漏优先于一致（计划 §2.2） |
+| 命名空间 | 没手工登记过的整个藏掉 | 排在后面，不消失 | 同上 |
+| 默认预设 | 只在 General 的下拉框里改 | 另加预设卡片上的「设为默认」 | 画廊里选默认比回上一栏顺手 |
 
-**Agent presets 那一栏没做**：预设画廊不由 `ctx.settings` 驱动，我们没有那条数据面。
+三条数据面各有各的宿主服务，**缺一个只塌一页**（运行时 `ctx.inject` 嵌套）：
+模型页要 `llm` + `credentials`，预设页要 `agentPresets`，插件列表要 `pluginInventory`。
+
+**插件列表是只读的，Web 那边也是。** `@deepseek-ai/dsh-host-plugin-inventory`
+整个服务只有一个 `list()`，它的客户端包 README 把这条写死了——"Read-only Loader view …
+does not add plugin mutation controls"。那个「已启用/已停用」是编排表的**投影**，
+不是开关；真要启停得改编排表再重启。**给一个点了不动的开关比没有开关糟得多。**
 
 ## 字段文案从哪来
 

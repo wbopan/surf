@@ -15,7 +15,11 @@ import Foundation
 /// | General | `.general` | 五项，顺序与分隔线照搬 |
 /// | Models | `.models` | 只列已配置的 provider，38 个目录藏在"添加"后面 |
 /// | Plugins | `.plugins` | 手风琴卡片，每张一个 ns |
-/// | Agent presets | **缺席** | 预设画廊不由 `ctx.settings` 驱动，我们没有那条数据面 |
+/// | Agent presets | `.presets` | 预设画廊，数据来自 `ctx.agentPresets` |
+///
+/// （「智能体预设」一开始被我跳过了，理由是"不由 `ctx.settings` 驱动"——那句话对，
+/// 但结论错：它由 `ctx.agentPresets` 驱动，而那也是个 host 服务，我们本来就够得着。
+/// **没查就下结论，白丢了一整栏。**）
 ///
 /// **窗框不照抄**：Web 是模态框 + 左侧列表，原生这边是 `.preference` 工具栏
 /// （用户给的参考设计是 Mimestream / 系统偏好设置那一路）。编排一致 ≠ 外壳一致。
@@ -26,7 +30,7 @@ import Foundation
 ///    剩下的进「更多设置」折叠。**结构照抄，但不跟着丢字段**——计划 §2.2 的
 ///    零遗漏不变量比一致性优先级高：看不见的字段等于不存在。
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, models, plugins
+    case general, models, plugins, presets
 
     var id: String { rawValue }
 
@@ -35,6 +39,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "通用"
         case .models: return "模型"
         case .plugins: return "插件"
+        case .presets: return "智能体预设"
         }
     }
 
@@ -43,6 +48,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .models: return "cpu"
         case .plugins: return "puzzlepiece.extension"
+        case .presets: return "wand.and.stars"
         }
     }
 
@@ -51,6 +57,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return 620
         case .models: return 660
         case .plugins: return 660
+        case .presets: return 680
         }
     }
 }
@@ -97,7 +104,13 @@ enum SettingsTabs {
                 if modelNs.contains(snapshot.ns) { return false }
                 return !fullyConsumedByGeneral(snapshot)
             }
-            .sorted { rank($0.ns) < rank($1.ns) }
+            // **必须是全序**：只按 rank 排的话，表里没有的 ns 彼此 rank 相等，
+            // 而 Swift 的 sort 不保证稳定——同一份数据两次渲染能排出不同顺序。
+            // 实测后果是卡片会换位，而"默认展开第一张"跟着乱跳。
+            .sorted { a, b in
+                let (ra, rb) = (rank(a.ns), rank(b.ns))
+                return ra == rb ? a.ns < b.ns : ra < rb
+            }
     }
 
     private static func fullyConsumedByGeneral(_ snapshot: NamespaceSnapshot) -> Bool {

@@ -84,7 +84,7 @@ enum FieldNotes {
         ],
         "web-search-deepseek": [
             "apiKey": Note("API key", "存在设置文件之外。留空 = 保留现有的。"),
-            "baseUrl": Note("端点", "留空 = 用 provider 的默认值。"),
+            "baseURL": Note("端点", "留空 = 用 provider 的默认值。"),
             "maxUses": Note("每次请求最多搜几次", "一次请求在必须作答前最多搜几次。"),
         ],
 
@@ -134,7 +134,7 @@ enum NamespaceNotes {
                            featured: ["maxParallelToolCalls"]),
         "web-search-deepseek": Note(title: "网页搜索",
                                     summary: "DeepSeek 的搜索 provider。",
-                                    featured: ["apiKey", "baseUrl", "maxUses"]),
+                                    featured: ["apiKey", "baseURL", "maxUses"]),
 
         // 下面两个 Web 完全没露。**我们仍旧显示**（零遗漏），但至少给个人话标题
         // ——机械美化出来的 "Llm Pi Ai" / "Ui Onboarding" 谁也看不懂。

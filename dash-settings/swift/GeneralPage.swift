@@ -18,6 +18,13 @@ struct GeneralPage: View {
                     if row.ns == "ui-theme" {
                         // 外观在 Web 里是三张并排的卡片，不是下拉框。
                         AppearanceRow(model: model, snapshot: snapshot, path: row.path, node: node)
+                    } else if row.ns == "agent-presets", model.presetsAvailable, !model.presets.isEmpty {
+                        // 预设的 schema 就是一个自由字符串，照直渲染会得到一个让人
+                        // **手敲 id** 的文本框——敲错了没有任何提示，会话起不来才知道。
+                        // Web 那边是下拉框，而且显示的是「标准模式」这样的显示名而不是
+                        // `standard`。预设清单已经在手上（智能体预设页用的就是它），
+                        // 这里直接借过来。清单读不到时回落成文本框，总比没得填强。
+                        PresetPickerRow(model: model, snapshot: snapshot, path: row.path)
                     } else {
                         FieldRow(model: model, snapshot: snapshot, path: row.path, node: node)
                     }
@@ -95,5 +102,65 @@ struct AppearanceRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("settings.appearance.\(raw)")
+    }
+}
+
+/// 默认智能体预设：下拉框，显示名而不是 id。
+///
+/// **不做"当前值不在清单里就丢掉"**：配置里写着一个已经删掉的预设 id 时，
+/// 下拉框得照样显示它（标一句"清单里没有"），否则界面看起来一切正常，
+/// 而新会话正在用一个不存在的预设。
+struct PresetPickerRow: View {
+    @ObservedObject var model: SettingsModel
+    let snapshot: NamespaceSnapshot
+    let path: [String]
+
+    private var current: String {
+        if case .string(let value)? = snapshot.value.value(at: path) { return value }
+        return ""
+    }
+
+    private var missing: Bool {
+        !current.isEmpty && !model.presets.contains { $0.id == current }
+    }
+
+    var body: some View {
+        let status = model.status(snapshot.ns, path)
+        LabeledContent(FieldNotes.title(ns: snapshot.ns, path: path) + "：") {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Picker("", selection: Binding(
+                        get: { current },
+                        set: { model.set(ns: snapshot.ns, path: path, value: .string($0)) })) {
+                        ForEach(model.presets) { preset in
+                            Text(preset.displayName).tag(preset.id)
+                        }
+                        if missing {
+                            Text("\(current)（清单里没有）").tag(current)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(!model.writable || status.saving)
+                    .accessibilityIdentifier("settings.field.\(snapshot.ns).\(path.joined(separator: "."))")
+
+                    if snapshot.isOverridden(path: path) {
+                        Button {
+                            model.unset(ns: snapshot.ns, path: path)
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("退回默认")
+                    }
+                }
+                if let hint = FieldNotes.note(ns: snapshot.ns, path: path)?.hint {
+                    Text(hint).font(.caption).foregroundStyle(.secondary)
+                }
+                if let error = status.error {
+                    Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                }
+            }
+        }
     }
 }

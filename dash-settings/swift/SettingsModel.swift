@@ -64,6 +64,73 @@ struct ProviderRow: Identifiable {
     var id: String { provider }
 }
 
+/// 一条预设记录（智能体预设页）。
+struct PresetRow: Identifiable {
+    let id: String
+    /// `system` = 随部署附带，`user` = 用户自己写的。Web 按这个分 BUILT-IN / CUSTOM。
+    let trust: String
+    let path: String
+    let name: String?
+    let description: String?
+    let order: Int?
+    /// 非 nil = 这个预设是坏的，值就是原因。**照样列出来**：它正是用户要来修的那个。
+    let broken: String?
+
+    var displayName: String { name ?? id }
+    var isBuiltIn: Bool { trust == "system" }
+}
+
+/// 一条 Loader 条目（插件列表页）。
+///
+/// **全部只读**：数据来自上游 `pluginInventory`，那个服务只有 `list()`。
+/// 「已启用/已停用」是编排表的投影，不是开关——详见 `lib/inventory.js` 的注释。
+struct InventoryEntry: Identifiable {
+    /// Loader 树里的稳定身份，形如 `include:hmr`。也是搜索的一个目标。
+    let entryId: String
+    /// Loader 真正 import 的那个模块说明符。
+    let moduleName: String
+    /// 生效的启用状态，**已经把停用的祖先分组算进去了**。
+    let enabled: Bool
+    /// root Fiber 的生命周期；nil = 没有活着的 root Fiber。
+    let fiberPhase: String?
+
+    var id: String { entryId }
+
+    /// 卡片标题用的短名，照 Web：去掉 scope，再去掉 `dsh-` / `cordis-plugin-` 前缀。
+    /// 实测 `@deepseek-ai/dsh-jobs-local` → `jobs-local`，`cordis:include` → `include`。
+    ///
+    /// **只砍第一个斜杠（scope 那个），不砍最后一个**：子路径出口是名字的一部分，
+    /// `@deepseek-ai/dsh-tool-subagent-control/list-agents` 在 Web 上显示成
+    /// `tool-subagent-control/list-agents`；按最后一个斜杠切会只剩 `list-agents`，
+    /// 而列表里同时还有一个真正的 `tool-subagent-control`，两条就分不清谁是谁了。
+    var shortName: String {
+        var name = moduleName
+        if name.hasPrefix("@"), let slash = name.firstIndex(of: "/") {
+            name = String(name[name.index(after: slash)...])
+        }
+        // `cordis:include` 这种带命名空间冒号的，冒号前面是来源不是名字。
+        if let colon = name.lastIndex(of: ":") { name = String(name[name.index(after: colon)...]) }
+        for prefix in ["cordis-plugin-", "dsh-"] where name.hasPrefix(prefix) {
+            name.removeFirst(prefix.count)
+            break
+        }
+        return name.isEmpty ? moduleName : name
+    }
+
+    /// Cordis 状态的中文说法。**照抄上游 zh 词典**（`dsh-client-ui-settings-plugin-inventory`
+    /// 的 locales），两边说的是同一件事就该用同一个词。
+    var phaseLabel: String {
+        switch fiberPhase {
+        case "pending": return "等待依赖"
+        case "loading": return "加载中"
+        case "active": return "已挂载"
+        case "failed": return "挂载失败"
+        case "unloading": return "卸载中"
+        default: return "未挂载"
+        }
+    }
+}
+
 /// 一个字段当前的写入状态。失败时**保留用户输入**并显示原因，不清空重来
 /// （计划 §4.3）。
 struct FieldStatus {
@@ -87,8 +154,18 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var writable = true
     /// 有没有可打开的配置文件。非文件型 provider 没有——那就别给按钮。
     @Published private(set) var hasDocument = false
-    /// `llm` 在不在场。不在 = 模型页整个不出现。
+    /// `llm` 在不在场。不在 = 模型页说明原因而不是显示一个空列表。
     @Published private(set) var modelsAvailable = false
+    /// 预设画廊。
+    @Published private(set) var presets: [PresetRow] = []
+    @Published private(set) var presetsAvailable = false
+    /// 当前默认预设的 id（`agent-presets.default` 的解析值）。
+    @Published private(set) var defaultPresetId: String?
+    /// Loader 条目清单（插件列表页）。**保持 host 给的 Loader 顺序**。
+    @Published private(set) var inventory: [InventoryEntry] = []
+    @Published private(set) var inventoryAvailable = false
+    /// 读失败的原因。Web 那边是一句"暂时无法读取插件"+ 重试，我们照做但把原因也摆出来。
+    @Published private(set) var inventoryError: String?
     /// 首帧到了没有。没到就显示"连接中"，而不是显示一个空列表说"没有设置"。
     @Published private(set) var loaded = false
     /// 每个字段（ns + 路径）的写入状态。
@@ -120,6 +197,8 @@ final class SettingsModel: ObservableObject {
         switch channel {
         case "settings": applySettings(payload)
         case "providers": applyProviders(payload)
+        case "presets": applyPresets(payload)
+        case "inventory": applyInventory(payload)
         case "ack": bridge.handleAck(payload)
         default: log("不认识的频道：\(channel)")
         }
@@ -179,6 +258,44 @@ final class SettingsModel: ObservableObject {
                 credentialConfigured: credential?["configured"] as? Bool,
                 credentialWritable: credential?["writable"] as? Bool ?? false,
                 credentialSource: credential?["source"] as? String)
+        }
+    }
+
+    private func applyPresets(_ payload: [String: Any]) {
+        presetsAvailable = payload["available"] as? Bool ?? false
+        defaultPresetId = payload["defaultId"] as? String
+        let raw = payload["presets"] as? [[String: Any]] ?? []
+        presets = raw.compactMap { item in
+            guard let id = item["id"] as? String else { return nil }
+            return PresetRow(id: id,
+                             trust: item["trust"] as? String ?? "user",
+                             path: item["path"] as? String ?? "",
+                             name: item["name"] as? String,
+                             description: item["description"] as? String,
+                             order: item["order"] as? Int,
+                             broken: item["broken"] as? String)
+        }
+        // 排序照 Web：先内建后自定义，组内按 order（没有的排后面），再按显示名。
+        // **不靠 host 给的顺序**——`list()` 是逐 root 扫出来的，root 顺序变了它就变。
+        presets.sort { a, b in
+            if a.isBuiltIn != b.isBuiltIn { return a.isBuiltIn }
+            let (oa, ob) = (a.order ?? Int.max, b.order ?? Int.max)
+            return oa == ob ? a.displayName < b.displayName : oa < ob
+        }
+    }
+
+    private func applyInventory(_ payload: [String: Any]) {
+        inventoryAvailable = payload["available"] as? Bool ?? false
+        inventoryError = payload["error"] as? String
+        let raw = payload["entries"] as? [[String: Any]] ?? []
+        // **不排序**：Loader 序就是编排表里的装载顺序，本身有信息量
+        //（谁在谁前面装是能解释依赖的），按字母重排等于把它丢掉。
+        inventory = raw.compactMap { item in
+            guard let entryId = item["entryId"] as? String else { return nil }
+            return InventoryEntry(entryId: entryId,
+                                  moduleName: item["moduleName"] as? String ?? entryId,
+                                  enabled: item["enabled"] as? Bool ?? false,
+                                  fiberPhase: item["fiberPhase"] as? String)
         }
     }
 
