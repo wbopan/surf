@@ -1,5 +1,5 @@
 #!/bin/bash
-# postBuild：把共享 module 摆进 app bundle，然后重新签名。
+# postBuild：把共享 module（目前只有 DashSDK）摆进 app bundle，然后重新签名。
 #
 #   Contents/Frameworks/lib<M>.dylib        ← 壳按 @rpath 加载的那一份
 #   Contents/Resources/DashModules/         ← 运行时编译插件用的 .swiftinterface/.swiftmodule
@@ -20,7 +20,7 @@ MODULES="$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/DashModules"
 
 mkdir -p "$FRAMEWORKS" "$MODULES"
 
-for module in DashSDK DSHKit; do
+for module in DashSDK; do
   cp -f "$SRC/lib$module.dylib" "$FRAMEWORKS/"
   # .swiftmodule 优先（同一 toolchain，编译更快）；.swiftinterface 是
   # toolchain 变动后的兜底，两个都给。
@@ -32,4 +32,4 @@ done
 
 # 重新封印整个 bundle。
 codesign --force --sign - --timestamp=none "$APP"
-echo "embed-modules: DashSDK/DSHKit → $WRAPPER_NAME"
+echo "embed-modules: DashSDK → $WRAPPER_NAME"

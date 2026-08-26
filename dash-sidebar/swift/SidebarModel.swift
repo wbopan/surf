@@ -1,8 +1,10 @@
 import Foundation
 import SwiftUI
 
-// 侧边栏的数据面：一个窄协议，AppSidebarModel 把 DSHKit.SessionStore 适配进来。
-// 值类型在本文件定义，让视图不必反向依赖协议客户端的实现细节。
+// 侧边栏的数据面：一个窄协议，AppSidebarModel 把 node 半边推下来的投影适配进来。
+// 值类型在本文件定义，让视图不必反向依赖 wire 形状——M10 把数据源从
+// DSHKit.SessionStore 换成桥上的 JSON 时，本文件与 SidebarView 一行没动，
+// 这道窄口子就是为此存在的。
 // （M6 前这些住在 Packages/DSHSidebarUI，随插件化整体迁入。）
 
 /// 会话状态点（对齐 web 侧边栏语义）。
@@ -52,7 +54,7 @@ public struct SidebarGroup: Identifiable, Equatable {
     }
 }
 
-/// 侧边栏数据 + 选择模型（ObservableObject，由宿主适配 DSHKit.SessionStore）。
+/// 侧边栏数据 + 选择模型（ObservableObject，由 AppSidebarModel 实现）。
 @MainActor
 public protocol SidebarModel: ObservableObject {
     /// 按上游顺序排列的分组（已滤除归档）。

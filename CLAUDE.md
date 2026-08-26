@@ -24,13 +24,14 @@ dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
-  host/            Xcode 工程载荷：project.yml / Sources/ / Packages/DSHKit / scripts/ / tools/
+  host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
 dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
                    （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏。**数据面在 node 半边**
+                   （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
                    按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
                    （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
@@ -99,7 +100,15 @@ dash-app/host/scripts/dev.sh [--quit-release]
 dash-app/host/scripts/build.sh [--keep-open]
 ```
 
-无测试套件（`Packages/DSHKit` 里有几个解码单元测试，不在常规流程里跑）。
+无测试套件。唯一一处单元测试在 dash-sidebar 的 node 半边（分叉标题规则 +
+会话数据源的分组/去抖/翻牌行为，后者拿假 apiProxy 跑，不需要 dsh）：
+
+```sh
+node --test dash-sidebar/test/*.test.js   # 零依赖、约 2s，不在常规流程里跑
+```
+
+给 `--test` 一个**目录**在 node 26 上会直接 `MODULE_NOT_FOUND`（它去 require 那个
+目录本身而不是遍历），别省那个通配符。
 Debug 与 Release 是两个不同 App，可并存运行：
 
 | | Debug（日常开发） | Release（正式） |
@@ -177,10 +186,10 @@ AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 w
 `.accessibilityElement(children: .ignore)` + 显式 label 收口的；
 加新 identifier 后**务必 dump 一次 AX 确认没被拼重**。
 
-## 共享 module（DashSDK / DSHKit）
+## 共享 module（DashSDK）
 
-这两个 module 必须**全进程只有一份**：壳链接它们，运行时编出来的插件 dylib 也链接同一份
-（经 app bundle 内的同一个文件），类型身份才对得上。所以它们不走 SwiftPM 静态链接进壳，
+共享 module 必须**全进程只有一份**：壳链接它，运行时编出来的插件 dylib 也链接同一份
+（经 app bundle 内的同一个文件），类型身份才对得上。所以它不走 SwiftPM 静态链接进壳，
 而是：
 
 ```
@@ -191,6 +200,10 @@ scripts/embed-modules.sh   → Contents/Frameworks/lib<M>.dylib（壳按 @rpath 
 ```
 
 两个脚本都挂在 project.yml 的 pre/postBuildScripts 上，源码没变则秒过。
+机制本身是多 module 的，**但眼下只剩 DashSDK 一个**：另一个曾经的住户 DSHKit
+（dsh 的 wire 模型 + 会话镜像）随 M10 整体退役——数据面搬进 dash-sidebar 的 node
+半边了。`embed-modules.sh` 只拷不删，所以在旧的 `build/` 里可能还躺着
+`libDSHKit.dylib` 的残骸；`rm -rf build` 重来一次就干净了。
 **改 DashSDK 会让所有插件的 contentHash 失效、全量重编**（工具链指纹里含它的
 `.swiftinterface` 摘要），这是对的：`.swiftmodule` 对不上比慢几秒糟得多。
 

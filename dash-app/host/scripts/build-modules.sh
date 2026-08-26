@@ -1,9 +1,12 @@
 #!/bin/bash
-# 共享 module 编译：DashSDK 与 DSHKit。
+# 共享 module 编译。**目前只有 DashSDK 一个**（M10 之后 DSHKit 已退役）。
 #
-# 这两个 module 必须**全进程只有一份**——壳链接它们，运行时编出来的插件 dylib
-# 也链接它们（经 app bundle 内的同一个文件），类型身份才对得上。所以它们不能
-# 走 SwiftPM 静态链接进壳，而是各自编成一个 dylib 随 bundle 分发。
+# 共享 module 必须**全进程只有一份**——壳链接它，运行时编出来的插件 dylib
+# 也链接它（经 app bundle 内的同一个文件），类型身份才对得上。所以它不能
+# 走 SwiftPM 静态链接进壳，而是编成一个 dylib 随 bundle 分发。
+#
+# 机制本身仍是多 module 的（`build_module` 可以再加一行），只是眼下没有第二个：
+# 会话数据面搬进 dash-sidebar 的 node 半边之后，DSHKit 没有消费者了。
 #
 # 产物落 host/build-sdk/（不入库）：
 #   lib<M>.dylib / <M>.swiftmodule / <M>.swiftinterface / <M>.swiftdoc
@@ -60,5 +63,4 @@ build_module() { # build_module <module 名> <源码目录...>
 # ${OUT} 的花括号不是风格问题：bash 3.2（macOS 自带）在 UTF-8 locale 下会把
 # 紧跟其后的全角字符吞进变量名，配上 set -u 就是 "OUT\357: unbound variable"。
 echo "==> 共享 module（${OUT}）"
-build_module DSHKit  Packages/DSHKit/Sources/DSHKit
 build_module DashSDK Sources/DashSDK

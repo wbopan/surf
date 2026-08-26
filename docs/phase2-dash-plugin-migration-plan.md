@@ -91,7 +91,8 @@ App 叫 **dash**。插件前缀 `dash-*`。Swift module 前缀 `Dash*`。改名�
 - widget extension / 编译期贡献接口(dash-app v2)、壳自更新(Sparkle)。
 - 多 seat / 多客户端并发语义;launchd 化 dsh。
 - **原生通知**(2026-08-25 决策,见 §7.3):连同现有实现一并丢弃,不在本阶段范围内。
-- sidebar 数据面迁 TS 半身、DSHKit 退役(M10);设置面板插件化;`session.search` 内容搜索等 phase1 已后置项。
+- ~~sidebar 数据面迁 TS 半身、DSHKit 退役(M10)~~ **2026-08-26 补做,见 §7.2.3**;
+  设置面板插件化;`session.search` 内容搜索等 phase1 已后置项。
 - 性能优化:拓扑同层并行编译、registry 按键精细观察——先糙后精,验收只看功能与门控预算。
 
 ---
@@ -307,7 +308,10 @@ SDK 作为**概念**存在(壳↔插件的 ABI 词汇 + 插件作者的 TS 工�
 - `protocol DashPlugin`:`activate(host: DashHost)`,返回可选 handle;**无强制的快照方法**(状态外置见下)。
 - `DashHost`(壳实现,递给插件):
   - `registry`:`@Observable` 槽注册表——`register(slot:factory:)`(effect 式,返回撤销闭包)、`view(for:)`、每键版本号。**只放拓扑**。
-  - `objects`:宿主对象保管箱(`[String: AnyObject]`,只放系统/SDK 类型实例——WKWebView、DSHKit SessionStore 等,跨代直通存活)。
+  - `objects`:宿主对象保管箱(`[String: AnyObject]`,只放系统/SDK 类型实例——WKWebView、
+    `NSDictionary` 形态的快照等,跨代直通存活)。
+    (M6~M9 一度也放 `DSHKit.SessionStore`,那是"共享 module 的类型也算数"这条例外;
+    M10 之后箱里只剩系统类型,见 §7.2.3。)
   - `store`:per-plugin 命名空间的 `persist/recall`(`Data` + `try?` JSONDecoder,尽力而为;真卸载清空、替换保留)。
   - `events`:进程内 EventBus(几十行;subscribe token 绑插件世代,替换时由壳批量吊销,防幽灵监听)。
   - `bridge`:向自己的 TS 半身收发信封消息(`send(channel:payload:)` / `onMessage`,MainActor 派发)。
@@ -570,8 +574,8 @@ xcrun swiftc \
 - **数据面(分两步,降低单里程碑变量数)**:
   - M6(本阶段):保留 DSHKit——壳构造 `SessionStore`(现成、已验证,baseURL 来自 endpoint)放进保管箱;
     sidebar 从保管箱取(DSHKit 类型属"壳/SDK 侧定义",跨代安全)。DSHKit 包暂留 `dash-app/host/Packages/`。
-  - M10(后续可选):数据面迁 TS 半身(宿主服务 `sessions.list()`/`sessionProjections`/`workspaceRegistry` +
-    `session/*` 事件,经桥推送),DSHKit 镜像退役。收益是架构一致与 iOS 远程线地基;风险是内部服务 preview 稳定性。
+  - M10(**已交付 2026-08-26**):数据面迁 node 半身,DSHKit 整体退役。实做与本行的猜测
+    出入不小(尤其"调哪些宿主服务"),以 §7.2.3 为准。
 - 动作面:`activate` → layout 的 `conversationSurface`(registry 取);`archive` → 现 DSHKit
   `workspace.archiveSession`;新建 → `conversationSurface.startSession`。选中真相在 harness 侧,
   页内 `currentSession` 上报回流高亮(现有机制不变);store 只存滚动/展开 hint。
@@ -629,9 +633,76 @@ xcrun swiftc \
   `workspace.delete{workspaceId}`、`workspace.insertBefore`、
   `workspace.insertSessionBefore`、`session.fork{sessionId,atSeq?}` → `{sessionId}`、
   `session.search{query}` → `{items:[{sessionId,snippet}], hasMore}`(上限 20)。
-- **fork 的标题递增在数据层复刻**(`SessionStore.increasedForkTitle`,含单元测试):
-  上游把它放在 client runtime 的 `fork(increaseTitle:true)` 里,wire 上只有
-  `session.fork` + 一次 `session.rename`。两个界面分叉出来的会话必须同名。
+- **fork 的标题递增在数据层复刻**(含单元测试):上游把它放在 client runtime 的
+  `fork(increaseTitle:true)` 里,wire 上只有 `session.fork` + 一次 `session.rename`。
+  两个界面分叉出来的会话必须同名。
+  (M11 第一批落在 `SessionStore.increasedForkTitle`;M10 随数据面迁到
+  `dash-sidebar/lib/fork-title.js`,用例一并搬去 `test/`。)
+
+#### 7.2.3 M10 实做与本节的偏差(已交付 2026-08-26,以此段为准)
+
+数据面从 DSHKit 迁进 dash-sidebar 的 **node 半边**,DSHKit 整体退役。
+动机是分层:壳与共享 module 随 app bundle 冻结、用户改不了,而 DSHKit 装的
+偏偏是随 dsh 版本演进最快的 wire 模型——层放错了。node 半边住在 dsh 进程里、
+随 npm 可更新,且 Swift 插件怎么热替换它都不动。
+
+- **走 `ctx.apiProxy`,不是 §1.6 猜的 `sessions`/`sessionProjections`/`workspaceRegistry`。**
+  后者那条路要自己重写一大段上游逻辑,四条实测理由(2026-08-26 读 0.1.1-rc.2 源码):
+  1. **`ctx.sessions.list()` 只返回进程内活着的会话**,不是历史列表。侧边栏绝大多数行
+     是冷会话,得自己合并 `sessionPersistence.list()` 并丢掉没记 cwd 的。
+  2. **`Session`/`SessionHeader` 上没有 title / running / blank / updatedAt**——四个全是
+     派生的:title 走 `sessionProjections`(冷会话还要走 projection cache),running 看
+     `ctx.agents.get(id)?.status`,blank 看有没有 `turn/start` 事件(冷会话要读 log,
+     还有 1KB 探测上限),updatedAt 要扫最后一条用户消息。
+  3. **`workspaceRegistry` 上没有 `rename`**(在 Workspace 实体上叫 `setTitle`),
+     而重名冲突检查根本不在 registry 里,是 wire 层自己做的。
+  4. **`session.fork` ≠ `ctx.sessions.fork()`**:wire 那个要对齐 `turn/end` 边界、走
+     `ctx.agents.create({seed})`、还要继承 workspace(subagent 还得沿祖先链找)。
+
+  `ctx.apiProxy`(`dsh-host-apiproxy` 的 `ApiProxyService`)是 `/api` 那套方法的
+  **同进程实现本体**,HTTP carrier 只是包了它一层,上游明写着 "transport-agnostic
+  by design"。调它 = 与 web UI 逐字节同源、零网络、零重复实现,而且 DSHKit 当年解的
+  那些 JSON 正是它的返回值——迁移因此是"换调用方式",不是"重写数据层"。
+  形状:`ctx.apiProxy.<域>.<方法>({rpcId, payload})` → `{rpcId, result:{ok,value|error}}`,
+  `rpcId` 只是被原样回显的字符串。
+- **服务走作用域 `ctx.inject(["apiProxy"], cb)`,不写进插件顶层 `inject`。** 顶层就是
+  硬依赖,dsh 换版本改了服务名会让整个侧边栏(连同 Swift 半身)**安静地不挂载**。
+  作用域版最坏情况是空列表 + 一行 warn;另加一个 10s 哨兵,回调没跑就打日志。
+- **事件:node 侧的 cordis 事件名 ≠ wire 帧名。** 实际订的四条:
+  `session/created`、`session/disposed`、`session/event`、`agent/status`
+  (**running 在 dsh-agent,不在 dsh-session**)、`domain/changed`(`domain==="workspace"`
+  ——**workspaceRegistry 一个 cordis 事件都不发**,这是唯一来源,apiproxy 自己也是
+  这么转 `host/workspace-*` 帧的)。
+- **审批点从 session log 事件推导**(`approval/asked` / `approval/decided`),
+  **绝不订 `approval/request`**——那是个 waterfall 抢答钩子,插一脚会和 apiproxy
+  抢着回答用户的审批。
+- **`pendingQuestion`(紫点)本次没有实现,是已知缺口。** `ask_user_question` 在 node 侧
+  既不发 cordis 事件也不落 session log,唯一观察位 `userQuestions.registerProvider`
+  是**独占**的,apiproxy 已占着——抢过来等于掐掉 web UI 的问答面板。补的正路是订
+  `ctx.apiProxy.events.mux()`(同进程 async iterable,等价于多开一个浏览器标签页)。
+- **桥上只有全量 snapshot,没有增量帧**;增量留在了**数据源那一层**。两件事别混:
+  进程内组投影是纯遍历(便宜),而向 dsh 要数据要遍历持久化目录 + 探测冷会话 blank
+  (贵)。所以结构类变化去抖 400ms 重取一次(沿用 DSHKit 的窗口),状态类变化
+  (running / 待审批)就地改缓存那一行、立刻推。Swift 那边因此零合并逻辑。
+- **跨代不闪列表换了个存法**:上一代把最后一份 snapshot 以 `NSDictionary` 存进保管箱,
+  新一代先拿它渲染再等 fresh 全量。M6 时箱里放的是 `DSHKit.SessionStore` 实例
+  ——那是靠"DSHKit 也是共享 module"才敢开的例外,M10 之后连例外都不需要了:
+  箱里只有系统类型,投影的 struct 每代自己 decode,实例永不过界(M2 断言 4)。
+- **可见性过滤留在显示层**:投影原样带 `blank` / `isSubagent`,Swift 的
+  `AppSidebarModel.visible` 负责滤——"列表里显示什么"是 UI 政策。归档相反,
+  是数据事实,在 node 侧就滤掉。兜底组标题同理:数据层给空串,「未分组」归显示层。
+- **搜索没有迁**:Swift 侧那个搜索框一直是客户端标题/组名子串过滤,从来没走过 DSHKit。
+  顺带核实:上游的 `session.search` 在本机部署里**等于禁用**
+  (`dsh-base`/`dsh-web-app` 都把 `session-query-sqlite` 配成 `openAt: never`,
+  调用直接抛 `SESSION_QUERY_SEARCH_DISABLED`),web 侧边栏的搜索**也是**纯前端标题
+  匹配。§7.2.2 第二批"后端全文搜索"因此需要先改 profile 配置,不是接个 API 就有。
+- **分叉标题递增移回 JS**(`lib/fork-title.js` + `test/fork-title.test.js`),
+  对着上游 `dsh-client-runtime` 的原文核过:两条正则一致,加一改用 **BigInt**
+  (DSHKit 那份用 Int)。用例从 DSHKit 的 `ForkTitleTests.swift` 逐条搬过来。
+- **DSHKit 退役**:`Packages/DSHKit/` 整包删除(含 `dshkit-cli` 与解码单元测试),
+  `build-modules.sh` / `embed-modules.sh` / `project.yml` 三处引用摘除。
+  壳自 M6 起就没 `import DSHKit`,`otool -L` 确认二进制不再链接它。
+  共享 module 机制本身保留(多 module 的),只是眼下只剩 DashSDK 一个住户。
 
 ### 7.3 ~~dash-notifications~~ —— 已放弃(2026-08-25)
 
@@ -739,7 +810,8 @@ dash-layout 的 client 半边(Swift 侧 `WebViewConversationSurface` 是它们�
 | ~~M7~~ | ~~dash-notifications 迁移~~ | 🗑 **已放弃**(2026-08-25):通知线整体丢弃,`EventsBridge.swift` 直接删除,不迁移(§7.3) | —— |
 | M8 | 壳收缩收尾 | ✅ **已完成** dash-app v1(盯壳源码 → 后台重建 → `app-build` 播报 → 提示条 + 一键重启);⌥⌘D 诊断面板;README/CLAUDE.md 重写;双侧 DOM DIAG 探针删除 | ✅ 改壳源码 → 2s 内发现、1.6~2.5s 重建、右上角提示;`restartOnRebuild` 打开时 pid 92151 → 92403 **一次干净的重启**(修掉补发导致的无限重启环);诊断面板内容经 System Events 读取核对 |
 | M9 | 治理硬化 | 审批+hash 审计;账本阈值+空闲自重启;协议 clientId/seat 字段 | 外来插件首编弹确认;账本可查;阈值触发自重启验证 |
-| M10+ | 后续(不阻塞收官) | sidebar 数据面迁 TS 半身、DSHKit 退役;`setNativeSidebar` 免重载;dash-app v2(编译期贡献接口,§7.5);launchd 化 dsh;iOS 远程线(复用桥协议) | 各自独立验收 |
+| M10 | sidebar 数据面迁 node 半身(§7.2.3) | ✅ **已完成** `dash-sidebar/lib/{index,dsh-source,fork-title}.js`;桥协议 3 频道 + 7 动作;Swift 半身零数据逻辑;`Packages/DSHKit` 整包退役 | ✅ 摘掉 DSHKit 后壳 clean build 通过且 `otool -L` 不再链接它、bundle 里只剩 DashSDK;插件 Swift 按 CompilerService 的参数手工编译通过并导出 `dash_plugin_entry`;node 半边 16 条用例(分叉标题 7 + 数据源行为 9)全过 |
+| M10+ | 后续(不阻塞收官) | `setNativeSidebar` 免重载;dash-app v2(编译期贡献接口,§7.5);launchd 化 dsh;iOS 远程线(复用桥协议);侧边栏紫点(§7.2.3 已知缺口) | 各自独立验收 |
 | M11 | 侧边栏与官方对齐(§7.2.2) | 分四批:①工作区增删改名 + 会话行右键菜单(重命名/分叉/归档) ②后端全文搜索 ③视图选项(分组/排序)+ 状态位补全 ④拖拽排序 | 每批独立验收;形态一律右键菜单 + 区段头 + 号(HIG),web 那些展示细节(相对时间/组内 5 条上限/hover 卡片/blank 行)明确不跟 |
 
 顺序:M0 → M1 → M2 → M3 → M4 → M5 → M6 → ~~M7~~ → M8 → M9;
@@ -784,7 +856,7 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | MainWindowController.swift | 882→799→**665** | M1 换成"三级定位+2s 健康轮询";M5 交出布局:分栏/侧边栏装配/工具栏/自适应折叠全部移入 dash-layout,壳只剩窗口 + 菜单 + 连接状态机 + root 槽挂载 + 页内桥转 EventBus |
 | HarnessProcess/Manager + NodeResolver/Semver/Shell | 711 | ✅ M1 全部退役删除(`Shell` 实测无其它引用面,一并删;`Log` 保留)。新增 `DashPaths`(28)+`DashEndpoint`(105)接手 |
 | EventsBridge.swift | 223→235→**0** | M1 把 `init(port:)` 改成 `init(baseURL:)`;WS 重连模式已被 BridgeClient 借鉴。**2026-08-25 整件删除**——通知线放弃,不迁 dash-notifications(§7.3) |
-| DSHKit | 686 | ✅ M3 升为随 bundle 分发的**共享 dylib**(壳与插件链同一份);源码仍在 `Packages/DSHKit/`(单元测试还在那儿),但不再是 SwiftPM 依赖。M10 视 TS 数据面进展退役 |
+| DSHKit | 686→**0** | M3 升为随 bundle 分发的共享 dylib。✅ **M10 整包删除**:数据面搬进 dash-sidebar 的 node 半边(`ctx.apiProxy`),Swift 侧再无 `import DSHKit`,三处构建引用一并摘除。`increasedForkTitle` 与它的用例移植成 `dash-sidebar/lib/fork-title.js` + `test/`;`dshkit-cli` 与解码单元测试随包删除(git 历史里可捞) |
 | DSHSidebarUI + AppSidebarModel | 525 | ✅ M6 迁入 `dash-sidebar/swift/`(577 行,近原样;`ConversationSurface`→`DashConversationSurface`,`#if DEBUG`→bundle id 判定),`Packages/DSHSidebarUI` 整包删除 |
 | dsharness-web-adapter | 466 | →dash-web-adapter(改名搬家,功能不动) |
 | BootstrapViewController | 123→178 | M1 已扩建出 guide 态(标题+说明+可拷贝 `dsh web`+重试)。M8 决定**不再往里塞诊断**——改成独立的 `DiagnosticsPanel`(⌥⌘D),理由见 §7.5.1-5 |
@@ -808,3 +880,4 @@ M2 是唯一的"证伪点"(可与 M1 并行),其余为工程量。每个里程�
 | 2026-08-25 | (重构) | (本次) | **dash-web-adapter 拆分改名**。按契约归属切开:动作桥/收侧边栏/rail 抵消 → dash-layout 的 client 半边(dash-layout 由此成为**首个双面包的 Swift 载荷插件**:`dsh.client` + `swift/` 并存);纯样式 → `dash-nativeify`,并删净网页侧边栏外观调整(topInset/玻璃透出)与 `ui-dash-adapter` row 的 config。研究结论:`dsh.client.inject` 在 0.1.1-rc.2 **无消费者**(node 侧塞进 `manifest.plugins[].inject`,web shell 的 `runPluginBoot` 只读 `id`、`prefetchImmediateTier` 只读 `immediately`),真正的 bundle 排序字段是 `dsh.client.external`;两个 client 半边的 `exports.inject` 都保持 `[]`,服务依赖一律走作用域 `ctx.inject`。就地更新:§7.4、CLAUDE.md、根 README。|
 | 2026-08-25 | (能力补齐) | (本次) | **WebView 的下载与外链**。壳只装了 `didFinish/didFail` 三个通知型回调,既没有导航策略也没有 `uiDelegate`,于是 dsh 的**导出 ZIP**(`<a download>` → `Content-Disposition: attachment` → 导航被 policy 中断)与**全部 `target="_blank"`**(正文 Markdown 外链、搜索来源、trajectory"打开图片")一律静默失效——前端还会弹"浏览器正在下载"的成功框,是假成功。新增 `Sources/Native/WebPolicy.swift`(策略 + WKDownloadDelegate + WKUIDelegate + 次级窗口)与 `Sources/ShellToast.swift`(一次性浮条,右上角与更新提示条共用一个竖直 stack)。要点:同源留在壳内、跨源交 `NSWorkspace`、scheme 白名单(http/https/mailto)、下载固定落 `~/Downloads` 并同名加 `-1`、完成后发 `com.apple.DownloadFileFinished` 让 Dock 弹跳;同源新窗口开一扇真窗而不是在主 WebView 里 load(否则会把会话页顶掉且无后退 UI)。防御性补齐 `runOpenPanelWith` 与三个 JS panel(dsh 当前不用,但缺了就是同一种沉默失败)。**归壳不归插件**:逃生舱模式也得能下载,且 delegate 归属已由 §7.1.1-5 定死。实测:导出 ZIP 端到端落盘并弹浮条、同名唯一化生效;外链/新窗口/非法 scheme 四条分支经 `docs/spikes/webpolicy/`(可复跑)全部按预期。就地更新:CLAUDE.md(壳职责一句话、Native 文件清单、两条踩坑)。|
 | 2026-08-26 | (扩展性补齐) | (本次) | **原生插件扩展点去冻结**。壳将以预编译产物分发,第三方物理上改不了壳与 SDK,所以三处"要加东西就得改已有代码"的墙在冻结前拆掉。① SDK 新增 `DashContributions`(`Sources/DashSDK/DashContributions.swift`):多占用"贡献槽",与单占用的 `DashRegistry` 并列而不是合并——两者的撤销语义与观察粒度都不一样,混在一个类型里两边 API 都会变得要看注释才敢用。`(owner, id)` 是身份(同身份再注册=覆盖自己旧条,即换代姿势;dispose 走 token 比对只摘自己那条),`order` 升序 + 首次注册序号做稳定排序(换代**保位**,热替换不跳位置),`revision` 是消费方的观察信号。**只收容器不收词汇**:载荷仅视图工厂 + `metadata: [String: Any]`,槽的键名约定写在占槽的消费方家里。`DashHost` 加糖 `contribute(to:id:order:metadata:make:)`;`contributions` 在 `DashHost.init` 里有默认值 `DashContributions.shared`(SDK dylib 全进程只有一份,static 天然是进程级单例),壳因此零改动就能用,日后想自己持有传参覆盖即可。`dashABIVersion` **不 bump**(纯追加,已有声明语义未变),追加内容记在 `DashPlugin.swift` 注释里。② dash-layout 的工具栏改为泛化消费 `toolbar` 贡献槽:系统项(`.flexibleSpace`/`.toggleSidebar`/`.sidebarTrackingSeparator`)仍硬编码,其余全部来自贡献。**dogfood**:自家"新建会话"从硬编码删掉,改成 `LayoutPlugin.activate` 里的一条普通贡献(`order: -100`),消费端 `LayoutSplitController` 从此不认得任何具体按钮(`surface` 也随之从它的构造参数里删掉了)。渲染路线取舍:给了 `metadata["symbol"]` 走**原生 `NSToolbarItem` + `isBordered`**(macOS 26 的圆形玻璃按钮/按下态/红绿灯对齐全是白送的,SwiftUI 重画只会更差),代价是点击回调得另有通道→统一走事件总线(`metadata["event"]`,缺省 `dash.toolbar.activate`,载荷 `slot/owner/id`);没给 symbol 的才把 `AnyView` 装进 `NSHostingView` 并**当场冻死尺寸**(否则内容一换代工具栏自己跳宽度)。重建由 `RootLayoutView` 读 `contributions.revision` 驱动(照抄 sidebar 槽读 `registry.version` 那个模式),`syncToolbar()` 用"身份+世代+排序+图标+标题"的签名做幂等判据,且只动 `ownedToolbar`。③ 壳的页内桥去白名单(`MainWindowController.handleBridgeMessage`):default 分支不再静默丢弃,一律 `emit("dash.page.<type>", body)`;`DashEventBus.Topic` 新增 `pagePrefix` 常量(动态主题不逐个加常量),`pageReady`/`pageCurrentSession` 改为由它拼出。验证:`xcodebuild -derivedDataPath build -configuration Debug` **BUILD SUCCEEDED** 零 error 零 warning;另按 `CompilerService` 的 swiftc 参数手工编过 dash-layout 与下游 dash-sidebar(`-module-alias DashLayout=…`),两者均通过。**未做运行时验证**(未起 dsh、未拉起壳)。就地更新:CLAUDE.md(插件树 dash-layout 一行、架构速览 DashSDK 与 MainWindowController 两条)。|
+| 2026-08-26 | M10 | (本次) | **sidebar 数据面下移 node 半边,DSHKit 整体退役**。就地更新:§7.2(M10 行)、**新增 §7.2.3**(十一条实做偏差)、§7.2.2(fork 标题的落点)、§9(M10 行拆成"已完成"与"M10+ 后续")、§11(DSHKit 行 686→0)、CLAUDE.md(目录树/共享 module 章节/测试一节)、dash-sidebar 与根 README。**与 §1.6 的最大出入:走 `ctx.apiProxy` 而不是 `sessions`/`sessionProjections`/`workspaceRegistry`** ——后者那条路要自己重写冷会话合并、title/running/blank/updatedAt 四个派生字段、workspace rename(在实体上叫 `setTitle`)、以及 fork 的 turn 边界对齐,而 `apiProxy` 就是 `/api` 那套方法的同进程实现本体。**新查明的事实**:workspaceRegistry 不发任何 cordis 事件(只有 `domain/changed`);running 是 `agent/status`(在 dsh-agent);`approval/request` 是 waterfall 抢答钩子不能拿来观察;`userQuestions` 的 provider 槽独占,故紫点是**已知缺口**;`session.search` 在本机 profile 里被 `openAt: never` 禁用,web 侧边栏的搜索也是纯前端标题匹配。**未做**:紫点、`ctx.apiProxy.events.mux()` 帧流。 |

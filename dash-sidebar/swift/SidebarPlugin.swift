@@ -1,4 +1,3 @@
-import DSHKit
 import DashLayout
 import DashSDK
 import Foundation
@@ -12,21 +11,23 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 
 /// dash-sidebar 的 Swift 半身：占 dash-layout 的 `sidebar` 槽。
 ///
-/// **数据面**（计划 §7.2 的 M6 方案，实做略有出入见 README）：`SessionStore` 由本插件创建，
-/// 但存进保管箱、跨世代复用——`SessionStore` 出自 DSHKit，而 DSHKit 是随 bundle 分发的
-/// **共享 module**，类型身份跨世代稳定，所以从箱里取出来的旧实例转型仍然成立。
-/// 这样热替换时列表不闪、WS 事件流不断，也不必让壳替插件管数据。
+/// **数据面住在 node 半边**（M10）：会话与工作区的镜像、写操作、事件订阅全在
+/// `lib/index.js`，经桥推 JSON 下来。这半边只做三件事——把投影渲染成列表、
+/// 把用户动作发上去、把选中状态收敛。
 ///
-/// 端点变了（dsh 换端口回来）就丢掉旧的重建：base URL 也记在箱里供比对。
+/// 为什么数据面不在这儿：壳与共享 module 随 app bundle 冻结、用户改不了，
+/// 而会话/工作区的 wire 模型是随 dsh 版本演进最快的那一层——层放错了。
+/// node 半边住在 dsh 进程里，随 npm 可更新，且 Swift 插件怎么热替换它都不动。
+///
+/// **跨代不闪列表**：每代把收到的最后一份 snapshot 原样（`NSDictionary`，
+/// 系统类型跨代安全）存进保管箱；下一代 activate 时先拿它渲染，再请求 fresh
+/// 全量，到了就替换。**箱里绝不放本 module 定义的类型**——新旧两代的同名类型
+/// 互不认识，取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
 final class SidebarPlugin: DashPlugin {
-    private static let storeKey = "dash.sidebar.sessionStore"
-    private static let storeBaseKey = "dash.sidebar.sessionStoreBase"
+    /// 保管箱里那份最后的快照（`NSDictionary`）。
+    private static let snapshotKey = "dash.sidebar.snapshot"
 
     func activate(host: DashHost) -> AnyObject? {
-        guard let base = host.objects.object(DashObjects.Key.endpoint, as: NSURL.self) as URL? else {
-            host.log("保管箱里没有 endpoint，sidebar 缺席（layout 只画会话区）")
-            return nil
-        }
         guard let surface = host.objects.object(DashObjects.Key.conversationSurface)
                 as? DashConversationSurface else {
             host.log("保管箱里没有会话展示面，sidebar 缺席（dash-layout 没装配？）")
@@ -34,13 +35,45 @@ final class SidebarPlugin: DashPlugin {
         }
 
         let handle = DashPluginHandle()
-        let store = reuseOrCreateStore(host: host, base: base)
 
-        let model = AppSidebarModel(store: store, surface: surface, log: { host.log($0) })
+        // 先用上一代留下的快照开局（没有就是空列表），换代时列表不闪。
+        let seed = host.objects.object(Self.snapshotKey, as: NSDictionary.self)
+            .flatMap { $0 as? [String: Any] }
+            .flatMap(SidebarSnapshot.decode) ?? .empty
+
+        let model = AppSidebarModel(snapshot: seed, bridge: host.bridge,
+                                    surface: surface, log: { host.log($0) })
         // 选中高亮活过热替换：真相在 dsh 侧（页面会把 currentSession 报回来），
         // 这里存的只是"页面还没报之前先亮哪一行"的装饰状态。
         model.selectedSessionId = host.store.string("selectedSessionId")
         model.onSelectionChange = { host.store.setString("selectedSessionId", $0) }
+
+        // 桥下行三条频道（协议见 lib/index.js 顶部注释）。
+        host.bridge.onMessage { [weak model] channel, payload in
+            guard let model else { return }
+            switch channel {
+            case "snapshot":
+                guard let snapshot = SidebarSnapshot.decode(payload) else {
+                    host.log("收到解不动的 snapshot，保留上一份")
+                    return
+                }
+                // 先落箱再上屏：下一代取的是这一份。
+                host.objects.setObject(Self.snapshotKey, payload as NSDictionary)
+                model.apply(snapshot: snapshot)
+
+            case "forked":
+                // 分叉完成：切到子会话（与 web 的 fork().then(open) 同序）。
+                guard let childId = payload["sessionId"] as? String else { return }
+                model.activate(sessionId: childId)
+
+            case "error":
+                model.reportFailure(action: payload["action"] as? String ?? "",
+                                    reason: payload["message"] as? String ?? "未知原因")
+
+            default:
+                break // 未知频道忽略（协议向前兼容，同桥的纪律）
+            }
+        }.kept(by: handle)
 
         // 页内桥上报的当前会话（壳收到 WKScriptMessage 后转成 EventBus 事件）。
         host.events.subscribe(DashEventBus.Topic.pageCurrentSession) { payload in
@@ -52,27 +85,11 @@ final class SidebarPlugin: DashPlugin {
             AnyView(SidebarView(model: model, surface: surface))
         }.kept(by: handle)
 
-        host.log("sidebar 上线（\(base.absoluteString)）")
-        return handle
-    }
+        // 请求一份 fresh 全量。**每代都要问**：node 半边只在数据变化时推，
+        // 不为新连上来的世代补发（补发逻辑归请求方，与桥不给壳补发 app-build 同理）。
+        host.bridge.send(action: "snapshot")
 
-    /// 端点没变就复用箱里那个 store；变了（或第一次）就新建并接管箱位。
-    /// 标 `@MainActor` 是因为 `SessionStore` 是主线程类；类本身不能标——
-    /// `dash_plugin_entry` 是 nonisolated 的 C 入口，构造不了隔离类型。
-    @MainActor
-    private func reuseOrCreateStore(host: DashHost, base: URL) -> SessionStore {
-        let recorded = host.objects.object(Self.storeBaseKey, as: NSString.self) as String?
-        if recorded == base.absoluteString,
-           let existing = host.objects.object(Self.storeKey, as: SessionStore.self) {
-            return existing
-        }
-        if let stale = host.objects.object(Self.storeKey, as: SessionStore.self) {
-            stale.stop()
-        }
-        let store = SessionStore(transport: DSHTransportFactory.live(baseURL: base))
-        host.objects.setObject(Self.storeKey, store)
-        host.objects.setObject(Self.storeBaseKey, base.absoluteString as NSString)
-        Task { await store.start() }
-        return store
+        host.log("sidebar 上线（种子快照 v\(seed.version)，已请求全量）")
+        return handle
     }
 }
