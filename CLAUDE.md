@@ -119,7 +119,7 @@ Debug 与 Release 是两个不同 App，可并存运行：
 | App 名 | dash Dev | dash |
 | Bundle ID | io.wenbo.dash.dev | io.wenbo.dash |
 | 图标 | 橙色 DEV 徽章 | 原图标 |
-| UI 标记 | 标题栏 DEV pill、侧边栏 DEV BUILD 条（含构建时间戳）、bootstrap 斜纹 | 无 |
+| UI 标记 | bootstrap 斜纹 | 无 |
 | 位置 | dash-app/host/build/Build/Products/Debug/ | /Applications/ |
 
 构建时间戳：prebuild 脚本 `scripts/write-build-timestamp.sh` 每次构建把时间写入

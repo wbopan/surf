@@ -35,7 +35,6 @@ import SwiftUI
 //   sidebar.session.<sessionId>.archive 会话行的归档按钮（hover 才可见）
 //   sidebar.section.workspaces         区段头「工作区」标题
 //   sidebar.addWorkspace               区段头右端的「添加工作区」+ 号
-//   sidebar.devFooter                  Dev 构建底部状态条
 //
 // 右键菜单项按文案定位（AX 里是 NSMenuItem，挂不了 identifier）；
 // 顶部工具栏的「新建会话」「边栏」是 NSToolbarItem / 系统标准项，按 Title 定位。
@@ -371,7 +370,6 @@ public struct SidebarView<Model: SidebarModel>: View {
             }
             .listStyle(.sidebar)
             .accessibilityIdentifier("sidebar.list")
-            if isDevBuild { devFooter }
         }
         .alert(renameTarget?.dialogTitle ?? "", isPresented: renamePresented) {
             TextField(renameTarget?.fieldLabel ?? "", text: $renameText)
@@ -482,48 +480,6 @@ public struct SidebarView<Model: SidebarModel>: View {
         } else {
             adopt(panel.runModal())
         }
-    }
-
-    /// Dev 构建判定。插件由壳在运行时编译，**没有 `-DDEBUG`**，
-    /// 所以 `#if DEBUG` 在这里永远不成立——改看壳的 bundle id
-    /// （Debug 产物是 io.wenbo.dash.dev）。
-    private var isDevBuild: Bool {
-        Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
-    }
-
-    /// Dev 构建专属：侧边栏底部橙色 DEV 状态条（含构建时间戳），
-    /// 一眼区分 Debug/Release，并确认跑的是哪次构建。
-    private var devFooter: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Color.orange)
-                .frame(width: 7, height: 7)
-            Text("DEV BUILD")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.orange)
-                .tracking(0.8)
-            Spacer()
-            if !buildTimestamp.isEmpty {
-                Text(buildTimestamp)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.orange.opacity(0.8))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color.orange.opacity(0.08))
-        .accessibilityIdentifier("sidebar.devFooter")
-    }
-
-    /// 构建时间戳：主 App prebuild 脚本写入 Resources/BuildTimestamp.txt。
-    private var buildTimestamp: String { Self.readBuildTimestamp() }
-
-    private static func readBuildTimestamp() -> String {
-        guard let url = Bundle.main.url(forResource: "BuildTimestamp", withExtension: "txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
-        else { return "" }
-        return text
     }
 
     private var searchField: some View {
