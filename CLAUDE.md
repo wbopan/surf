@@ -27,7 +27,8 @@ dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint �
   host/            Xcode 工程载荷：project.yml / Sources/ / Packages/DSHKit / scripts/ / tools/
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
-dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 工具栏；
+dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
+                   （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面走 DSHKit 镜像）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
@@ -306,7 +307,12 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
 - `dash-app/lib/index.js`：宿主插件。源码内容 hash 决定是否重建，marker 落
   `host/build/.dash-app-source-hash.<配置>`。
 - `dash-app/host/Sources/DashSDK/`：壳↔插件的 ABI 词汇（`DashPlugin` 是唯一的跨 dylib
-  协议见证表；registry/objects/store/events/bridge 的实现都在 SDK dylib 里）。
+  协议见证表；registry/contributions/objects/store/events/bridge 的实现都在 SDK dylib 里）。
+  **两种槽，别混**：`DashRegistry` 是单占用"替换槽"（一槽一主，后来者覆盖，
+  给 root/sidebar 这种独占表面用）；`DashContributions` 是多占用"贡献槽"
+  （一槽 N 条，`(owner, id)` 是身份，各家追加互不影响，给工具栏按钮这种
+  "谁都可以来一条"的表面用）。贡献槽只收容器不收词汇——载荷就是视图工厂
+  加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里。
 - `dash-app/host/Sources/Native/`：BridgeClient（WS）、CompilerService（内容寻址编译）、
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
   全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）。
@@ -319,6 +325,9 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
 - `dash-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
+  页内桥**不设白名单**：`postMessage({type, ...})` 的任意 type 一律广播成
+  `dash.page.<type>`（`DashEventBus.Topic.pagePrefix`），插件订阅即可，不用改壳。
+  ready/currentSession/debug 留特化分支只因为壳自己也要用它们。
 - `dash-app/host/Sources/DiagnosticsPanel.swift`：⌥⌘D 的诊断面板（端点/桥/插件世代/
   module 名/退休 image 数/最近构建播报，可拷贝）。查"我现在跑的到底是哪份代码"用它。
 - 插件门控：UA 含 `Dash/`（带斜杠，防普通子串误命中）且 URL 带 `?dash-native-sidebar=1`；
