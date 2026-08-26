@@ -36,10 +36,17 @@ public final class DashEventBus {
         public static let endpointChanged = "dash.endpointChanged"
         /// 请求把窗口带到前台。载荷可带 `["sessionId": String]`。
         public static let activateWindow = "dash.activateWindow"
+        /// 页内桥消息的主题前缀。**壳对页内消息不设白名单**：
+        /// `window.webkit.messageHandlers.dash.postMessage({type, ...})` 里的
+        /// 任意 `type` 都会原样广播成 `dash.page.<type>`，载荷就是那个字典本身。
+        /// 想接一条新页内消息的插件订阅 `pagePrefix + "yourType"` 即可，
+        /// 不必改壳。动态主题不逐个加常量——只有壳自己也要 emit 的那几条
+        /// （下面两个）才配常量。
+        public static let pagePrefix = "dash.page."
         /// 页内桥上报当前会话。载荷 `["id": String]`。
-        public static let pageCurrentSession = "dash.page.currentSession"
+        public static let pageCurrentSession = pagePrefix + "currentSession"
         /// 页内桥就绪。载荷 `["capabilities": [String]]`。
-        public static let pageReady = "dash.page.ready"
+        public static let pageReady = pagePrefix + "ready"
         /// 壳的菜单/快捷键触发了一个命令。载荷 `["command": String]`。
         /// 壳只负责喊，具体做什么归拥有相应能力的插件（如 layout 拥有会话展示面）。
         public static let menuCommand = "dash.menu.command"

@@ -21,6 +21,16 @@ import Foundation
 
 /// ABI 版本。壳装载插件前比对；不匹配即拒绝装载而不是崩在半路。
 /// 改动 SDK 里任何 public 声明的语义时 +1。
+///
+/// **v1 之后的纯追加（不 bump）**——已有声明的语义一个字没变，老插件原样能跑：
+/// - `DashContributions`（多占用"贡献槽"注册表）+ `DashHost.contributions`
+///   + `DashHost.contribute(to:id:order:metadata:make:)`。给"N 个插件各往一个
+///   表面加一条"用（工具栏按钮是第一个消费者，在 dash-layout）。
+/// - `DashEventBus.Topic.pagePrefix`：页内桥的未知消息不再被壳白名单挡掉，
+///   一律以 `dash.page.<type>` 广播。
+///
+/// 注意：dylib 里的 `contentHash` 指纹含 DashSDK 的 `.swiftinterface` 摘要，
+/// 所以追加声明照样会让全部插件重编一次——这跟 ABI 版本号是两回事。
 public let dashABIVersion = 1
 
 /// 插件的唯一入口协议。

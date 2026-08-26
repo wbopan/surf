@@ -23,7 +23,6 @@ final class LayoutSplitController: NSSplitViewController {
 
     private let host: DashHost
     private let webView: WKWebView
-    private let surface: DashConversationSurface
 
     private var sidebarItem: NSSplitViewItem?
     /// 自动折叠标记：因窗口收窄而折叠（而非用户手动收起），拉宽后自动恢复。
@@ -35,10 +34,15 @@ final class LayoutSplitController: NSSplitViewController {
     /// 装了工具栏的那扇窗（deinit 里不能再摸 `view.window`，它是 MainActor 隔离的）。
     private weak var installedWindow: NSWindow?
 
-    init(host: DashHost, webView: WKWebView, surface: DashConversationSurface) {
+    /// 工具栏贡献的当前快照。工具栏委托只读它，不读 registry——
+    /// NSToolbar 会在任意时刻回调委托要项，读快照才能保证一轮重建里前后一致。
+    private var toolbarContributions: [DashContributions.Contribution] = []
+    /// 快照签名。变了才重建工具栏（幂等的判据）。
+    private var toolbarSignature = ""
+
+    init(host: DashHost, webView: WKWebView) {
         self.host = host
         self.webView = webView
-        self.surface = surface
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -79,7 +83,7 @@ final class LayoutSplitController: NSSplitViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        installToolbar()
+        syncToolbar()
         adaptToWindowWidth()
     }
 
@@ -129,7 +133,7 @@ final class LayoutSplitController: NSSplitViewController {
         item.canCollapse = true
         insertSplitViewItem(item, at: 0)
         sidebarItem = item
-        installToolbar()
+        syncToolbar()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -165,7 +169,7 @@ final class LayoutSplitController: NSSplitViewController {
 
     // MARK: - 工具栏
 
-    /// 左上角工具栏（红绿灯同排）：新建会话 + 收起侧边栏。
+    /// 左上角工具栏（红绿灯同排）。
     /// 依赖 sidebar item 已就位（tracking separator 需要 divider 0），
     /// 所以 installSidebar 尾部也调一次；重复调用幂等。
     private func installToolbar() {
@@ -181,22 +185,111 @@ final class LayoutSplitController: NSSplitViewController {
         installedWindow = window
     }
 
-    @objc fileprivate func newSessionFromToolbar() {
-        surface.startSession(workspaceId: nil)
+    /// 贡献槽有变（热替换、新插件上线/下线）就重建工具栏。
+    ///
+    /// 由 `SplitRepresentable.updateNSViewController` 驱动——`RootLayoutView`
+    /// 读了 `contributions.revision`，值一跳 SwiftUI 就会调下来。
+    /// 幂等：签名没变什么都不做；只动 `ownedToolbar`（换代时新控制器已经装好了
+    /// 它自己那一个，见 deinit 的纪律）。
+    func syncToolbar() {
+        let changed = refreshToolbarSnapshot()
+        // 已经在窗上的工具栏才需要"重建"；installToolbar 新造的那一个
+        // 会直接按刚刷新的快照问委托要项，不必再拆一遍。
+        let hadToolbar = ownedToolbar != nil && installedWindow?.toolbar === ownedToolbar
+        installToolbar()
+        guard changed, hadToolbar, let toolbar = ownedToolbar else { return }
+        while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }
+        for (index, identifier) in toolbarDefaultItemIdentifiers(toolbar).enumerated() {
+            toolbar.insertItem(withItemIdentifier: identifier, at: index)
+        }
+    }
+
+    /// 重取快照；有实质变化返回 true。
+    ///
+    /// 签名只折进"会影响工具栏长相"的那几项：身份、世代、排序、图标、标题。
+    /// 世代号在里面，所以贡献者热替换（身份不变、闭包变了）也会重建。
+    @discardableResult
+    private func refreshToolbarSnapshot() -> Bool {
+        let list = host.contributions.contributions(for: Self.toolbarSlot)
+        let signature = list.map { item in
+            let symbol = item.metadata["symbol"] as? String ?? ""
+            let label = item.metadata["label"] as? String ?? ""
+            return "\(item.key)#\(item.version)#\(item.order)#\(symbol)#\(label)"
+        }.joined(separator: "|")
+        guard signature != toolbarSignature else { return false }
+        toolbarContributions = list
+        toolbarSignature = signature
+        return true
+    }
+
+    /// 工具栏项被点了：把它翻译成事件总线上的一条广播。
+    /// 本控制器不知道任何按钮"是干什么的"——那是贡献者自己的事。
+    @objc fileprivate func activateToolbarContribution(_ sender: Any?) {
+        guard let item = sender as? NSToolbarItem,
+              let contribution = contribution(for: item.itemIdentifier) else { return }
+        let topic = contribution.metadata["event"] as? String ?? Self.toolbarActivateTopic
+        host.events.emit(topic, [
+            "slot": Self.toolbarSlot,
+            "owner": contribution.owner,
+            "id": contribution.id,
+        ])
+    }
+
+    fileprivate func contribution(
+        for identifier: NSToolbarItem.Identifier
+    ) -> DashContributions.Contribution? {
+        guard identifier.rawValue.hasPrefix(Self.contributionPrefix) else { return nil }
+        let key = String(identifier.rawValue.dropFirst(Self.contributionPrefix.count))
+        return toolbarContributions.first { $0.key == key }
     }
 }
 
-// MARK: - 工具栏项
+// MARK: - 工具栏贡献槽
 
-private extension NSToolbarItem.Identifier {
-    static let newSession = NSToolbarItem.Identifier("dash.newSession")
+extension LayoutSplitController {
+    /// 本插件认得的贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
+    static let toolbarSlot = "toolbar"
+    /// 贡献项的 `NSToolbarItem.Identifier` 前缀，后面接 `owner/id`。
+    static let contributionPrefix = "dash.contribution."
+    /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
+    /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`。
+    static let toolbarActivateTopic = "dash.toolbar.activate"
 }
 
+/// ## `toolbar` 贡献槽的约定（第三方插件照这个写，不用改壳也不用改本插件）
+///
+/// ```swift
+/// host.contribute(to: "toolbar", id: "myButton", order: 10, metadata: [
+///     "label":   "我的按钮",              // 必填：标题 + 无障碍名
+///     "symbol":  "sparkles",              // 选填：SF Symbol 名
+///     "tooltip": "干点什么",               // 选填，缺省取 label
+///     "event":   "myplugin.doSomething",  // 选填，缺省 "dash.toolbar.activate"
+/// ]) { AnyView(MyFallbackButton()) }
+/// host.events.subscribe("myplugin.doSomething") { _ in ... }
+/// ```
+///
+/// **两条渲染路线，给了 `symbol` 就走原生那条**：`NSToolbarItem` +
+/// `isBordered = true`，macOS 26 的圆形玻璃按钮、按下态、红绿灯对齐全是白送的，
+/// 拿 SwiftUI 重画只会得到一个更差的仿制品。代价是点击回调必须另有通道——
+/// 于是统一走事件总线：消费方只管 emit，贡献者自己 subscribe。
+/// 这也顺手解决了"闭包跨世代"的问题：主题名是字符串，热替换后新一代重新订阅即可。
+///
+/// 没给 `symbol` 的（自定义控件、状态指示器）走兜底路线：`AnyView` 装进
+/// `NSHostingView`，尺寸当场冻死（见 `makeContributionItem`）。
+///
+/// 位置：所有贡献排在 `.flexibleSpace` 之后、`.toggleSidebar` 之前，
+/// 组内按 `order` 升序。系统项的位置不开放——它们与红绿灯、分栏分隔线的
+/// 对齐关系是 AppKit 的，乱插只会把观感搞坏。
 extension LayoutSplitController: NSToolbarDelegate {
     // sidebarTrackingSeparator 之前的项落在侧边栏区域，之后的落在内容区域（留空）。
-    // 布局：红绿灯 …弹性… 新建会话 收起侧边栏 | 分隔线。
+    // 布局：红绿灯 …弹性… <贡献项…> 收起侧边栏 | 分隔线。
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, .newSession, .toggleSidebar, .sidebarTrackingSeparator]
+        var identifiers: [NSToolbarItem.Identifier] = [.flexibleSpace]
+        identifiers += toolbarContributions.map {
+            NSToolbarItem.Identifier(Self.contributionPrefix + $0.key)
+        }
+        identifiers += [.toggleSidebar, .sidebarTrackingSeparator]
+        return identifiers
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -206,17 +299,10 @@ extension LayoutSplitController: NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar,
                  itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        if let contribution = contribution(for: itemIdentifier) {
+            return makeContributionItem(itemIdentifier, contribution)
+        }
         switch itemIdentifier {
-        case .newSession:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.image = NSImage(systemSymbolName: "square.and.pencil",
-                                 accessibilityDescription: "新建会话")
-            item.label = "新建会话"
-            item.toolTip = "新建会话"
-            item.isBordered = true
-            item.target = self
-            item.action = #selector(newSessionFromToolbar)
-            return item
         case .sidebarTrackingSeparator:
             // 让分隔线在标题栏内跟随 split divider（全高侧边栏观感）。
             return NSTrackingSeparatorToolbarItem(identifier: itemIdentifier,
@@ -225,6 +311,38 @@ extension LayoutSplitController: NSToolbarDelegate {
             // .toggleSidebar / .flexibleSpace 等系统项由 AppKit 提供行为。
             return NSToolbarItem(itemIdentifier: itemIdentifier)
         }
+    }
+
+    private func makeContributionItem(
+        _ identifier: NSToolbarItem.Identifier,
+        _ contribution: DashContributions.Contribution
+    ) -> NSToolbarItem {
+        let label = contribution.metadata["label"] as? String ?? contribution.id
+        let tooltip = contribution.metadata["tooltip"] as? String ?? label
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = tooltip
+
+        if let symbol = contribution.metadata["symbol"] as? String,
+           let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) {
+            item.image = image
+            item.isBordered = true // 玻璃观感白送
+            item.target = self
+            item.action = #selector(activateToolbarContribution(_:))
+            return item
+        }
+
+        // 兜底：托管贡献自己的 SwiftUI 视图。**尺寸当场冻死**——
+        // NSHostingView 会把内容的 fitting size 一路顶回工具栏，
+        // 内容一变（换代重建）工具栏就会自己跳宽度。
+        let hosting = NSHostingView(rootView: contribution.make())
+        var size = hosting.fittingSize
+        if size.width <= 0 { size.width = 32 }
+        size.height = min(max(size.height, 1), 28) // 工具栏行高，超了会被裁掉
+        hosting.frame = NSRect(origin: .zero, size: size)
+        item.view = hosting
+        return item
     }
 }
 
