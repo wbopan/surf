@@ -26,8 +26,25 @@ final class SettingsPlugin: DashPlugin {
         let model = SettingsModel(bridge: bridge, log: { host.log($0) })
         var controller: SettingsWindowController?
 
+        // **先收拾上一代留下的窗口**。
+        //
+        // 实测：退休世代的 `DashPluginHandle` 常常**不 deinit**（壳里 `loaded[name]`
+        // 换掉之后本该是最后一个强引用，但四十多次换代里只析构过三次），于是靠
+        // 析构去关窗根本不可靠——每改一次 Swift 就多叠一扇设置窗口。
+        //
+        // 所以改成不依赖析构的自愈：把窗口本身存进 `objects`，新一代 activate 时
+        // 先把存着的那扇关掉。**存 `NSWindow` 而不是自定义类型是关键**——世代之间
+        // 类型身份是隔离的（module 名取自 contentHash），`as? 自定义类` 跨代必然失败；
+        // `NSWindow` 来自壳链接的同一份 AppKit，跨代 `as?` 才成立。
+        if let stale = host.objects.object(DashObjects.Key.settingsOwner) as? NSWindow {
+            host.log("关掉上一代留下的设置窗口")
+            stale.orderOut(nil)
+            stale.close()
+        }
+
         // 占住"设置面板的主人"：dash-layout 见有主就不再用页内 modal 响应 ⌘,。
         // 不占的话两边都会响应——原生窗口开出来的同时主窗口里还弹一层网页 modal。
+        // 窗口还没建，先放一个占位；建好之后换成窗口本身（见下面菜单回调）。
         let owner = NSObject()
         host.objects.setObject(DashObjects.Key.settingsOwner, owner)
         DashDisposable {
@@ -39,7 +56,9 @@ final class SettingsPlugin: DashPlugin {
             // 沉默的失败——owner 没让出去，⌘, 从此既不开原生窗口也不弹页内 modal，
             // 而且不留任何痕迹。这里的强持不成环（host 不持有 handle），
             // 且 handle 本就与本世代同生共死。
-            if host.objects.object(DashObjects.Key.settingsOwner) === owner {
+            // 占位可能已经被换成窗口了，两种都算"还是自己占着"。
+            let current = host.objects.object(DashObjects.Key.settingsOwner)
+            if current === owner || (current as? NSWindow) === controller?.window {
                 host.objects.setObject(DashObjects.Key.settingsOwner, nil)
                 host.log("让出 settingsOwner，⌘, 回落页内 modal")
             }
@@ -58,7 +77,14 @@ final class SettingsPlugin: DashPlugin {
         host.events.subscribe(DashEventBus.Topic.menuCommand) { payload in
             guard payload["command"] as? String == "openSettings" else { return }
             if controller == nil {
-                controller = SettingsWindowController(model: model, log: { host.log($0) })
+                let created = SettingsWindowController(model: model, log: { host.log($0) })
+                controller = created
+                // 把占位换成窗口本身，好让下一代能找到它并关掉。
+                // 仍然只在自己还占着的时候换，理由同下面的让位分支。
+                if host.objects.object(DashObjects.Key.settingsOwner) === owner,
+                   let window = created.window {
+                    host.objects.setObject(DashObjects.Key.settingsOwner, window)
+                }
             }
             controller?.present()
         }.kept(by: handle)

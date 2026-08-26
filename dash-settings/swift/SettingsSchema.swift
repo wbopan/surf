@@ -36,6 +36,30 @@ indirect enum SchemaNode {
         }
     }
 
+    /// 顺路径往下走。
+    ///
+    /// 用在 provider 详情上：一个 ns 可以被好几个 provider 共用
+    /// （实测 `llm-pi-ai` 底下挂着 kimi-coding / zai-coding-cn / deepseek 三个），
+    /// 各自的配置在 `settingsPath` 指的子树里。**不走这一步就会把整个 ns
+    /// 原样渲染给每一个 provider**——三个 provider 看到同样的内容，
+    /// 而且互相能改到对方的配置。
+    func node(at path: [String]) -> SchemaNode? {
+        var current = self
+        for key in path {
+            switch current {
+            case .object(let fields, _):
+                guard let field = fields.first(where: { $0.key == key }) else { return nil }
+                current = field.node
+            // dict 的键是用户定的（provider 名就是键），schema 只描述值的形状。
+            case .dict(let inner, _), .array(let inner, _):
+                current = inner
+            default:
+                return nil
+            }
+        }
+        return current
+    }
+
     /// union 的候选全是 const 时，取出它们的值——这是"下拉框"的判据。
     var constOptions: [JSONValue]? {
         guard case .union(let options, _) = self else { return nil }

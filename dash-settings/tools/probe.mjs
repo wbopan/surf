@@ -15,6 +15,7 @@
  *   node dash-settings/tools/probe.mjs --ns shell       # 某个 ns 的详情
  *   node dash-settings/tools/probe.mjs --set            # 跑一遍写入/回滚/冲突用例
  *   node dash-settings/tools/probe.mjs --providers      # 模型页的数据
+ *   node dash-settings/tools/probe.mjs --set-value ui-theme preference system
  *
  * 端点自动从 dash-app 的发现文件里找（`<AppSupport>/io.wenbo.dash/endpoints/`）。
  */
@@ -181,6 +182,27 @@ if (unsetNs !== undefined) {
 	const after = await settingsAfter(seq);
 	console.log("  user 层现在是：",
 		JSON.stringify(after.namespaces.find((n) => n.ns === unsetNs)?.user));
+}
+
+// ---------------------------------------------------------------- 手工 set
+
+// `--set-value <ns> <a.b.c> <值>`：写一个字符串/数字/布尔。
+// **不是给写入用例用的**（那个是 `--set`，自带回滚），这个是"我就是想改一下"
+// ——UI 驱动工具在多显示器下不靠谱的时候，用它把配置摆回原样。
+const setNs = valueOf("--set-value");
+if (setNs !== undefined) {
+	const at = args.indexOf("--set-value");
+	const path = String(args[at + 2] ?? "").split(".").filter(Boolean);
+	const raw = args[at + 3];
+	const value = raw === "true" ? true : raw === "false" ? false
+		: raw !== "" && !Number.isNaN(Number(raw)) ? Number(raw) : raw;
+	const seq = settingsSeq;
+	const revision = settings.namespaces.find((n) => n.ns === setNs)?.revision;
+	console.log(`\nset ${setNs}.${path.join(".")} = ${JSON.stringify(value)} →`,
+		await invoke("set", { ns: setNs, path, value, expectedRevision: revision }));
+	const after = await settingsAfter(seq);
+	console.log("  回读：",
+		JSON.stringify(after.namespaces.find((n) => n.ns === setNs)?.value?.[path[0]]));
 }
 
 // ---------------------------------------------------------------- 写入用例

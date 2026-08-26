@@ -7,8 +7,8 @@
 权威计划在 [`docs/dash-settings-plan.md`](../docs/dash-settings-plan.md)——
 动手前先读它，尤其 §1（三条走不通的路，别重走）、§4（编辑器语义）、§5（三条红线）。
 
-**当前进度：M0～M5 全部完成**，功能可用。数据面已用探针端到端验过
-（见下面「怎么验它」），SwiftUI 那一面还欠一次人眼过目。
+**当前进度：M0～M6 全部完成**，功能可用，全链路实测过：在原生窗口点一下「深色」，
+`~/.dsh/settings.yaml` 当场变、浏览器里的 dsh Web UI 当场跟着换肤。
 
 ```
 lib/index.js   快照往下推（describe → 有序 JSON）、单字段 op 往上收、ack 配对
@@ -40,6 +40,22 @@ modal。一个设置界面缺席时的正确姿态是让位给还能用的那个
 
 设置的渲染完全在原生这边，页面里什么都不改。顺带白捡一条：不必踩
 「`__ModuleLoader__.load({id})` 的 id 必须逐字等于包名」那个坑。
+
+## 编排照抄 Web，外壳照抄 macOS
+
+**内容编排以 dsh Web 设置对话框为准**（General / Models / Plugins 三栏，逐行同序同文案），
+**窗框以 macOS 偏好设置为准**（`NSWindow.toolbarStyle = .preference` +
+`NSTabViewController(tabStyle: .toolbar)`，切页时窗口动画到该页的尺寸）。
+这两件事互不冲突：一致的是"东西在哪儿"，不是"长什么样"。
+
+映射表在 [`swift/SettingsTabs.swift`](swift/SettingsTabs.swift)，两处**有意的分歧**写在那里：
+
+| | Web | 这里 | 为什么 |
+|---|---|---|---|
+| 提交 | 每张卡片 Discard / Save | 即时生效 | 计划 D1，macOS 惯例 |
+| 字段 | 每个 ns 只露手挑的几个（`shell` 六个只露两个） | 精选照露，其余进「更多设置」折叠 | 零遗漏优先于一致（计划 §2.2） |
+
+**Agent presets 那一栏没做**：预设画廊不由 `ctx.settings` 驱动，我们没有那条数据面。
 
 ## 字段文案从哪来
 

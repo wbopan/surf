@@ -1,24 +1,21 @@
 import Foundation
 
-/// 字段注解表——**整个界面唯一的人工输入**。
+/// 文案表——**整个界面唯一的人工输入**，内容对齐 dsh Web 设置对话框。
 ///
-/// 背景（计划 §2.1/§2.2）：schema 里一个字的文案都没有。复核过实际注册处，
-/// `z.object({ cwd: z.string(), timeoutMs: z.number().default(12e4), … })` 全是裸节点，
-/// meta 键全集只有 `required/default/role/step/min/max` 六个。所以"这个字段是什么
-/// 意思"和"这个字段该不该抬到前面"这两样信息，在结构化渠道里根本不存在。
+/// 背景（计划 §2.1）：schema 里一个字的文案都没有，meta 键全集只有
+/// `required/default/role/step/min/max` 六个。所以"这个字段是什么意思"在结构化
+/// 渠道里根本不存在——**Web 端也一样**，它同样是把标题和说明硬写在前端里的。
+/// 既然两边都得手写，那就写成同一份：Web 有的照抄（翻成中文），Web 没有的机械美化。
 ///
-/// **设计取舍**：不刮上游的编译产物（那等于给自己安一根随时会断的线，升级 dsh 后
-/// 要重跑、要 diff、要判断 diff 有没有意义）。这里全部手写，写的时候可以参考上游各包的
-/// `README.zh.md`——那是文档不是产物，读它不建立任何构建期依赖。
+/// **仍然不刮 Web 的编译产物**（计划 §1.3）。这里是我照着**跑起来的界面**读一遍
+/// 然后手写的——一次性的阅读，不建立构建期依赖，dsh 升级了也不会有东西静默碎掉。
 ///
-/// **表可以很小**，而且应该很小：
-/// - 没有注解的字段**照样出现**，标签走 key 的机械美化（`maxOutputBytes` →
-///   `Max Output Bytes`），副标题显示类型与约束。零遗漏是平铺页保证的，不是这张表。
-/// - 上游新增字段会自动出现，只是没有中文名——**没有信号丢失**。
-/// - 反过来，表越大越容易变陈：上游改了字段语义，这里的中文说明不会自己更新，
-///   也没有任何东西会提醒我们。所以只注解真正常用的那几个。
+/// **表可以很小，而且应该很小**：
+/// - 没有注解的字段照样出现，标签走 key 的机械美化，真 key 与约束进悬停提示。
+///   零遗漏由渲染保证，不是由这张表保证。
+/// - 表越大越容易变陈：上游改了字段语义，这里的中文不会自己更新，也没人会提醒。
 ///
-/// 加一条的判据：**我自己会在这一页上改它**。不是"它看起来重要"。
+/// 加一条的判据：**Web 里有这条文案**，或者**机械美化出来的名字会让人看不懂**。
 enum FieldNotes {
 
     struct Note {
@@ -26,56 +23,75 @@ enum FieldNotes {
         let title: String
         /// 一句说明。可以没有。
         let hint: String?
-        /// 抬到「通用」页。
-        let featured: Bool
+        /// 单位。**跟在控件右边，不进标题**——"命令超时（毫秒）："这种标题会把
+        /// `Form` 的标签列撑宽，而列宽是所有行共享的，一个长标题会顶歪整页。
+        let unit: String?
+        /// 枚举值的人话。schema 只给得出 `danger-full-access` 这种机器值。
+        let options: [String: String]?
 
-        init(_ title: String, _ hint: String? = nil, featured: Bool = false) {
+        init(_ title: String, _ hint: String? = nil,
+             unit: String? = nil, options: [String: String]? = nil) {
             self.title = title
             self.hint = hint
-            self.featured = featured
+            self.unit = unit
+            self.options = options
         }
     }
 
     /// ns → 路径（用 `/` 连接）→ 注解。
-    ///
-    /// 路径用 `/` 连接是为了让这张表读起来像目录；查表时由 `note(ns:path:)` 拼。
     private static let table: [String: [String: Note]] = [
+        // ── 通用页的五行（Web: General）────────────────────────────────
         "agent-presets": [
-            "default": Note("默认 Agent 预设",
-                            "新开的会话用哪个预设。已经在跑的会话保持它开始时的那个。",
-                            featured: true),
+            "default": Note("智能体预设",
+                            "新开的会话用这个预设。已经在跑的会话保持它开始时的那个。"),
         ],
         "permission": [
-            "defaultPreset": Note("默认权限",
-                                  "新会话的权限档位。",
-                                  featured: true),
+            "defaultPreset": Note("权限", "新会话默认用哪个权限档位。", options: [
+                "read-only": "只读",
+                "workspace-write": "可写工作区",
+                "danger-full-access": "完全放开",
+            ]),
         ],
         "locale": [
-            "preference": Note("界面语言", "留空 = 跟随浏览器。", featured: true),
+            "preference": Note("语言", options: ["zh": "中文", "en": "English"]),
         ],
         "ui-theme": [
-            "preference": Note("外观", "浅色 / 深色 / 跟随系统。", featured: true),
+            // 外观走三段式卡片（AppearancePicker），文案在那儿。
+            "preference": Note("外观", options: [
+                "light": "浅色", "dark": "深色", "system": "跟随系统",
+            ]),
         ],
         "ui-conversation": [
-            "busyEnter": Note("忙碌时按 Enter",
-                              "会话正在跑时 Enter 的行为；⌘/Ctrl+Enter 永远是另一种。",
-                              featured: true),
+            "busyEnter": Note("忙碌时 Enter 的行为",
+                              "只在忙碌时生效；⌘/Ctrl+Enter 走另一种。",
+                              options: ["queue": "排队", "steer": "插话"]),
+        ],
+
+        // ── 插件页（Web: Plugins → Plugin configuration）───────────────
+        "shell": [
+            "timeoutMs": Note("命令超时", "单条命令最多跑多久，超时就终止。", unit: "毫秒"),
+            "maxOutputBytes": Note("单流输出上限",
+                                   "超出的部分溢写到临时文件，不会丢。", unit: "字节"),
+            // 下面这些 Web 没露，机械美化会难懂，所以照样给中文。
+            "cwd": Note("工作目录"),
+            "maxTimeoutMs": Note("超时上限", "调用方能要求的最大超时。", unit: "毫秒"),
+            "maxSpillBytes": Note("溢写上限", unit: "字节"),
+            "graceMs": Note("SIGTERM 宽限", "先礼后兵：等这么久再 SIGKILL。", unit: "毫秒"),
         ],
         "agent-loop": [
-            "maxParallelToolCalls": Note("并行工具调用上限",
-                                         "一轮里最多同时跑几个工具。", featured: true),
+            "maxParallelToolCalls": Note("并行工具调用",
+                                         "一步之内最多同时跑几个可并行的调用。"),
         ],
-        "shell": [
-            "timeoutMs": Note("命令超时（毫秒）", "单条命令最多跑多久。", featured: true),
-            "maxTimeoutMs": Note("命令超时上限（毫秒）", "调用方能要求的最大超时。"),
-            "maxOutputBytes": Note("输出上限（字节）", "超出的部分溢写到临时文件。"),
-            "maxSpillBytes": Note("溢写上限（字节）"),
-            "graceMs": Note("SIGTERM 宽限（毫秒）", "先礼后兵：等这么久再 SIGKILL。"),
-            "cwd": Note("工作目录"),
+        "web-search-deepseek": [
+            "apiKey": Note("API key", "存在设置文件之外。留空 = 保留现有的。"),
+            "baseUrl": Note("端点", "留空 = 用 provider 的默认值。"),
+            "maxUses": Note("每次请求最多搜几次", "一次请求在必须作答前最多搜几次。"),
         ],
+
+        // ── 模型页 ───────────────────────────────────────────────────
         "agent-default-model": [
-            "provider": Note("默认 provider", featured: true),
-            "model": Note("默认模型", featured: true),
+            "provider": Note("默认 provider"),
+            "model": Note("默认模型"),
             "reasoningEffort": Note("思考强度"),
         ],
     ]
@@ -89,26 +105,63 @@ enum FieldNotes {
         note(ns: ns, path: path)?.title ?? SettingsFormat.humanize(path.last ?? "")
     }
 
-    /// 「通用」页收哪些字段——顺序就是这里的顺序，**手写的顺序是有意的**：
-    /// 按"多久改一次"排，不按 ns 排。
-    static let featuredOrder: [(ns: String, path: [String])] = [
-        (ns: "agent-presets", path: ["default"]),
-        (ns: "permission", path: ["defaultPreset"]),
-        (ns: "agent-default-model", path: ["provider"]),
-        (ns: "agent-default-model", path: ["model"]),
-        (ns: "ui-theme", path: ["preference"]),
-        (ns: "locale", path: ["preference"]),
-        (ns: "ui-conversation", path: ["busyEnter"]),
-        (ns: "agent-loop", path: ["maxParallelToolCalls"]),
-        (ns: "shell", path: ["timeoutMs"]),
-    ]
+    /// 枚举值的显示文案。没注解就原样——**不机械美化**：
+    /// `danger-full-access` 美化成 `Danger Full Access` 只是换了种机器味，
+    /// 而且会让用户在配置文件里搜不到它。
+    static func optionLabel(ns: String, path: [String], value: JSONValue) -> String {
+        guard case .string(let raw) = value else { return value.summary }
+        return note(ns: ns, path: path)?.options?[raw] ?? raw
+    }
+}
 
-    /// 这个 ns 里有没有被注解过的字段——平铺页据此决定要不要分「常用 / 其余」两段。
-    static func hasNotes(ns: String) -> Bool {
-        table[ns]?.isEmpty == false
+/// 命名空间的文案与精选——对应 Web「插件」页那一张张手风琴卡片。
+enum NamespaceNotes {
+
+    struct Note {
+        let title: String
+        let summary: String?
+        /// Web 在这张卡片上露出来的字段（顺序即 Web 的顺序）。
+        /// 其余字段进「更多设置」折叠，**不丢**。
+        let featured: [String]
     }
 
-    static func isFeatured(ns: String, path: [String]) -> Bool {
-        note(ns: ns, path: path)?.featured ?? false
+    private static let table: [String: Note] = [
+        "shell": Note(title: "终端",
+                      summary: "限制智能体跑的每一条命令。",
+                      featured: ["timeoutMs", "maxOutputBytes"]),
+        "agent-loop": Note(title: "智能体循环",
+                           summary: "智能体怎么派发工具调用。",
+                           featured: ["maxParallelToolCalls"]),
+        "web-search-deepseek": Note(title: "网页搜索",
+                                    summary: "DeepSeek 的搜索 provider。",
+                                    featured: ["apiKey", "baseUrl", "maxUses"]),
+
+        // 下面两个 Web 完全没露。**我们仍旧显示**（零遗漏），但至少给个人话标题
+        // ——机械美化出来的 "Llm Pi Ai" / "Ui Onboarding" 谁也看不懂。
+        "llm-pi-ai": Note(title: "自定义 provider",
+                          summary: "「模型」页逐个编辑更顺手；这里是完整的原始配置。",
+                          featured: []),
+        "ui-onboarding": Note(title: "引导状态",
+                              summary: "记着新手引导放到哪儿了，一般不用动。",
+                              featured: []),
+    ]
+
+    static func note(ns: String) -> Note? { table[ns] }
+
+    static func title(ns: String) -> String {
+        table[ns]?.title ?? SettingsFormat.humanize(ns)
+    }
+
+    static func summary(ns: String) -> String? { table[ns]?.summary }
+
+    /// 把一个 ns 的顶层字段切成「精选」和「其余」两段。
+    ///
+    /// 没有精选表的 ns（上游新装的插件）**整段都算精选**——不认识它不等于
+    /// 该把它藏起来。宁可多显示，不可静默丢。
+    static func split(ns: String, fields: [SchemaField]) -> (featured: [SchemaField], rest: [SchemaField]) {
+        guard let order = table[ns]?.featured else { return (fields, []) }
+        let featured = order.compactMap { key in fields.first { $0.key == key } }
+        let picked = Set(featured.map(\.key))
+        return (featured, fields.filter { !picked.contains($0.key) })
     }
 }

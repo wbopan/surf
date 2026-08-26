@@ -342,6 +342,16 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   实际把 `dash-nativeify/tools/dump-css.mjs` 这份源码工具一起吞了——README 里教人跑它，
   文件却从来没进过库。**失败是静默的**：`git status` 干净，克隆出来才发现少文件。
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
+- **别把清理逻辑只挂在 `DashPluginHandle` 的析构上**。壳换代时 `loaded[name]` 一换、
+  旧 `LoadedPlugin` 本该是最后一个强引用，但实测四十多次换代里 handle 只 deinit 过三次
+  ——注册撤销之所以没出事，是因为 registry 用 token 校验兜住了"新的赢"，跟析构没关系。
+  **没有 token 兜底的东西（窗口是典型）就会积累**：每改一次 Swift 多叠一扇设置窗口。
+  可靠的做法是把资源放进 `host.objects`，新一代 `activate` 时主动收拾上一代留下的那份。
+  **存 AppKit 类型而不是自定义类型**——世代之间类型身份隔离（module 名取自 contentHash），
+  `as? 自定义类` 跨代必然失败，`as? NSWindow` 才成立。
+- **多显示器下 peekaboo 的按元素点击会间歇失灵**（`Bridge operation target attribution
+  failed` / `axElementNotFound`），尤其当同 App 还有一扇无标题的"自动填充"面板时。
+  截图不受影响。卡住时重启 App 通常能恢复；别在这上面耗，改用探针从数据面验。
 - **dsh 的设置 modal 渲染在侧边栏列内部，不是 portal 到 body**：DOM 链是
   `_sidebarCol > … > _settingsArea > _overlay > _panel`。dash-layout 的原生侧边栏模式
   给整列上 `visibility: hidden`，于是 modal 点得中、挂载成功、就是看不见，且不报错

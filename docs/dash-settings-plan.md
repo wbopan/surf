@@ -362,3 +362,45 @@ dsh 进程里，跟 SwiftUI 没有半点关系，用截图验它等于让 21KB �
 `tools/shot.sh` 回 `-3811`、`peekaboo` 回 "AX tree incomplete"。
 顺带把这条坑记进了 `tools/shot.swift` 的注释（睡眠/锁屏的显示器会让 SCK 列出幽灵
 窗口并且截图失败，`caffeinate -u -t 1` 可解）。
+
+### M6 编排对齐 dsh Web —— 2026-08-26 完成
+
+M2～M4 交出来的界面被否了，两条意见：**拥挤而缺乏品味**，以及**没用原生的设置窗框**。
+参考设计是 Mimestream。改完之后又追加一条：**内容编排要跟 Web 设置界面尽量一致**。
+
+于是这一轮同时换了两样东西，而且是两件独立的事：
+
+**外壳换成 macOS 偏好设置的形状。** `NSWindow.toolbarStyle = .preference` +
+`NSTabViewController(tabStyle: .toolbar)` + 每页一个 `NSHostingController`。
+三条实测：
+
+1. **`NSHostingController.sizingOptions` 在这里要保留默认的 `.preferredContentSize`**
+   ——CLAUDE.md 那条"槽内插件必须设 `[]`"在这儿正好反过来：槽里是"别让内容顶飞用户
+   调好的分栏宽度"，偏好设置窗口本就该跟着内容走。同一个开关，两种场景，结论相反。
+2. **`setFrameAutosaveName` 会跟自适应打架**：它把上一次的尺寸恢复回来，于是 600 宽的
+   内容被塞进 500 宽的窗，左边整整齐齐裁掉 50pt。摘掉之后窗口才开始每页各自合身。
+3. **`SecureField(_ title:text:)` 的第一个参数是标签不是占位符**，在 `Form` 里会渲染成
+   控件旁边一坨多余的文字（"Api Key： 未配置 ［框］"）。占位符必须走 `prompt:`。
+
+**编排改成照抄 Web。** 我先自造了一套主题分页（通用/模型/智能体/工具/高级），
+被否得对——用户对着 Web 已经形成了肌肉记忆，原生窗口另立一套只会让同一个设置在两个
+地方长得不一样。于是打开 dsh Web UI 把四栏逐页读了一遍，手写成 `SettingsTabs` 的映射表。
+**这不违反 §1.3 那条"不刮 web 产物"**：读的是跑起来的界面，写下来的是一张手写表，
+不建立任何构建期依赖。
+
+对齐后最打脸的一处：`agent-presets` / `permission` / `busyEnter` 在 Web 的 General 页，
+而我把它们放进了自造的「智能体」页。**分类是产品决定，不是能从数据推出来的东西**。
+
+两处有意的分歧，都写进了代码注释：Web 是 Discard/Save，这里即时生效（D1 已定）；
+Web 每个 ns 只露手挑的几个字段（`shell` 六个只露两个），这里精选照露、其余进
+「更多设置」折叠——**零遗漏（§2.2）优先于一致性**，看不见的字段等于不存在。
+
+**顺手挖出一个壳层的真 bug**（不在本计划范围，已记进 CLAUDE.md）：
+退休世代的 `DashPluginHandle` 常常不 deinit，四十多次换代只析构过三次。
+注册撤销之所以一直没出事，是 registry 的 token 校验兜住了；**没有 token 兜底的窗口
+就会积累**——每改一次 Swift 多叠一扇设置窗口。改成把窗口存进 `host.objects`、
+新一代 activate 时主动收拾，不再依赖析构。
+
+**验收（M2/M3 的判据，这轮才真正跑通）**：在原生窗口点「深色」→
+`~/.dsh/settings.yaml` 的 `ui-theme.preference` 当场变成 `dark` →
+浏览器里开着的 dsh Web UI 实时换肤。改完已恢复原值。

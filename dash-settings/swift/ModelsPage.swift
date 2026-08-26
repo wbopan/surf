@@ -1,59 +1,143 @@
 import SwiftUI
 
-/// 模型页：provider 目录 × 路由活跃状态 × 凭据状态。
+/// 「模型」页——对齐 dsh Web 的 Models。
 ///
-/// **范围是有意收窄的**（计划 D3）：列出、看状态、设/清 API key。
-/// "添加自定义 provider"和"问端点要模型"是深水区，单独一轮做对。
+/// Web 的形状：一句说明 + **只列已经在用的那几个 provider**（点状态 + 编辑），
+/// 底下「添加 provider」把 38 个目录收在一个下拉框里。上一版我把 38 个全平铺成
+/// 一列主从列表，看着专业，其实是把"目录"和"我的配置"混成了一坨
+/// ——用户九成时间只关心自己那三个。
 ///
-/// **没有"启停开关"**：上游 `LlmRuntime` 里没有这个概念——路由活着(`live`)是
-/// "配置完整到 llm 愿意注册它"的结果，不是一个可写字段。所以这里显示它，
-/// 不假装能切它。（原计划 D3 写的"启停已声明的 provider"是我当时的误解，
-/// 核过完整签名后改掉了。）
+/// **状态点的含义照 Web**：绿 = 凭据已配置，红 = 没有 key。
+/// 实测 `deepseek-official` 是"路由已注册但凭据未配置"（key 从别处来），
+/// Web 给的就是红点，所以路由状态另用文字说，不跟点抢含义。
+///
+/// **范围仍然收窄**（计划 D3）：列出、看状态、设/清 key、改 provider 自己那段设置。
+/// Web 的「添加自定义 provider」要往配置里写出一整个 provider 对象，
+/// 那是计划 §5 红线 1 附近的形状，单独一轮做对。
 struct ModelsPage: View {
     @ObservedObject var model: SettingsModel
 
-    var body: some View {
-        SettingsPageScaffold(model: model,
-                             title: "模型",
-                             subtitle: "provider 的路由状态与 API key。详细参数在左边对应的命名空间里。") {
-            if model.providers.isEmpty {
-                Text("没有可配置的 provider。")
-                    .foregroundStyle(.secondary)
-            } else {
-                // **分组是数据逼出来的**：实测有 38 个可配置 provider，其中在用的 3 个。
-                // 平铺 38 张卡片（每张还带一个密码框）是一堵墙，用户要找的永远是前几个。
-                let live = model.providers.filter(\.live)
-                let ready = model.providers.filter { !$0.live && $0.credentialConfigured == true }
-                let rest = model.providers.filter { !$0.live && $0.credentialConfigured != true }
+    @State private var editing: String?
+    @State private var adding = false
 
-                if !live.isEmpty { group("在用", live) }
-                if !ready.isEmpty { group("已有 key，但路由没起来", ready) }
-                if !rest.isEmpty {
-                    DisclosureGroup("其余 \(rest.count) 个") {
-                        VStack(spacing: 8) {
-                            ForEach(rest) { ProviderCard(model: model, row: $0) }
-                        }
-                        .padding(.top, 6)
+    /// 在用的：路由活着，或者凭据配好了。**这条判据是照着 Web 的结果反推的**
+    /// ——它列出的正好是这两类的并集（实测 3 个，另有 35 个只在目录里）。
+    private var configured: [ProviderRow] {
+        model.providers.filter { $0.live || $0.credentialConfigured == true }
+    }
+
+    private var catalog: [ProviderRow] {
+        let shown = Set(configured.map(\.provider))
+        return model.providers.filter { !shown.contains($0.provider) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !model.modelsAvailable {
+                Text("llm 服务不在场，这一页填不了。默认模型仍可在配置文件里改。")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                Text("填入 API key 就能用下面这些 provider 的模型。")
+                    .font(.callout).foregroundStyle(.secondary)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(configured.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 { Divider() }
+                        ProviderRowView(model: model, row: row, editing: $editing)
                     }
-                    .padding(.top, 6)
                 }
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+
+                AddProviderBox(model: model, catalog: catalog, open: $adding)
             }
+
+            defaultModelSection
         }
     }
 
+    /// 默认模型。**Web 没有这一段**（它把选模型放在输入框那条工具栏上），
+    /// 但 `agent-default-model` 是实打实的设置项，没有别的地方能露面，
+    /// 藏起来就等于丢了。放在这一页末尾是最不意外的去处。
     @ViewBuilder
-    private func group(_ title: String, _ rows: [ProviderRow]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            ForEach(rows) { ProviderCard(model: model, row: $0) }
+    private var defaultModelSection: some View {
+        if let snapshot = model.namespace(SettingsTabs.defaultModelNs),
+           case .object(let fields, _) = snapshot.schema, !fields.isEmpty {
+            Divider().padding(.top, 4)
+            Text("默认模型").font(.callout.weight(.medium))
+            Form {
+                ForEach(fields, id: \.key) { field in
+                    FieldOrGroup(model: model, snapshot: snapshot,
+                                 path: [field.key], node: field.node)
+                }
+            }
+            .formStyle(.columns)
         }
-        .padding(.bottom, 6)
     }
 }
 
-struct ProviderCard: View {
+/// 一行 provider：折叠时只有名字与状态点，点「编辑」就地展开。
+struct ProviderRowView: View {
+    @ObservedObject var model: SettingsModel
+    let row: ProviderRow
+    @Binding var editing: String?
+
+    private var isEditing: Bool { editing == row.provider }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text(row.displayName)
+                StatusDot(row: row)
+                Spacer()
+                Button(isEditing ? "收起" : "编辑") {
+                    editing = isEditing ? nil : row.provider
+                }
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+
+            if isEditing {
+                ProviderEditor(model: model, row: row)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+            }
+        }
+        .accessibilityIdentifier("settings.provider.\(row.provider)")
+    }
+}
+
+struct StatusDot: View {
+    let row: ProviderRow
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .help(help)
+    }
+
+    private var color: Color {
+        switch row.credentialConfigured {
+        case true: return .green
+        case false: return .red
+        default: return .secondary.opacity(0.4)   // 凭据服务不在场 = 不知道
+        }
+    }
+
+    private var help: String {
+        let credential: String
+        switch row.credentialConfigured {
+        case true: credential = "凭据已配置"
+        case false: credential = "没有 key"
+        default: credential = "凭据状态未知"
+        }
+        return credential + " · " + (row.live ? "路由已注册" : "路由未注册")
+    }
+}
+
+/// 展开后的 provider 编辑区：API key + 自定义设置。
+struct ProviderEditor: View {
     @ObservedObject var model: SettingsModel
     let row: ProviderRow
 
@@ -61,116 +145,168 @@ struct ProviderCard: View {
     @State private var busy = false
     @State private var error: String?
 
+    private var configured: Bool { row.credentialConfigured == true }
+
+    private var scopedFields: [SchemaField] {
+        guard let snapshot = model.namespace(row.settingsNs),
+              let node = snapshot.schema.node(at: row.settingsPath),
+              case .object(let fields, _) = node else { return [] }
+        return fields
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(row.live ? Color.green : Color.secondary.opacity(0.4))
-                    .frame(width: 7, height: 7)
-                    .help(row.live ? "路由已注册" : "路由未注册（配置不完整）")
-                Text(row.displayName).font(.body.weight(.medium))
-                if row.declared == true {
-                    Tag(text: "配置声明")
-                }
-                Spacer()
-                Text(row.provider)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
-            }
-
             HStack(spacing: 6) {
-                Text(row.keyRef)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .help(row.keyRefStored
-                          ? "配置里存着的引用名"
-                          : "配置里还没有 apiKeyEnv，按 dsh Web 的命名约定推出来的")
-                if !row.keyRefStored {
-                    Tag(text: "推断")
-                }
-                if let source = row.credentialSource {
-                    Tag(text: source)
-                }
+                Text(row.displayName).font(.callout.weight(.medium))
+                Text(row.provider).font(.caption.monospaced()).foregroundStyle(.tertiary)
                 Spacer()
-                status
+                Text(row.live ? "路由已注册" : "路由未注册")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
-            if row.credentialWritable {
-                HStack(spacing: 6) {
-                    // secret 语义同 SecretField：从空开始，空 = 不变。
-                    SecureField(configured ? "已配置（留空 = 不变）" : "输入 API key",
-                                text: $entry)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(save)
-                    Button("保存", action: save)
-                        .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                    if configured {
-                        Button("清除", action: clear).disabled(busy)
+            Form {
+                if row.credentialWritable {
+                    LabeledContent("API key：") {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                // 占位符走 prompt——第一个参数是标签，会漏成控件旁的文字。
+                                SecureField("", text: $entry,
+                                            prompt: Text(configured ? "留空 = 保留现有的" : "填入 API key"))
+                                    .labelsHidden()
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 240)
+                                    .onSubmit(save)
+                                Button("保存", action: save)
+                                    .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                                if configured { Button("清除", action: clear).disabled(busy) }
+                            }
+                            Text("存在设置文件之外，引用名 \(row.keyRef)"
+                                 + (row.keyRefStored ? "" : "（按命名约定推出来的）"))
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let error {
+                                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                            }
+                        }
+                    }
+                } else {
+                    LabeledContent("API key：") {
+                        Text("由只读来源提供（环境变量或 .env），这里改不了。")
+                            .foregroundStyle(.secondary)
                     }
                 }
-            } else if configured {
-                Text("这个引用由只读来源提供（环境变量或 .env），这里改不了。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .formStyle(.columns)
 
-            if let error {
-                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            if !scopedFields.isEmpty, let snapshot = model.namespace(row.settingsNs) {
+                // Web 管这叫 Customized settings，里面是 Base URL 与 Models 表。
+                DisclosureGroup("自定义设置（\(scopedFields.count) 项）") {
+                    Form {
+                        ForEach(scopedFields, id: \.key) { field in
+                            FieldOrGroup(model: model, snapshot: snapshot,
+                                         path: row.settingsPath + [field.key], node: field.node)
+                        }
+                    }
+                    .formStyle(.columns)
+                    .padding(.top, 6)
+                }
+                .font(.callout)
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityIdentifier("settings.provider.\(row.provider)")
-    }
-
-    private var configured: Bool { row.credentialConfigured == true }
-
-    @ViewBuilder
-    private var status: some View {
-        if busy {
-            Text("保存中…").font(.caption).foregroundStyle(.secondary)
-        } else if row.credentialConfigured == nil {
-            // 凭据服务不在场。**说清楚是"不知道"而不是"没配"**——
-            // 显示成红点会让用户去重设一个其实已经配好的 key。
-            Text("凭据状态未知").font(.caption).foregroundStyle(.tertiary)
-        } else {
-            Text(configured ? "已配置" : "未配置")
-                .font(.caption)
-                .foregroundStyle(configured ? .green : .secondary)
-        }
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func save() {
         let value = entry.trimmingCharacters(in: .whitespaces)
         guard !value.isEmpty else { return }
-        busy = true
-        error = nil
+        busy = true; error = nil
         model.setCredential(ref: row.keyRef, value: value) { failure in
-            busy = false
-            error = failure
+            busy = false; error = failure
             if failure == nil { entry = "" }
         }
     }
 
     private func clear() {
-        busy = true
-        error = nil
+        busy = true; error = nil
         model.unsetCredential(ref: row.keyRef) { failure in
-            busy = false
-            error = failure
+            busy = false; error = failure
         }
     }
 }
 
-struct Tag: View {
-    let text: String
+/// 「添加 provider」：目录收在下拉框里 + 一个 key 输入。
+///
+/// 对内建适配器来说"添加"就是**给它配上 key**——配好了 llm 就会注册它，
+/// `live` 随之变真。所以这里不写配置，只写凭据，语义和 Web 的 Apply 一致。
+/// （Web 还有「添加自定义 provider」，那个要往配置里写整个 provider 对象，不在本轮。）
+struct AddProviderBox: View {
+    @ObservedObject var model: SettingsModel
+    let catalog: [ProviderRow]
+    @Binding var open: Bool
+
+    @State private var picked: String = ""
+    @State private var entry = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    private var target: ProviderRow? {
+        catalog.first { $0.provider == picked } ?? catalog.first
+    }
 
     var body: some View {
-        Text(text)
-            .font(.caption2)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Color.secondary.opacity(0.15), in: Capsule())
-            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                open.toggle()
+            } label: {
+                Label("添加 provider", systemImage: "plus")
+            }
+            .controlSize(.small)
+
+            if open, let target {
+                Form {
+                    Picker("Provider：", selection: Binding(
+                        get: { target.provider },
+                        set: { picked = $0; entry = "" })) {
+                        ForEach(catalog) { row in
+                            Text(row.displayName).tag(row.provider)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
+
+                    LabeledContent("API key：") {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                SecureField("", text: $entry, prompt: Text("填入 API key"))
+                                    .labelsHidden()
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 240)
+                                    .onSubmit { save(target) }
+                                Button("保存") { save(target) }
+                                    .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                            }
+                            Text("会写到引用名 \(target.keyRef)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let error {
+                                Text(error).font(.caption).foregroundStyle(.red)
+                            }
+                        }
+                    }
+                }
+                .formStyle(.columns)
+                .padding(10)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+    }
+
+    private func save(_ target: ProviderRow) {
+        let value = entry.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return }
+        busy = true; error = nil
+        model.setCredential(ref: target.keyRef, value: value) { failure in
+            busy = false; error = failure
+            if failure == nil { entry = ""; open = false }
+        }
     }
 }
