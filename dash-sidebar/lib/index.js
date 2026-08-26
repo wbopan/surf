@@ -102,6 +102,8 @@ export default createSwiftPlugin({
 		const log = reporter(ctx.logger("dash-sidebar"));
 		let version = 0;
 		let timer;
+		/** 首份有内容的投影是否已经记过日志。 */
+		let announced = false;
 
 		// 宿主服务走**作用域 inject**，不写进插件顶层的 `inject` 数组：写上去就是
 		// 硬依赖，dsh 换版本改了服务名会让整个侧边栏（连同 Swift 半身）安静地不挂载。
@@ -114,8 +116,10 @@ export default createSwiftPlugin({
 			// 不 immediate = 一轮重取落地，可以再压一拍。
 			source.onChange((immediate) => schedulePush(source, immediate));
 
-			log.info(`数据面就绪（${source.describe()}）`);
+			log.info(`数据面就绪（宿主服务 ${SOURCE_SERVICES.join(" / ")}）`);
 			// 就绪即推一份：此刻壳可能早就连上、也早就问过 snapshot 了。
+			// （首轮取数是异步的，所以这一份多半是空的；真正有内容的那份
+			//  随第一次 onChange 到来。）
 			schedulePush(source, true);
 
 			inner.effect(() => () => {
@@ -178,7 +182,15 @@ export default createSwiftPlugin({
 
 		function pushSnapshot(source) {
 			version += 1;
-			push("snapshot", { version, groups: source.groups() });
+			const groups = source.groups();
+			// 只在第一份有内容的快照上记一行，之后闭嘴——running 每翻一次牌
+			// 都推一次，逐条记会把终端刷没。
+			if (!announced && groups.length > 0) {
+				announced = true;
+				const count = groups.reduce((sum, group) => sum + group.sessions.length, 0);
+				log.info(`首份投影：${count} 条会话 / ${groups.length} 组`);
+			}
+			push("snapshot", { version, groups });
 		}
 	},
 

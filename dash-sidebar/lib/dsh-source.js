@@ -162,10 +162,6 @@ export function createSessionSource(ctx, log) {
 			scheduleRefetch(true);
 		},
 
-		describe() {
-			return `apiProxy·${rows.size} 会话 / ${workspaces.length} 工作区`;
-		},
-
 		dispose() {
 			disposed = true;
 			clearTimeout(timer);
