@@ -9,10 +9,11 @@ import SwiftUI
 // 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
 // 顶部操作按钮（收起侧边栏 / 新建会话）在 dash-layout 的 NSToolbar，不在本视图。
 //
-// **行上的操作一律走右键菜单**（M11 与官方侧边栏对齐时定的形态）：web 那边是
-// hover 出一个 ⋯ 按钮，macOS 侧边栏（Finder、Mail、Xcode）的老规矩是右键。
-// 于是行内不挂任何常驻或 hover 的操作图标，列表本身保持干净；唯一的例外是
-// 分组头右缘的 chevron——它不是"操作"，是开合状态本身。
+// **右键菜单是操作全集，hover 图标是其中两个高频动作的快捷键**：
+// 会话行 hover 出归档、分组头 hover 出加号（在此工作区新建会话）。
+// 二者都只在 hover 时显形，不占常驻像素，列表静止时仍然干净；
+// 重命名/分叉/删除工作区这类低频动作只在右键里。
+// 分组头右缘的 chevron 不算"操作"，是开合状态本身，同样 hover 才显形。
 // 列表级别的新增（添加工作区）落在列表区段头「工作区」那一行的右端——
 // 与 web 的 sectionHeader 同位，新增什么就贴着什么的表头。
 
@@ -28,8 +29,10 @@ import SwiftUI
 //   sidebar.search.clear               搜索清除按钮
 //   sidebar.list                       会话列表
 //   sidebar.group.<groupId>            分组头
+//   sidebar.group.<groupId>.new        分组头的「新建会话」+（hover 才可见）
 //   sidebar.group.<groupId>.toggle     分组头的开合 chevron（hover 才可见）
 //   sidebar.session.<sessionId>        会话行
+//   sidebar.session.<sessionId>.archive 会话行的归档按钮（hover 才可见）
 //   sidebar.section.workspaces         区段头「工作区」标题
 //   sidebar.addWorkspace               区段头右端的「添加工作区」+ 号
 //   sidebar.devFooter                  Dev 构建底部状态条
@@ -66,12 +69,14 @@ struct StatusDot: View {
 /// 会话行：状态点 + 标题；选中/高亮/键盘导航由 List 提供。
 /// 对齐规则：状态点槽位宽度 = 分组头图标槽位（20pt，均 leading 对齐），
 /// 行内 spacing 同为 6 —— 状态点与文件夹图标对齐、标题与分组名对齐。
-/// 操作（重命名/分叉/归档）在右键菜单里，行内不占任何像素。
+/// 重命名/分叉/归档都在右键菜单里；归档另有一个 hover 快捷键（行尾图标）。
 struct SessionRow: View {
     let session: SidebarSession
     let onRename: () -> Void
     let onFork: () -> Void
     let onArchive: () -> Void
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -89,8 +94,25 @@ struct SessionRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
+            // hover 且非 blank（对齐 web：空 New Session 行无归档）时行尾出归档；
+            // 点击即归档、无确认——归档非破坏性，日志留着，只是从列表消失。
+            if !session.blank {
+                Button(action: onArchive) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("归档会话")
+                .accessibilityLabel(Text("归档会话"))
+                .accessibilityIdentifier("sidebar.session.\(session.id).archive")
+                .opacity(hovering ? 1 : 0)
+            }
         }
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .accessibilityIdentifier("sidebar.session.\(session.id)")
         .contextMenu {
             Button("重命名…", action: onRename)
@@ -104,13 +126,15 @@ struct SessionRow: View {
 }
 
 /// Workspace 分组头：文件夹图标（恒定描边）+ 标题（纯展示）
+/// + hover 显示的加号（在此工作区新建会话）
 /// + 右缘 chevron（唯一的开合开关，点击展开/收起，展开时旋转 90°）。
-/// 新建会话 / 重命名 / 删除工作区都在右键菜单里。
+/// 重命名 / 删除工作区只在右键菜单里。
+///
+/// **图标不随选中变色**：选中态是会话行的事（List 自己画高亮），分组头
+/// 跟着染 accent 只会让人以为分组本身被选中了。
 struct GroupHeader: View {
     let group: SidebarGroup
     let expanded: Bool
-    /// 组内含当前会话时文件夹染 accent 色（对齐 web 的 folderActive）。
-    let containsCurrent: Bool
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
@@ -129,11 +153,14 @@ struct GroupHeader: View {
             HStack(spacing: 6) {
                 Image(systemName: iconName)
                     .font(.system(size: 14))
-                    .foregroundStyle(containsCurrent ? AnyShapeStyle(Color.accentColor)
-                                                     : AnyShapeStyle(.secondary))
+                    .foregroundStyle(.secondary)
                     .frame(width: 20, alignment: .leading)
+                // sidebar List 给 Section header 默认涂 secondary，工作区名于是
+                // 看着像被禁用。这里是用户维护的账（能改名能删），不是分类标签，
+                // 显式扳回 primary 才与会话行同一个"可操作"的层级。
                 Text(group.title)
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
@@ -146,6 +173,23 @@ struct GroupHeader: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(group.title))
             .accessibilityIdentifier("sidebar.group.\(group.id)")
+            // hover 时加号出现在 chevron 左侧；.opacity 而非条件插入，
+            // 槽位恒定占位，显隐不会让标题跳动。
+            Button {
+                surface.startSession(workspaceId: group.workspaceId)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("在此工作区新建会话")
+            .accessibilityLabel(Text("在此工作区新建会话"))
+            .accessibilityIdentifier("sidebar.group.\(group.id).new")
+            .fixedSize()
+            .opacity(hovering ? 1 : 0)
             // 右缘 chevron：唯一的开合开关（点击展开/收起），hover 才显示；
             // 展开时旋转 90°（朝下）。固定槽位保证旋转/显隐不改变布局宽度。
             Button(action: onToggle) {
@@ -307,9 +351,6 @@ public struct SidebarView<Model: SidebarModel>: View {
                     } header: {
                         GroupHeader(group: group,
                                     expanded: isExpanded(group.id),
-                                    containsCurrent: group.sessions.contains {
-                                        $0.id == model.selectedSessionId
-                                    },
                                     onToggle: { toggleGroup(group.id) },
                                     onRename: {
                                         guard let id = group.workspaceId else { return }
