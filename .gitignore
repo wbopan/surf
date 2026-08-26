@@ -33,3 +33,12 @@ skills/
 
 # spike 产物（dylib/截图，可由 build.sh 重生成）
 docs/spikes/*/out/
+
+# hover spike 的可执行产物（每个都有同名 .swift，run.sh 可重编）
+docs/spikes/hover/HoverProbe
+docs/spikes/hover/diffmap
+docs/spikes/hover/mean
+docs/spikes/hover/warp
+
+# 壳工程目录下的调试截图残留（shot.sh 随手落的，不是工程文件）
+/dash-app/host/*.png

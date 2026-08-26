@@ -85,10 +85,11 @@ window.__ModuleLoader__.load({
 		const joinPlain = (suffix) => SOLID_PLAIN.map((s) => s + suffix).join(",\n");
 		const solid = join("");
 		const solidPlain = joinPlain("");
-		const solidSvg = join(" svg");
 		const solidHover = join(ENABLED + ":hover");
 		const solidActive = join(ENABLED + ":active");
-		const solidActiveSvg = join(ENABLED + ":active svg");
+		// 失活时给按钮整体去饱和用。前缀必须逐条加 —— 逗号串上只写一次
+		// 只会命中第一条选择器。
+		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-dash-blur] ' + sel).join(",\n");
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -367,6 +368,31 @@ window.__ModuleLoader__.load({
 			return out;
 		}
 
+		/**
+		 * 把按下的位置写成按钮上的 --dash-px / --dash-py（百分比）。
+		 *
+		 * 按压时那块亮光要从**手指底下**泛起来，不是从按钮正中 —— 位置这件事 CSS
+		 * 拿不到，只能由 JS 喂。一条 document 上的委托监听，capture 阶段抓，
+		 * passive 不阻塞滚动；不匹配白名单就立刻返回，代价约等于零。
+		 *
+		 * 拿不到指针（键盘回车、辅助技术触发）时两个变量不存在，CSS 那边的
+		 * 兜底值是 50% 50%，亮光从正中泛起，仍然合理。
+		 *
+		 * @param {string} sel 白名单选择器（逗号串）
+		 */
+		function watchPressPoint(sel) {
+			const onDown = (e) => {
+				const el = e.target instanceof Element ? e.target.closest(sel) : null;
+				if (!el) return;
+				const r = el.getBoundingClientRect();
+				if (!r.width || !r.height) return;
+				el.style.setProperty("--dash-px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+				el.style.setProperty("--dash-py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+			};
+			document.addEventListener("pointerdown", onDown, { capture: true, passive: true });
+			return () => document.removeEventListener("pointerdown", onDown, { capture: true });
+		}
+
 		function watchWindowFocus() {
 			const root = document.documentElement;
 			const sync = () => root.toggleAttribute("data-dash-blur", !document.hasFocus());
@@ -383,6 +409,7 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			if (!insideDash()) return;
 			ctx.effect(watchWindowFocus);
+			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
 			ctx.effect(() => {
 				document.getElementById(STYLE_ID)?.remove();
 				const style = document.createElement("style");
@@ -414,7 +441,7 @@ window.__ModuleLoader__.load({
 					// 按下切到 80ms 让它跟手，松开回到 320ms 留余韵。
 					":root {",
 					"  --dash-ease: cubic-bezier(0.32, 0.72, 0, 1);",
-					"  --dash-dur-press: 80ms;",
+					"  --dash-dur-press: 90ms;",
 					"  --dash-dur-fast: 160ms;",
 					"  --dash-dur: 320ms;",
 					// 玻璃表面，三层：**硬描边** + 上缘镜面高光 + 整圈 Fresnel 暗带。
@@ -477,24 +504,18 @@ window.__ModuleLoader__.load({
 					//
 					// **最终值是肉眼在校准台上对着系统胶囊调的，不是扫描的最优解。** 扫描能把
 					// 六个特征点都压进 0.5 阶内，看着仍不对——因为特征点没覆盖到的地方（描边的
-					// 锐度、发光的宽窄）也在影响观感。定稿相对扫描结果有两处偏离，都是有意的：
+					// 锐度、发光的宽窄）也在影响观感。定稿相对扫描结果有三处偏离，都是有意的：
 					//
 					//   描边   0.5px/.048 → **0.25px/.197**。等墨量下更窄更浓 = 更锐。
 					//          玻璃边缘要的是"实"，摊薄了就散成一圈灰雾。
 					//   暗带   **整层删掉**。上部暗带原是为复刻"上深下浅"，但发光加强后
-					//          它只让上半发浑；改用更深的底色（.0063 → .0147）整体压一档。
-					//          代价是放弃了系统那 2.8 倍的上下差 —— 肉眼比对下这样更像。
+					//          它只让上半发浑，删了更干净。代价是放弃系统那 2.8 倍的上下差。
+					//   底色   从"往下压"翻成"往上提"：`rgba(252,252,252,.5272)` 是近白色的高
+					//          不透明度填充，按钮在页面灰上是**浮起来的一块亮**（+3），而不是
+					//          陷下去的一块暗。系统那枚是 −1.6 的微暗，方向正相反 —— 但按钮
+					//          坐的是页面灰不是纯白，肉眼比对下提亮更像玻璃。
 					//
-					// **发光必须是两层，一层做不出来。** 单层 `inset 0 3px 0 白` 的 blur 是 0，
-					// 等于拿一条 3px 纯白硬边盖住边缘 —— 边缘被打成纯白（y1/y2 都是 0.0），
-					// 到 y3 又突然掉回本体 −3.2，是个白块不是发光。但**单纯给它加 blur 也不行**：
-					// inset 阴影带模糊后，模糊核有一半落在元素外，最边缘反而最弱，y1 怎么调都
-					// 够不到 −1.6。所以拆两层 —— 窄硬边（2px/.45）把最边缘定住，宽模糊层
-					// （4px 5px -1px / .30）做向内的过渡：
-					//
-					//     系统   y1 −1.6 · y2 −2.4 · y3 −3.0 · y5 −3.2
-					//     两层   y1 −1.6 · y2 −2.4 · y3 −2.4 · y5 −3.2   ← 差一个量化步长
-					//     单硬边 y1  0.0 · y2  0.0 · y3 −3.2 · y5 −3.2   ← 白块
+					// 发光为什么必须是四层的几何衰减，见 glowLayers() 的注释。
 					"  --dash-glass-edge: rgba(0, 0, 0, 0.197);",
 					"  --dash-glass-edge-w: 0.25px;",
 					// 发光的颜色。无色玻璃是白的；**带色玻璃不是** —— 系统蓝键的峰值是 #00C0FF，
@@ -506,6 +527,17 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-glow-d: 0.45;",
 					"  --dash-glass-side: rgba(0, 0, 0, 0.119);",
 					"  --dash-glass-body: rgba(252, 252, 252, 0.5272);",
+					// 按压亮光。**浅色档几乎没有余量**：本体已经 248/255，纯白也只抬得动 7 级，
+					// 所以给到 1.0 仍然是"淡淡一片"。真想按下去更明显，把它换成一点点黑
+					// （rgba(0,0,0,.10)）读起来强得多 —— 那是"压下去"不是"泛起光"，看要哪个。
+					// 浅色档按下**不泛光**：系统实测就是整体压暗，一点白光都没有；而且浅色
+					// 玻璃本体已经 248/255，头顶只剩 7 级，白光物理上也抬不动（实测 +1 级）。
+					"  --dash-press-glow: transparent;",
+					// hover 变暗、按下更暗。系统实测（激活窗口、同图左右对照）：
+					// 248.1 → 悬停 239.5（−8.6）→ 按下 230.8（−17.3）。tint 是叠在最上面的
+					// 整片 inset，所以 alpha 直接由 Δ/底色算：8.6/248.1、17.3/248.1。
+					"  --dash-tint-hover: rgba(0, 0, 0, 0.035);",
+					"  --dash-tint-press: rgba(0, 0, 0, 0.070);",
 					"  --dash-glass-drop: rgba(0, 0, 0, 0.05);",
 					"}",
 					// dsh 的深色主题挂在 body[data-ds-dark-theme] 上（它自己的 --dsw-*
@@ -536,6 +568,14 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-glow-d: 0.5;",
 					"  --dash-glass-side: rgba(0, 0, 0, 0);",
 					"  --dash-glass-body: rgba(255, 255, 255, 0.137);",
+					// 深色档余量大得多，扫过 .20/.30/.40/.55 后取 .30：再高就白成一块。
+					"  --dash-press-glow: rgba(255, 255, 255, 0.17);",
+					// 深色档 hover 提亮。系统实测 66.6 → 88.5（+21.9），**按下与悬停逐像素
+					// 完全一致** —— 深色那档的高光到 hover 就到顶了，按下不再加码。我们仍然在
+					// 按下时多叠一层跟指针走的泛光（--dash-press-glow），那是自己要的层次：
+					// 闲时 → 悬停（整面提亮）→ 按下（手指底下再亮一块），系统只有前两级。
+					"  --dash-tint-hover: rgba(255, 255, 255, 0.113);",
+					"  --dash-tint-press: rgba(255, 255, 255, 0.113);",
 					"  --dash-glass-drop: rgba(0, 0, 0, 0.25);",
 					"}",
 					
@@ -574,6 +614,15 @@ window.__ModuleLoader__.load({
 					"  --dash-glass-body: rgba(255, 255, 255, 0.094);",
 					"}",
 
+					// 表面换成平色只做了一半 —— **失活时按钮里的内容也得褪色**。系统在失活窗口里
+					// 把控件整个去饱和（实测：带色玻璃连色相都不剩，退成平灰），发送键那圈强调蓝
+					// 还亮着就穿帮。grayscale(1) 对已经中性的玻璃层是空操作，只咬有色的内容。
+					//
+					// 只给白名单里那五个按钮，不给整页：系统灰的是**控件**，正文该什么色还是什么色。
+					blurSolid + " {",
+					"  filter: grayscale(1);",
+					"}",
+
 					// 统一过渡。dsh 给按钮写的是 transition: all，会把 scale 一起卷进它
 					// 自己的时长里；这里换成逐属性声明，scale 走长曲线、配色走短线性。
 					solid + " {",
@@ -583,6 +632,10 @@ window.__ModuleLoader__.load({
 					// border 充当玻璃边界，我们只补高光和暗带。
 					"  --dash-surface:",
 					...glowLayers(),
+					// hover / 按下的整片着色。**放在高光层之下**：上下那两道高光是镜面反射，
+					// 不该被"鼠标移上去"改掉；系统那组 Δ 也是量按钮腰部（本体）得来的，
+					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
+					"    inset 0 0 0 100px var(--dash-tint),",
 					"    inset 14px 0 8px -15px var(--dash-glass-side),",
 					"    inset -14px 0 8px -15px var(--dash-glass-side),",
 					"    inset 0 0 0 100px var(--dash-glass-body);",
@@ -591,6 +644,9 @@ window.__ModuleLoader__.load({
 					"    scale var(--dash-dur) var(--dash-ease),",
 					"    background-color var(--dash-dur-fast) linear,",
 					"    box-shadow var(--dash-dur-fast) var(--dash-ease),",
+					"    --dash-press-r var(--dash-dur) var(--dash-ease),",
+					"    --dash-press-a var(--dash-dur) var(--dash-ease),",
+					"    filter var(--dash-dur-fast) linear,",
 					"    color var(--dash-dur-fast) linear !important;",
 					"}",
 					// 无 border 的那组：把描边补进 --dash-surface 的最前面（层序在最上，
@@ -600,41 +656,101 @@ window.__ModuleLoader__.load({
 					"  --dash-surface:",
 					"    inset 0 0 0 var(--dash-glass-edge-w) var(--dash-glass-edge),",
 					...glowLayers(),
+					// hover / 按下的整片着色。**放在高光层之下**：上下那两道高光是镜面反射，
+					// 不该被"鼠标移上去"改掉；系统那组 Δ 也是量按钮腰部（本体）得来的，
+					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
+					"    inset 0 0 0 100px var(--dash-tint),",
 					"    inset 14px 0 8px -15px var(--dash-glass-side),",
 					"    inset -14px 0 8px -15px var(--dash-glass-side),",
 					"    inset 0 0 0 100px var(--dash-glass-body);",
 					"}",
-					solidSvg + " {",
-					"  transition: scale var(--dash-dur) var(--dash-ease), opacity var(--dash-dur) var(--dash-ease);",
-					"}",
 
-					// 按压：容器涨、图标缩。这两个方向相反的形变是 Liquid Glass 手感的
-					// 全部秘密——只做其中一个都不像（实测：单独放大像网页 hover，单独
-					// 缩小像 Android ripple 的前摇）。scale 是独立属性、不占布局，
-					// 因此在 flex/grid 里放大不会挤动邻居。
+					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，
+					// 图标本来就跟着涨，不需要也不该再给它写一层。
+					//
+					// 这里曾经给图标补过一条反向的 `scale: 0.88`，注释还称"容器涨、图标缩"是
+					// Liquid Glass 手感的全部秘密 —— **没有这种说法，那条是错的**，仓库里也从来
+					// 没有任何实测支持它。净效果是图标只有 1.06 × 0.88 = 0.93 倍，按下去像被
+					// 捏了一把而不是被按下去。图标现在什么都不额外做，跟着容器走。
+					//
+					// scale 是独立属性、不占布局，所以在 flex/grid 里放大不会挤动邻居。
 					solidActive + " {",
-					"  scale: 1.06;",
+					"  scale: 1.09;",
+					// 150% 就是闲时那个值 —— **定稿故意不收拢**：亮光只淡入淡出，是整面泛光，
+					// 不是聚成一小块。位置仍然跟着 --dash-px/--dash-py 走（渐变中心在手指底下，
+					// 只是摊得很开）。这一行留着是为了把"不收拢"写在用它的地方，改回收拢就调它。
+					"  --dash-press-r: 150%;",
+					"  --dash-press-a: var(--dash-press-glow);",
 					"  transition-duration: var(--dash-dur-press) !important;",
 					"}",
-					solidActiveSvg + " {",
-					"  scale: 0.88;",
-					"  opacity: 0.7;",
-					"  transition-duration: var(--dash-dur-press);",
+
+					// 按下时手指底下泛起一片亮光，松手淡掉。渐变中心跟着指针走。
+					//
+					// **定稿只让不透明度变，半径两态都是 150%** —— 整面泛光，不收拢成一小块。
+					// 半径这个旋钮仍然接着：**"散开"这件事必须写进闲时那一态**才做得出来。
+					// transition 只有两态，闲时 = 摊开 + 全透明、按住 = 收拢 + 亮起来，按下去就是
+					// "光聚到手指底下"，松手自动成为"摊开并淡掉"，一条 transition 拿到两个方向，
+					// 不用 JS 补第三个关键帧。反过来写（闲时收小、按住摊开）松手就成了"缩回去"。
+					//
+					// 半径和颜色都能过渡，是因为 @property 把它们注册成了 <percentage> / <color>：
+					// **没注册的自定义属性不参与插值**，会直接跳变。位置走 --dash-px/--dash-py，
+					// 由 watchPressPoint() 喂；拿不到指针时兜底 50% 50%。
+					//
+					// **走 background-image 而不是 ::after**：伪元素盖在内容之上，浅色档那点
+					// 白光会把按钮文字一起冲淡（实测过，"Session log" 直接发虚）。background-image
+					// 这一层在 background-color 之上、内容之下，文字纹丝不动。代价是两条：
+					// 它会覆盖 dsh 自己的 background-image（这几个按钮目前都是纯色，没有渐变），
+					// 而且 inset 阴影画在背景之上，玻璃底色那层会把亮光吃掉一半 —— 后者反而
+					// 更对：光是从材料内部透出来的，不是糊在玻璃表面。
+					// 不注册它，闲时 var(--dash-tint) 解析不出来会让**整条 box-shadow 失效**，
+					// 玻璃表面直接消失。注册成 <color> 顺带也让它自己可插值。
+					"@property --dash-tint {",
+					"  syntax: \"<color>\";",
+					"  inherits: false;",
+					"  initial-value: transparent;",
+					"}",
+					"@property --dash-press-r {",
+					"  syntax: \"<percentage>\";",
+					"  inherits: false;",
+					"  initial-value: 150%;",
+					"}",
+					"@property --dash-press-a {",
+					"  syntax: \"<color>\";",
+					"  inherits: false;",
+					"  initial-value: transparent;",
+					"}",
+					solid + " {",
+					// !important 是必须的：`background` 简写会把 background-image 一起清掉，
+					// dsh 只要在哪条更具体的规则里用了简写（发送键那种实心色最容易），亮光就
+					// 整个没了，而且是静默的 —— 不报错、不留痕。
+					"  background-image: radial-gradient(circle at var(--dash-px, 50%) var(--dash-py, 50%),",
+					"    var(--dash-press-a) 0%, transparent var(--dash-press-r)) !important;",
 					"}",
 
-					// 悬停：表面质感原样保留，只把贴地投影抬高一档（"浮起来"）。
-					// dsh 自己的 hover 底色照常生效，深浅主题自动跟随。
+					// 悬停：整面着色（浅色变暗 / 深色提亮，见上面两组 tint 变量），
+					// 外加把贴地投影抬高一档（"浮起来"）。表面其余层原样保留 ——
+					// box-shadow 是整体覆盖的，所以这里必须重抄 var(--dash-surface)。
 					solidHover + " {",
+					"  --dash-tint: var(--dash-tint-hover);",
 					"  box-shadow: var(--dash-surface), 0 2px 5px var(--dash-glass-drop);",
 					"}",
-					// 按下：投影压回去（贴地），配合容器放大，像被按进桌面。
+					// **实心强调键不参与 hover**：系统实测 .glassProminent 悬停零变化
+					// （浅深两档、逐像素 diff 都是空的，且 .onHover 指示灯确认游标确实到位）。
+					// 选择器与上一条同特异性，靠源码顺序覆盖。投影那一档保留。
+					'button[class*="_primary"]' + ENABLED + ':hover {',
+					"  --dash-tint: transparent;",
+					"}",
+					// 按下：着色加深一档 + 投影压回去（贴地），配合容器放大，像被按进桌面。
+					// 排在 hover 之后，所以两态同时命中时这条赢（含上面那条 _primary 的清零）。
 					solidActive + " {",
+					"  --dash-tint: var(--dash-tint-press);",
 					"  box-shadow: var(--dash-surface), 0 0 1px var(--dash-glass-drop);",
 					"}",
 
 					// 尊重"减少动态效果"：关掉形变，保留配色反馈。
 					"@media (prefers-reduced-motion: reduce) {",
-					"  " + solidActive + ", " + solidActiveSvg + " { scale: 1 !important; }",
+					"  " + solidActive + " { scale: 1 !important; }",
+					"  " + solidActive + " { --dash-press-r: 100% !important; }",
 					"}",
 
 					...fontRules,
