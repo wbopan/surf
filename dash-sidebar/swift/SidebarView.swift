@@ -33,10 +33,8 @@ import SwiftUI
 //   sidebar.group.<groupId>.toggle     分组头的开合 chevron（hover 才可见）
 //   sidebar.session.<sessionId>        会话行
 //   sidebar.session.<sessionId>.archive 会话行的归档按钮（hover 才可见）
-//   sidebar.section.workspaces         区段头「工作区」标题
-//   sidebar.addWorkspace               区段头右端的「添加工作区」+ 号
+//   sidebar.addWorkspace               左下角的「添加工作区」圆圈加号
 //   sidebar.empty                      空态文案
-//   sidebar.devFooter                  Dev 构建底部状态条
 //
 // 右键菜单项按文案定位（AX 里是 NSMenuItem，挂不了 identifier）；
 // 工具栏的「筛选」「边栏」是 NSToolbarItem / 系统标准项，按 Title 定位。
@@ -413,7 +411,6 @@ struct SidebarView<Model: SidebarModel>: View {
                 workspaceList
             }
             addWorkspaceBar
-            if isDevBuild { devFooter }
         }
         .alert(renameTarget?.dialogTitle ?? "", isPresented: renamePresented) {
             TextField(renameTarget?.fieldLabel ?? "", text: $renameText)
@@ -693,43 +690,6 @@ struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    /// Dev 构建判定。插件由壳在运行时编译，**没有 `-DDEBUG`**，
-    /// 所以 `#if DEBUG` 在这里永远不成立——改看壳的 bundle id。
-    private var isDevBuild: Bool {
-        Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
-    }
-
-    private var devFooter: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Color.orange)
-                .frame(width: 7, height: 7)
-            Text("DEV BUILD")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.orange)
-                .tracking(0.8)
-            Spacer()
-            if !buildTimestamp.isEmpty {
-                Text(buildTimestamp)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.orange.opacity(0.8))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color.orange.opacity(0.08))
-        .accessibilityIdentifier("sidebar.devFooter")
-    }
-
-    private var buildTimestamp: String { Self.readBuildTimestamp() }
-
-    private static func readBuildTimestamp() -> String {
-        guard let url = Bundle.main.url(forResource: "BuildTimestamp", withExtension: "txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
-        else { return "" }
-        return text
-    }
 }
 
 /// 「按时间」视图的分段。

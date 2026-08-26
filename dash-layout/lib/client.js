@@ -354,6 +354,17 @@ window.__ModuleLoader__.load({
 						"  visibility: hidden !important;",
 						"  pointer-events: none !important;",
 						"}",
+						// **例外：设置 modal**。dsh 把它渲染在侧边栏列**内部**
+						// （_sidebarCol > … > _settingsArea > _overlay > _panel），
+						// 不是 portal 到 body，所以整列隐形会把它一起带走——点得中、
+						// 挂载成功、就是看不见，且不报任何错。这是 ⌘, 在 dash-settings
+						// 缺席时唯一的逃生舱（原生窗口不在场时 layout 会回落到它），
+						// 死了就等于没有设置入口。overlay 是 position:fixed，
+						// 不受上面那条 frame 平移影响，所以只需把可见性与命中还回去。
+						"html[" + NATIVE_ATTR + '] [class*="_sidebarCol"] [class*="_overlay"] {',
+						"  visibility: visible !important;",
+						"  pointer-events: auto !important;",
+						"}",
 					].join("\n");
 					document.head.appendChild(style);
 					// 属性值 = 实例 token：cleanup 据此判断这份全局状态还是不是自己的。

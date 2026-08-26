@@ -168,24 +168,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let win = NSWindow(contentRect: NSRect(origin: .zero, size: Self.defaultWindowSize),
                            styleMask: style, backing: .buffered, defer: false)
         win.title = AppInfo.displayName
-        #if DEBUG
-        // Dev 构建窗口标题旁常驻 DEV 徽标，与 Release 一眼区分。
-        let devBadge = NSTextField(labelWithString: "DEV")
-        devBadge.font = .systemFont(ofSize: 10, weight: .semibold)
-        devBadge.textColor = .white
-        devBadge.alignment = .center
-        devBadge.wantsLayer = true
-        devBadge.layer?.cornerRadius = 4
-        devBadge.layer?.masksToBounds = true
-        devBadge.layer?.backgroundColor = NSColor.systemOrange.cgColor
-        devBadge.layer?.opacity = 0.92
-        devBadge.translatesAutoresizingMaskIntoConstraints = false
-        win.contentView?.addSubview(devBadge)
-        NSLayoutConstraint.activate([
-            devBadge.topAnchor.constraint(equalTo: win.contentView?.topAnchor, constant: 8),
-            devBadge.centerXAnchor.constraint(equalTo: win.contentView?.centerXAnchor),
-        ])
-        #endif
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true

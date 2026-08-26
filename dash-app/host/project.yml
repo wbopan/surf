@@ -2,7 +2,7 @@ name: dash
 options:
   bundleIdPrefix: io.wenbo
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "27.0"
   createIntermediateGroups: true
   xcodeVersion: "27.0"
 settings:
@@ -44,7 +44,7 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: YES
         CODE_SIGNING_ALLOWED: YES
-        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        MACOSX_DEPLOYMENT_TARGET: "27.0"
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         # 共享 module（DashSDK）：编译期找 .swiftmodule，链接期找 dylib，

@@ -138,7 +138,7 @@ NSViewRepresentable 每轮 update 都会把环境的 `controlSize`（默认 `.re
 ## 从壳迁进插件时踩到的坑
 
 - **`#if DEBUG` 在插件里永远不成立**：插件由壳在运行时用命令行 swiftc 编译，没有 `-DDEBUG`。
-  底部那条橙色 DEV BUILD 改看壳的 bundle id 后缀（`io.wenbo.dash.dev`）。
+  插件里要判 Dev 只能看壳的 bundle id 后缀（`io.wenbo.dash.dev`）。
 - 选中高亮活过热替换靠 `host.store` 存 `selectedSessionId`。它只是"页面把 `currentSession`
   报回来之前先亮哪一行"的装饰状态，丢了不心疼——真相在 dsh 侧。
 - **分叉标题的序号递增必须自己复刻**（`lib/fork-title.js`，用例在 `test/`）：上游把它

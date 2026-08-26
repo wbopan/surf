@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.35 -apple-system,"SF Pro Text","PingFang SC",system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#1d1d1f;background:#fff}
+a{color:#0a66f5}a:hover{color:#0a4fc0}
+.win{display:flex;flex-direction:column;height:100%;background:#fff}
+.chrome{background:#f6f6f6;border-bottom:1px solid #d7d7d9;padding:10px 0 0}
+.lights{display:flex;gap:8px;padding:0 13px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.title{text-align:center;font-size:13px;font-weight:600;margin:-16px 0 0}
+.tabs{display:flex;justify-content:center;gap:2px;padding:9px 0 7px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;width:76px;padding:5px 0 4px;border-radius:7px;font-size:11px;color:#3c3c43}
+.tab.on{background:#e3e3e5;color:#0a66f5}
+.body{flex:1;min-height:0;padding:20px 26px 22px;display:flex;flex-direction:column}
+.form{display:grid;grid-template-columns:170px 1fr;column-gap:10px;row-gap:11px;align-items:start}
+.lab{text-align:right;font-size:13px;padding-top:4px;white-space:nowrap}
+.ctl{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.hint{font-size:11px;color:#86868b;line-height:1.4}
+.rule{grid-column:2;border-top:1px solid #e2e2e4;margin:4px 0 1px;height:0}
+.popup{display:inline-flex;align-items:center;gap:10px;background:#eaeaec;border-radius:6px;padding:4px 8px 4px 11px;font-size:13px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.11)}
+.field{background:#fff;border:1px solid #cfcfd2;border-radius:5px;padding:4px 8px;font-size:13px;color:#1d1d1f}
+.btn{background:#fbfbfb;border:1px solid #cfcfd2;border-radius:6px;padding:4px 12px;font-size:13px;box-shadow:0 .5px 1px rgba(0,0,0,.06)}
+.seg{display:inline-flex;background:#e6e6e8;border-radius:7px;padding:2px;gap:2px}
+.seg span{padding:3px 15px;border-radius:5px;font-size:12.5px;color:#3c3c43}
+.seg .on{background:#fff;color:#1d1d1f;box-shadow:0 .5px 1.5px rgba(0,0,0,.22)}
+.cb{width:14px;height:14px;border-radius:3.5px;background:#0a66f5;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.cb.off{background:#fff;box-shadow:inset 0 0 0 1px #c4c4c7}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:#86868b}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.split{display:flex;gap:16px;flex:1;min-height:0}
+.list{width:186px;display:flex;flex-direction:column;border:1px solid #d5d5d8;border-radius:6px;background:#fff;overflow:hidden;flex:none}
+.li{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:13px}
+.li .sub{font-size:11px;color:#86868b;margin-left:auto}
+.li.on{background:#dcdcde}
+.grp{font-size:10.5px;font-weight:600;color:#86868b;letter-spacing:.05em;padding:9px 10px 3px}
+.foot{display:flex;border-top:1px solid #d5d5d8;background:#fafafa;height:23px;margin-top:auto}
+.foot b{width:29px;display:flex;align-items:center;justify-content:center;font-weight:400;font-size:14px;color:#3c3c43;border-right:1px solid #e4e4e6}
+.detail{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.strip{display:inline-flex;align-self:center;border:1px solid #c9c9cc;border-radius:6px;padding:1px;background:#f2f2f3}
+.strip span{padding:3px 14px;font-size:12.5px;border-radius:5px;color:#3c3c43}
+.strip .on{background:#fff;color:#1d1d1f;box-shadow:0 .5px 1.5px rgba(0,0,0,.20)}
+.table{border:1px solid #d5d5d8;border-radius:6px;overflow:hidden;background:#fff}
+.thead{background:#f3f3f4;border-bottom:1px solid #dcdcdf;font-size:11px;color:#6e6e73}
+.thead span{padding:4px 10px;border-right:1px solid #e3e3e5}
+.tr{font-size:12.5px;align-items:center}
+.tr:nth-child(even){background:#f8f8f9}
+.tr span{padding:5px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.search{display:inline-flex;align-items:center;gap:6px;background:#eaeaec;border-radius:6px;padding:4px 9px;font-size:13px;color:#86868b;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.11)}
+</style>
+</helmet>
+<div class="win" style="background:#fff">
+  <div style="padding:22px 26px 10px;border-bottom:1px solid #e2e2e4">
+    <div style="font-size:15px;font-weight:600">版式规则</div>
+    <div class="hint" style="margin-top:3px">四页共用一套语法。照 macOS 偏好设置（Mimestream / 信息）的老规矩；括号里是 SwiftUI 的真名，都在 macOS 27 SDK 里核过。</div>
+  </div>
+  <div class="body" style="gap:15px;padding-top:16px">
+
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <span class="grp" style="padding:0">网格</span>
+      <div style="position:relative;border:1px dashed #c9c9cc;border-radius:6px;padding:12px 14px">
+        <div class="form" style="row-gap:11px">
+          <div class="lab">标签右对齐：</div><div class="ctl"><span class="popup">控件左对齐 <svg width="10" height="14" viewBox="0 0 10 14" fill="none" stroke="#6e6e73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 6L5 3.2 7.8 6M2.2 8L5 10.8 7.8 8"/></svg></span></div>
+          <div class="rule"></div>
+          <div class="lab">单位在控件右边：</div><div class="ctl" style="flex-direction:row;align-items:center;gap:7px"><span class="field" style="width:88px">120000</span><span class="hint">毫秒</span></div>
+        </div>
+        <div style="position:absolute;left:194px;top:0;bottom:0;width:1px;background:#0a66f5;opacity:.3"></div>
+        <div style="position:absolute;left:202px;top:-8px;font-size:10px;color:#0a66f5">控件列起点</div>
+      </div>
+      <span class="hint"><b>顶层页面</b>的表单：标签列 170pt、列间距 10pt、行距 11pt。<b>详情栏</b>的标签列按自己那几行收窄（70–120pt）——它是另一个表单，不跟外面共享列宽。<br>同一个表单里长标题绝不进标签列（单位、量词一律甩到控件右边）：列宽是这张表所有行共享的，一行顶歪一页。</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px 22px">
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">分隔线只跨控件列</span><span class="hint">不是整窗横线。它分的是控件的组，不是页面。</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">复选框没有左标签</span><span class="hint">文案本身就是它的标签，紧贴控件列起点。</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">说明只在需要处出现</span><span class="hint">11pt 灰字，控件正下方。每行都挂说明等于都没有。</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">组标签也右对齐</span><span class="hint">多个控件共用一个标签时，标签对齐第一行（照 Advanced 的 Reset:）。</span></div>
+    </div>
+
+    <div style="border-top:1px solid #e2e2e4"></div>
+
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <span class="grp" style="padding:0">原生控件清单</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 20px">
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><span class="popup">弹出菜单 <svg width="10" height="14" viewBox="0 0 10 14" fill="none" stroke="#6e6e73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 6L5 3.2 7.8 6M2.2 8L5 10.8 7.8 8"/></svg></span></div><span class="mono" style="font-size:11px;color:#5b5b60">Picker(.menu)</span></div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><span class="field" style="width:92px">文本框</span></div><span class="mono" style="font-size:11px;color:#5b5b60">TextField</span></div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><div class="seg"><span>分段</span><span class="on">控件</span></div></div><span class="mono" style="font-size:11px;color:#5b5b60">Picker(.segmented)</span></div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><span class="search"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="#86868b" stroke-width="1.4" stroke-linecap="round"><circle cx="6.2" cy="6.2" r="4"/><path d="M9.2 9.2l3 3"/></svg> 搜索框</span></div><span class="mono" style="font-size:11px;color:#5b5b60">.searchable(text:)</span></div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><span style="display:inline-flex;align-items:center;gap:7px"><span class="cb"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 5.2l2.2 2.2L8.4 2.8"/></svg></span>复选框</span></div><span class="mono" style="font-size:11px;color:#5b5b60">Toggle(.checkbox)</span></div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:26px"><div style="width:150px;flex:none;display:flex;align-items:center"><span class="btn">按钮</span></div><span class="mono" style="font-size:11px;color:#5b5b60">Button</span></div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-top:6px">
+        <div style="width:150px;flex:none;display:flex;flex-direction:column;gap:4px">
+          <div class="list" style="width:150px">
+            <div class="li on">主从列表</div>
+            <div class="li">可增删的才带页脚</div>
+            <div class="foot"><b>+</b><b>−</b></div>
+          </div>
+          <span class="mono" style="font-size:10.5px;color:#5b5b60;line-height:1.5">List(selection:)<br>.listStyle(.bordered(<br>&nbsp;&nbsp;alternatesRowBackgrounds:))<br>+ .safeAreaInset(edge:.bottom)</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:5px">
+          <div class="strip" style="align-self:flex-start"><span class="on">内层 tab 条</span><span>第二栏</span></div>
+          <span class="mono" style="font-size:10.5px;color:#5b5b60">Picker(.segmented)</span>
+          <div class="table" style="margin-top:5px">
+            <div class="thead" style="display:grid;grid-template-columns:1fr 76px"><span>带边框的表</span><span style="border-right:none">隔行底色</span></div>
+            <div>
+              <div class="tr" style="display:grid;grid-template-columns:1fr 76px"><span>一行</span><span>白</span></div>
+              <div class="tr" style="display:grid;grid-template-columns:1fr 76px"><span>又一行</span><span>灰</span></div>
+            </div>
+          </div>
+          <span class="mono" style="font-size:10.5px;color:#5b5b60;line-height:1.5">Table(of:selection:sortOrder:) + TableColumn<br>.tableStyle(.bordered(alternatesRowBackgrounds:))<br>表头点一下就排序；TableColumnCustomization 能让用户<br>自己增删列并记住</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

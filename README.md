@@ -141,7 +141,7 @@ final class SidebarPlugin: DashPlugin {
 |---|---|---|
 | App 名 | dash Dev | dash |
 | Bundle ID | io.wenbo.dash.dev | io.wenbo.dash |
-| 标记 | 橙色 DEV 徽章、标题栏 DEV pill、侧边栏构建时间戳 | 无 |
+| 标记 | 橙色 DEV 徽章（App 图标） | 无 |
 | 位置 | `dash-app/host/build/Build/Products/Debug/` | `/Applications/` |
 
 日常使用者应在自己 profile 的 `cordis.patch.yml` 里把 `dash-app` 的

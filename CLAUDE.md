@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 dev                一行启动本 worktree 的整套 dash（薄封装，逻辑在 dash/bin/dash.js）
 dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，不含运行时代码
-  cordis.patch.yml 装哪五个插件、什么顺序、什么配置——改编排只改这里
+  cordis.patch.yml 装哪六个插件、什么顺序、什么配置——改编排只改这里
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
@@ -34,6 +34,9 @@ dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待批准三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
+dash-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
+                   数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
+                   agentPresets / pluginInventory（权威计划 docs/dash-settings-plan.md）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
                    按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
                    （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
@@ -43,7 +46,7 @@ docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结�
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
-五个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
+六个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
 "去掉 scope"）。**它们自己都不再声明 `dsh.bundle`**——编排权集中在伞包那张表上，
 一处真相。详见下面「profile 与伞 bundle」。
 
@@ -55,7 +58,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 ./dev --help       # 其余选项
 ```
 
-`./dev` 幂等，随便重复跑。它会把本 worktree 的五个插件 + 伞包 link 进
+`./dev` 幂等，随便重复跑。它会把本 worktree 的六个插件 + 伞包 link 进
 profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。dash-app 随之
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
@@ -118,7 +121,7 @@ Debug 与 Release 是两个不同 App，可并存运行：
 | App 名 | dash Dev | dash |
 | Bundle ID | io.wenbo.dash.dev | io.wenbo.dash |
 | 图标 | 橙色 DEV 徽章 | 原图标 |
-| UI 标记 | 标题栏 DEV pill、侧边栏 DEV BUILD 条（含构建时间戳）、bootstrap 斜纹 | 无 |
+| UI 标记 | bootstrap 斜纹 | 无 |
 | 位置 | dash-app/host/build/Build/Products/Debug/ | /Applications/ |
 
 构建时间戳：prebuild 脚本 `scripts/write-build-timestamp.sh` 每次构建把时间写入
@@ -206,6 +209,11 @@ scripts/embed-modules.sh   → Contents/Frameworks/lib<M>.dylib（壳按 @rpath 
 （dsh 的 wire 模型 + 会话镜像）随 M10 整体退役——数据面搬进 dash-sidebar 的 node
 半边了。`embed-modules.sh` 只拷不删，所以在旧的 `build/` 里可能还躺着
 `libDSHKit.dylib` 的残骸；`rm -rf build` 重来一次就干净了。
+
+**`build-modules.sh` 的跳过判据里含构建参数（TARGET、swiftc 版本），不只是源码 hash**
+——只按源码算的话，改了部署目标而源码没动会被判成"未变动，跳过"，`.swiftinterface`
+里还写着旧三元组，插件跟着用旧目标编，新 API 报 "only available in macOS 27.0 or
+newer"，而脚本刚刚打印了"跳过"。**报错在插件那边，原因在这个脚本的缓存里。**
 **改 DashSDK 会让所有插件的 contentHash 失效、全量重编**（工具链指纹里含它的
 `.swiftinterface` 摘要），这是对的：`.swiftmodule` 对不上比慢几秒糟得多。
 
@@ -257,13 +265,13 @@ npm workspace 或手工 symlink，那是机器本地状态，新克隆的仓库�
 1. **`@deepseek-ai/dsh-web-app` 得手动列进 `bundles`。** dsh 的 `PROFILE_TEMPLATES`
    只给 `web` 和 `headless` 两个名字配了模板，别的 profile 初始化时只拿到
    `dsh-base`，web 那一层不会自己出现。
-2. **五个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
+2. **六个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
    列上去会让 `loadProfile` 直接 fails loud（"列为 bundle 却没有声明"是配置错误，
    不是"没有 patch"）。从旧结构升级上来的 profile 尤其要清。
 
-### 为什么开发期要单独 link 那五个插件
+### 为什么开发期要单独 link 那六个插件
 
-`./dev` 会把五个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
+`./dev` 会把六个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
 **pnpm 对 `link:` 依赖不会去装被 link 目标自己的 dependencies**，而 cordis loader
 解析插件包名时的锚点是 **profile 目录**——伞包自带的 `node_modules` 根本不在
 Node 的向上查找链上。不 link 它们，启动即炸：
@@ -272,7 +280,7 @@ Node 的向上查找链上。不 link 它们，启动即炸：
 Cannot find package '@wenbo/dash-bridge' imported from ~/.dsh/profiles/dash/
 ```
 
-发布之后没有这个问题：那时五个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
+发布之后没有这个问题：那时六个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
 profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，因为编排权
 始终在伞包那张表上——这正是摘掉子包 `dsh.bundle` 声明换来的好处。
 
@@ -412,6 +420,27 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
   反过来，**被正确挡住的构建输入也要有人补**：`dash-app/host/tools/xcodegen` 就是
   这样一份"该挡、但缺了整个壳就没了"的文件，兜底在 `./dev` 里（见「多 worktree」）。
+- **别把清理逻辑只挂在 `DashPluginHandle` 的析构上**。壳换代时 `loaded[name]` 一换、
+  旧 `LoadedPlugin` 本该是最后一个强引用，但实测四十多次换代里 handle 只 deinit 过三次
+  ——注册撤销之所以没出事，是因为 registry 用 token 校验兜住了"新的赢"，跟析构没关系。
+  **没有 token 兜底的东西（窗口是典型）就会积累**：每改一次 Swift 多叠一扇设置窗口。
+  可靠的做法是把资源放进 `host.objects`，新一代 `activate` 时主动收拾上一代留下的那份。
+  **存 AppKit 类型而不是自定义类型**——世代之间类型身份隔离（module 名取自 contentHash），
+  `as? 自定义类` 跨代必然失败，`as? NSWindow` 才成立。
+- **SwiftUI 在 `NSTabViewController(tabStyle: .toolbar)` 里够不着工具栏**：`.searchable`
+  于是一个像素都不画，且不报错。要原生搜索框只能包 `NSSearchField`
+  （dash-settings/swift/SettingsChrome.swift）。同一处还记着另外三条 `Form` 版式的坑
+  （`Divider()` 在 `LabeledContent` 里变竖线、`EmptyView()` label 让整行塌成全宽、
+  `.safeAreaInset` 塞不进 bordered list 的边框）——写偏好设置版式前先读那份 README。
+- **多显示器下 peekaboo 的按元素点击会间歇失灵**（`Bridge operation target attribution
+  failed` / `axElementNotFound`），尤其当同 App 还有一扇无标题的"自动填充"面板时。
+  截图不受影响。卡住时重启 App 通常能恢复；别在这上面耗，改用探针从数据面验。
+- **dsh 的设置 modal 渲染在侧边栏列内部，不是 portal 到 body**：DOM 链是
+  `_sidebarCol > … > _settingsArea > _overlay > _panel`。dash-layout 的原生侧边栏模式
+  给整列上 `visibility: hidden`，于是 modal 点得中、挂载成功、就是看不见，且不报错
+  ——而它正是 dash-settings 缺席时 ⌘, 唯一的入口。client.js 里给 `_overlay` 留了
+  `visibility: visible` 的例外（overlay 是 `position: fixed`，不受 frame 平移影响）。
+  推论：**给某个容器整体隐形之前，先查清有没有别人往里面挂 portal 之外的浮层。**
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
 - **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现
