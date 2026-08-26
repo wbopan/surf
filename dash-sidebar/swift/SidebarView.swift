@@ -2,31 +2,31 @@ import AppKit
 import DashLayout
 import SwiftUI
 
-// 原生侧边栏（阶段二·Mail 风格）：交给系统。
-// List(selection:) + .listStyle(.sidebar) 提供原生选中/hover/键盘导航；
-// 分组头自绘（文件夹恒定实心，点击 chevron 开合，展开时旋转），
-// dash-layout 把本视图装进 NSSplitViewItem(sidebarWithViewController:)，
-// 材质、分隔条、拖拽调宽、收起动画、宽度记忆全部由系统处理。
-// 顶部操作按钮（收起侧边栏 / 新建会话）在 dash-layout 的 NSToolbar，不在本视图。
+// 原生侧边栏。骨架仍然交给系统：`List(selection:)` + `.listStyle(.sidebar)` 给的是
+// 原生 hover、键盘上下键导航、分组缩进；dash-layout 把本视图装进
+// `NSSplitViewItem(sidebarWithViewController:)`，材质、分隔条、拖拽调宽、收起动画、
+// 宽度记忆全部白送。自绘的只有三样：会话行、分组头、筛选胶囊。
+//
+// **顶部三段**（搜索 / 胶囊 / 列表）：
+//
+// - 搜索是系统 `NSSearchField`（`SidebarSearchField`），不自绘；
+// - 胶囊是列表的组织轴：全部 / 按时间 / 待批准。「按时间」把工作区整个换成日期分段，
+//   「待批准」仍按工作区分组、只留等审批的行；
+// - 工具栏那枚「筛选」按钮（工作区显隐 + 显示已归档）在 `SidebarPlugin` 里，
+//   是个 `NSMenuToolbarItem`，与这里共读一份 `SidebarFilterState`。
+//
+// **会话行是两行且定高 56pt**：副行（尾部消息摘要）用
+// `lineLimit(2, reservesSpace: true)` 恒占两行的位置，摘要长短不一时列表不跳。
+// 行内**不显示时间**——时间只作为「按时间」视图的分段头出现。
 //
 // **右键菜单是操作全集，hover 图标是其中两个高频动作的快捷键**：
 // 会话行 hover 出归档、分组头 hover 出加号（在此工作区新建会话）。
-// 二者都只在 hover 时显形，不占常驻像素，列表静止时仍然干净；
-// 重命名/分叉/删除工作区这类低频动作只在右键里。
 // 分组头右缘的 chevron 不算"操作"，是开合状态本身，同样 hover 才显形。
-// 列表级别的新增（添加工作区）落在列表区段头「工作区」那一行的右端——
-// 与 web 的 sectionHeader 同位，新增什么就贴着什么的表头。
-
-/// 相对时间已按需求移除（session 行不再显示时间戳）。
 
 // MARK: - 自动化标识符
 //
-// 本视图给关键元素挂了 `.accessibilityIdentifier`，供 tools/shot.sh 之外的
-// GUI 自动化（peekaboo 等走 Accessibility API 的工具）按稳定 ID 定位，
-// 而不是靠中文文案模糊匹配——文案一改匹配就断。命名规范：
-//
-//   sidebar.search                     搜索框
-//   sidebar.search.clear               搜索清除按钮
+//   sidebar.search                     搜索框（NSSearchField 自己挂的）
+//   sidebar.chips.<mode>               筛选胶囊（all / time / pending）
 //   sidebar.list                       会话列表
 //   sidebar.group.<groupId>            分组头
 //   sidebar.group.<groupId>.new        分组头的「新建会话」+（hover 才可见）
@@ -35,43 +35,19 @@ import SwiftUI
 //   sidebar.session.<sessionId>.archive 会话行的归档按钮（hover 才可见）
 //   sidebar.section.workspaces         区段头「工作区」标题
 //   sidebar.addWorkspace               区段头右端的「添加工作区」+ 号
+//   sidebar.empty                      空态文案
 //   sidebar.devFooter                  Dev 构建底部状态条
 //
 // 右键菜单项按文案定位（AX 里是 NSMenuItem，挂不了 identifier）；
-// 顶部工具栏的「新建会话」「边栏」是 NSToolbarItem / 系统标准项，按 Title 定位。
+// 工具栏的「筛选」「边栏」是 NSToolbarItem / 系统标准项，按 Title 定位。
 
-/// 会话状态点（running/pending…/idle 的唯一自绘元素，其余交给系统）。
-/// running 用系统 ProgressView（macOS 原生小菊花），其余仍是彩色圆点（9pt）。
-struct StatusDot: View {
-    let status: SidebarSessionStatus
-
-    var color: Color {
-        switch status {
-        case .running: return .green
-        case .pendingApproval: return .orange
-        case .pendingQuestion: return .purple
-        case .idle: return .secondary.opacity(0.5)
-        }
-    }
-
-    var body: some View {
-        if status == .running {
-            ProgressView()
-                .controlSize(.small)
-        } else {
-            Circle()
-                .fill(color)
-                .frame(width: 9, height: 9)
-        }
-    }
-}
-
-/// 会话行：状态点 + 标题；选中/高亮/键盘导航由 List 提供。
-/// 对齐规则：状态点槽位宽度 = 分组头图标槽位（20pt，均 leading 对齐），
-/// 行内 spacing 同为 6 —— 状态点与文件夹图标对齐、标题与分组名对齐。
-/// 重命名/分叉/归档都在右键菜单里；归档另有一个 hover 快捷键（行尾图标）。
+/// 会话行：状态指示器 + 标题 + 两行摘要；选中/hover/键盘导航由 List 提供。
 struct SessionRow: View {
     let session: SidebarSession
+    /// 所属工作区。**只在「按时间」视图里给**——那边没有分组头兜着，
+    /// 不写出来就看不出这条会话是哪个项目的。给了它，两行的副行拆成
+    /// 「工作区 / 摘要」各一行；不给就是完整的两行摘要。
+    let workspace: String?
     let onRename: () -> Void
     let onFork: () -> Void
     let onArchive: () -> Void
@@ -79,24 +55,50 @@ struct SessionRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            // 固定宽度槽位与 GroupHeader 的图标槽位一致（20pt、居中对齐），
-            // 圆点/菊花与文件夹图标光学中心重合；idle 不显示点（对齐 web）。
-            Group {
-                if session.status != .idle {
-                    StatusDot(status: session.status)
+        HStack(alignment: .top, spacing: 6) {
+            StatusIndicator(status: session.status)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.displayTitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                // 副行**恒占两行**：不足留白、超出省略。行高因此是定值，
+                // 摘要长短不一时列表不会上下跳——扫起来是一条稳定的节奏。
+                // 别加 `.fixedSize(vertical:)`：它让 Text 按理想高度铺开，
+                // lineLimit 当场失效，三行的摘要就把行撑高了（栽过一次）。
+                if let workspace {
+                    Text(workspace)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(session.preview)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 } else {
-                    Color.clear
+                    Text(session.preview)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2, reservesSpace: true)
+                        .truncationMode(.tail)
                 }
             }
-            .frame(width: 20, height: 16, alignment: .center)
-            Text(session.displayTitle)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 8)
-            // hover 且非 blank（对齐 web：空 New Session 行无归档）时行尾出归档；
-            // 点击即归档、无确认——归档非破坏性，日志留着，只是从列表消失。
-            if !session.blank {
+            Spacer(minLength: 4)
+            // 已归档：行尾一枚灰符号（不占状态槽——归档是修饰，不是状态）。
+            // **竖直方向对整行居中**，不跟标题那一行对齐：它说的是"这条会话"，
+            // 不是"这个标题"，贴着第一行看起来像标题的角标。
+            if session.archived {
+                Image(systemName: "archivebox.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxHeight: .infinity)
+                    .help("已归档")
+            }
+            // hover 且非 blank 时行尾出归档；点击即归档、无确认——归档非破坏性，
+            // 日志留着，只是从列表消失（打开「显示已归档」还能看见）。
+            if !session.blank && !session.archived {
                 Button(action: onArchive) {
                     Image(systemName: "archivebox")
                         .font(.system(size: 13, weight: .medium))
@@ -109,8 +111,16 @@ struct SessionRow: View {
                 .accessibilityLabel(Text("归档会话"))
                 .accessibilityIdentifier("sidebar.session.\(session.id).archive")
                 .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .frame(maxHeight: .infinity)
             }
         }
+        // 上下各 14pt。**这一条是这次改版里最值钱的一行**：原来是 3pt，
+        // 三行内容挤成一坨，扫起来像一堵墙。参照 Messages / Mail 的侧边栏
+        // ——它们把行高的一半花在留白上，代价是一屏少几行，换来的是能扫。
+        .padding(.vertical, 14)
+        // 已归档整行退一层：它是「翻出来看看」的东西，不该和在役会话抢注意力。
+        .opacity(session.archived ? 0.6 : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityIdentifier("sidebar.session.\(session.id)")
@@ -118,22 +128,20 @@ struct SessionRow: View {
             Button("重命名…", action: onRename)
             Button("分叉会话", action: onFork)
             Divider()
-            // 归档非破坏性（日志留着，只是从列表消失），所以不标 destructive、
-            // 也不弹确认——与 web 的行菜单同款。
             Button("归档会话", action: onArchive)
         }
     }
 }
 
-/// Workspace 分组头：文件夹图标（恒定描边）+ 标题（纯展示）
+/// Workspace 分组头：文件夹图标 + 标题 + 会话计数
 /// + hover 显示的加号（在此工作区新建会话）
-/// + 右缘 chevron（唯一的开合开关，点击展开/收起，展开时旋转 90°）。
-/// 重命名 / 删除工作区只在右键菜单里。
+/// + 右缘 chevron（唯一的开合开关，展开时旋转 90°）。
 ///
 /// **图标不随选中变色**：选中态是会话行的事（List 自己画高亮），分组头
 /// 跟着染 accent 只会让人以为分组本身被选中了。
 struct GroupHeader: View {
     let group: SidebarGroup
+    let count: Int
     let expanded: Bool
     let onToggle: () -> Void
     let onRename: () -> Void
@@ -142,19 +150,15 @@ struct GroupHeader: View {
 
     @State private var hovering = false
 
-    /// 图标恒定描边（非 filled），开合状态只由 chevron 旋转表达。
-    private var iconName: String {
-        group.workspaceId == nil ? "tray" : "folder"
-    }
+    private var iconName: String { group.workspaceId == nil ? "tray" : "folder" }
 
     var body: some View {
         HStack(spacing: 6) {
-            // 图标 + 标题：纯展示（不再触发展开/收起）。
             HStack(spacing: 6) {
                 Image(systemName: iconName)
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, alignment: .leading)
+                    .frame(width: StatusIndicator.slot, alignment: .center)
                 // sidebar List 给 Section header 默认涂 secondary，工作区名于是
                 // 看着像被禁用。这里是用户维护的账（能改名能删），不是分类标签，
                 // 显式扳回 primary 才与会话行同一个"可操作"的层级。
@@ -167,14 +171,18 @@ struct GroupHeader: View {
             }
             .help(group.title)
             // .ignore 显式收口：不加的话 SwiftUI 会把图标/标题各算一个 AX 元素
-            // 再合并，label 和 identifier 都被拼两遍（Description 变
-            // "X、X"、Identifier 变 "sidebar.group.X-sidebar.group.X"），
-            // 精确匹配落空。label 下面显式给了，不依赖子元素推断。
+            // 再合并，label 和 identifier 都被拼两遍。
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(group.title))
             .accessibilityIdentifier("sidebar.group.\(group.id)")
-            // hover 时加号出现在 chevron 左侧；.opacity 而非条件插入，
-            // 槽位恒定占位，显隐不会让标题跳动。
+            // 右端两个槽位，静止时只有最右边那个是满的：
+            //
+            //   静止   [        ] [数字]
+            //   hover  [   +    ] [ >  ]
+            //
+            // **chevron 顶掉的是数字的位置，不是另开一格。** 三个槽各占各的
+            // （那一版是"空 / 数字 / 空"→"+ / 空 / >"）看着像有个洞在左右横跳。
+            // 显隐一律用 .opacity 而不是条件插入：槽位恒定占地，标题不会跳。
             Button {
                 surface.startSession(workspaceId: group.workspaceId)
             } label: {
@@ -190,23 +198,35 @@ struct GroupHeader: View {
             .accessibilityIdentifier("sidebar.group.\(group.id).new")
             .fixedSize()
             .opacity(hovering ? 1 : 0)
-            // 右缘 chevron：唯一的开合开关（点击展开/收起），hover 才显示；
-            // 展开时旋转 90°（朝下）。固定槽位保证旋转/显隐不改变布局宽度。
-            Button(action: onToggle) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 20, alignment: .center)
-                    .contentShape(Rectangle())
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.15), value: expanded)
+            // 看不见的时候也别可点：透明按钮照样吃点击，是个隐形雷。
+            .allowsHitTesting(hovering)
+
+            // 居中而不是右对齐：数字和 chevron 的光学中心因此重合，
+            // hover 时是"原地换了个字形"，不是"数字滑走、箭头补位"。
+            ZStack {
+                // 静止时的常驻信息：这一组有多少条。
+                Text("\(count)")
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .opacity(hovering ? 0 : 1)
+                Button(action: onToggle) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 20, alignment: .center)
+                        .contentShape(Rectangle())
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.15), value: expanded)
+                }
+                .buttonStyle(.plain)
+                .help(expanded ? "收起分组" : "展开分组")
+                .accessibilityLabel(Text(expanded ? "收起分组" : "展开分组"))
+                .accessibilityIdentifier("sidebar.group.\(group.id).toggle")
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
             }
-            .buttonStyle(.plain)
-            .help(expanded ? "收起分组" : "展开分组")
-            .accessibilityLabel(Text(expanded ? "收起分组" : "展开分组"))
-            .accessibilityIdentifier("sidebar.group.\(group.id).toggle")
-            .fixedSize()
-            .opacity(hovering ? 1 : 0)
+            .frame(width: 24, alignment: .trailing)
         }
         // sidebar List 给 Section header 的右侧 inset 比普通行少 14pt（实测），
         // 补回来，chevron 槽位才落在会话行右缘的同一条竖线上。
@@ -225,20 +245,19 @@ struct GroupHeader: View {
     }
 }
 
-/// 主视图：搜索框 + 区段头（工作区 + 添加）+ 按 Workspace 折叠分组的会话列表。
-public struct SidebarView<Model: SidebarModel>: View {
+/// 主视图：搜索 + 筛选胶囊 + 列表（按工作区分组，或按时间分段）。
+struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
+    @ObservedObject var filter: SidebarFilterState
     let surface: DashConversationSurface
 
-    @State private var searchText = ""
     /// 收起的分组（默认全部展开；搜索时强制展开命中组）。
-    /// 逗号拼接持久化（对齐 web 的 groupExpansion 记忆；组 id 无逗号）。
+    /// 逗号拼接持久化（组 id 无逗号）。
     @AppStorage("sidebar.collapsedGroups") private var collapsedGroupsCSV = ""
 
     /// 重命名对话框的目标；会话与工作区共用同一个 alert。
     @State private var renameTarget: RenameTarget?
     @State private var renameText = ""
-    /// 删除确认的目标（只可能是真工作区）。
     @State private var deleteTarget: DeleteTarget?
 
     private enum RenameTarget {
@@ -271,25 +290,28 @@ public struct SidebarView<Model: SidebarModel>: View {
         let title: String
     }
 
+    /// 「按时间」视图的一段。
+    private struct TimeSection: Identifiable {
+        let id: String
+        let title: String
+        /// (会话, 所属组标题)
+        let rows: [(session: SidebarSession, workspace: String)]
+    }
+
+    init(model: Model, filter: SidebarFilterState, surface: DashConversationSurface) {
+        self.model = model
+        self.filter = filter
+        self.surface = surface
+    }
+
+    // MARK: - 数据裁剪
+
     private var collapsedGroups: Set<String> {
         Set(collapsedGroupsCSV.split(separator: ",").map(String.init))
     }
 
-    public init(model: Model, surface: DashConversationSurface) {
-        self.model = model
-        self.surface = surface
-    }
-
-    /// List 双向选择绑定：读真源；写（用户点选）走 activate。
-    private var selection: Binding<String?> {
-        Binding(
-            get: { model.selectedSessionId },
-            set: { if let id = $0 { model.activate(sessionId: id) } }
-        )
-    }
-
     private var searching: Bool {
-        !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        !filter.query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func isExpanded(_ groupId: String) -> Bool {
@@ -304,73 +326,93 @@ public struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    /// 客户端过滤：标题 / 组名子串，大小写不敏感、即时。
-    var filteredGroups: [SidebarGroup] {
-        let q = searchText.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return model.groups }
-        let lower = q.lowercased()
+    /// 一条会话过不过筛：归档开关 → 待批准模式 → 搜索词。
+    /// 搜索匹配标题**与摘要**（摘要是用户真正记得住的那句话）。
+    private func passes(_ session: SidebarSession) -> Bool {
+        if session.archived && !filter.showArchived { return false }
+        if filter.mode == .pending && session.status != .pendingApproval { return false }
+        let q = filter.query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return true }
+        return session.displayTitle.lowercased().contains(q)
+            || session.preview.lowercased().contains(q)
+    }
+
+    /// 工作区视图的分组（已按筛选裁过；空组不出现，但搜到组名时整组保留）。
+    private var filteredGroups: [SidebarGroup] {
+        let q = filter.query.trimmingCharacters(in: .whitespaces).lowercased()
         return model.groups.compactMap { group in
-            // blank（临时 New Session 行）不参与搜索（对齐 web）。
-            let hitSessions = group.sessions.filter {
-                !$0.blank && $0.displayTitle.lowercased().contains(lower)
-            }
-            if !hitSessions.isEmpty {
+            if filter.hiddenGroups.contains(groupKey(group)) { return nil }
+            let hits = group.sessions.filter(passes)
+            if !hits.isEmpty {
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
-                                    title: group.title, sessions: hitSessions)
+                                    title: group.title, sessions: hits)
             }
-            if group.title.lowercased().contains(lower) {
-                return group
+            // 组名命中搜索：整组留着（但仍要过归档/待批准那两关）。
+            if !q.isEmpty && group.title.lowercased().contains(q) {
+                let rest = group.sessions.filter { session in
+                    if session.archived && !filter.showArchived { return false }
+                    if filter.mode == .pending && session.status != .pendingApproval { return false }
+                    return true
+                }
+                if rest.isEmpty { return nil }
+                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
+                                    title: group.title, sessions: rest)
             }
             return nil
         }
     }
 
-    public var body: some View {
-        VStack(spacing: 0) {
-            searchField
-            sectionHeader
-            // 原生 List(selection:) 样式保留；分组头放 Section header——
-            // sidebar List 的 header 不是可选行，点击不会有任何高亮。
-            List(selection: selection) {
-                ForEach(filteredGroups) { group in
-                    Section {
-                        if isExpanded(group.id) {
-                            ForEach(group.sessions) { session in
-                                SessionRow(
-                                    session: session,
-                                    onRename: {
-                                        beginRename(.session(id: session.id,
-                                                             title: session.displayTitle))
-                                    },
-                                    onFork: { model.forkSession(id: session.id) },
-                                    onArchive: { model.archive(sessionId: session.id) }
-                                )
-                                .tag(session.id)
-                            }
-                        }
-                    } header: {
-                        GroupHeader(group: group,
-                                    expanded: isExpanded(group.id),
-                                    onToggle: { toggleGroup(group.id) },
-                                    onRename: {
-                                        guard let id = group.workspaceId else { return }
-                                        beginRename(.workspace(id: id, title: group.title))
-                                    },
-                                    onDelete: {
-                                        guard let id = group.workspaceId else { return }
-                                        deleteTarget = DeleteTarget(id: id, title: group.title)
-                                    },
-                                    surface: surface)
-                            // Section header 默认占位高度偏窄，补回接近普通行的行高，
-                            // 让 hover 区域和 chevron 点击区不至于太挤。
-                            .padding(.vertical, 3)
-                            .frame(minHeight: 26)
-                            .padding(.top, 4) // 组间呼吸
-                    }
-                }
+    /// 「按时间」视图：把所有过筛的会话摊平、按 updatedAt 倒序、分四段。
+    private var timeSections: [TimeSection] {
+        var buckets: [String: [(session: SidebarSession, workspace: String)]] = [:]
+        for group in model.groups where !filter.hiddenGroups.contains(groupKey(group)) {
+            for session in group.sessions where passes(session) {
+                buckets[TimeBuckets.of(session.updatedAt), default: []]
+                    .append((session, group.title))
             }
-            .listStyle(.sidebar)
-            .accessibilityIdentifier("sidebar.list")
+        }
+        return TimeBuckets.order.compactMap { key in
+            guard let rows = buckets[key] else { return nil }
+            return TimeSection(id: key, title: key,
+                               rows: rows.sorted { $0.session.updatedAt > $1.session.updatedAt })
+        }
+    }
+
+    /// 分组在「隐藏」集合里的键：真工作区用 workspaceId，兜底组用固定键。
+    private func groupKey(_ group: SidebarGroup) -> String {
+        group.workspaceId ?? SidebarFilterState.otherGroupKey
+    }
+
+    private var isEmpty: Bool {
+        filter.mode == .time ? timeSections.isEmpty : filteredGroups.isEmpty
+    }
+
+    /// List 双向选择绑定：读真源；写（用户点选）走 activate。
+    private var selection: Binding<String?> {
+        Binding(
+            get: { model.selectedSessionId },
+            set: { if let id = $0 { model.activate(sessionId: id) } }
+        )
+    }
+
+    // MARK: - 布局
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 36pt 的原生胶囊（开关在 SidebarSearchField 里，是 controlSize 而不是 frame）。
+            SidebarSearchField(text: $filter.query)
+                .padding(.horizontal, 10)
+                .padding(.top, 12)
+                .padding(.bottom, 14)
+            chips
+            if isEmpty {
+                emptyState
+            } else if filter.mode == .time {
+                timeList
+            } else {
+                workspaceList
+            }
+            addWorkspaceBar
             if isDevBuild { devFooter }
         }
         .alert(renameTarget?.dialogTitle ?? "", isPresented: renamePresented) {
@@ -395,21 +437,192 @@ public struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
+    /// 筛选胶囊。**它是组织轴，不是又一处过滤器**——「按时间」换的是分组方式。
+    private var chips: some View {
+        HStack(spacing: 6) {
+            ForEach(SidebarFilterState.Mode.allCases, id: \.self) { mode in
+                chip(mode)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        // 「工作区」那条区段头删掉之后，胶囊底下直接就是第一个分组头，
+        // 原来的 14 是留给区段头的，现在多出来了。
+        .padding(.bottom, 6)
+    }
+
+    private func chip(_ mode: SidebarFilterState.Mode) -> some View {
+        let on = filter.mode == mode
+        let count = countFor(mode)
+        return Button {
+            filter.mode = mode
+        } label: {
+            HStack(spacing: 4) {
+                Text(mode.title)
+                    .font(.system(size: 11, weight: .medium))
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .opacity(0.62)
+                }
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 21)
+            .background(
+                Capsule().fill(on ? AnyShapeStyle(Color.accentColor)
+                                  : AnyShapeStyle(Color.primary.opacity(0.06)))
+            )
+            .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar.chips.\(mode.rawValue)")
+    }
+
+    /// 胶囊上的计数。「按时间」不带——那儿的数字没有意义（就是全部）。
+    private func countFor(_ mode: SidebarFilterState.Mode) -> Int? {
+        switch mode {
+        case .time:
+            return nil
+        case .all:
+            return model.groups
+                .filter { !filter.hiddenGroups.contains(groupKey($0)) }
+                .reduce(0) { sum, group in
+                    sum + group.sessions.filter { !$0.archived || filter.showArchived }.count
+                }
+        case .pending:
+            return model.groups
+                .filter { !filter.hiddenGroups.contains(groupKey($0)) }
+                .reduce(0) { sum, group in
+                    sum + group.sessions.filter {
+                        $0.status == .pendingApproval && (!$0.archived || filter.showArchived)
+                    }.count
+                }
+        }
+    }
+
+    private var workspaceList: some View {
+        List(selection: selection) {
+                ForEach(filteredGroups) { group in
+                    Section {
+                        if isExpanded(group.id) {
+                            ForEach(group.sessions) { session in
+                                row(session, workspace: nil)
+                                    .tag(session.id)
+                            }
+                        }
+                    } header: {
+                        GroupHeader(group: group,
+                                    count: group.sessions.count,
+                                    expanded: isExpanded(group.id),
+                                    onToggle: { toggleGroup(group.id) },
+                                    onRename: {
+                                        guard let id = group.workspaceId else { return }
+                                        beginRename(.workspace(id: id, title: group.title))
+                                    },
+                                    onDelete: {
+                                        guard let id = group.workspaceId else { return }
+                                        deleteTarget = DeleteTarget(id: id, title: group.title)
+                                    },
+                                    surface: surface)
+                            .padding(.vertical, 3)
+                            .frame(minHeight: 26)
+                            .padding(.top, 4)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .accessibilityIdentifier("sidebar.list")
+    }
+
+    private var timeList: some View {
+        List(selection: selection) {
+            ForEach(timeSections) { section in
+                Section {
+                    ForEach(section.rows, id: \.session.id) { entry in
+                        row(entry.session, workspace: entry.workspace)
+                            .tag(entry.session.id)
+                    }
+                } header: {
+                    HStack(spacing: 0) {
+                        Text(section.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Text("\(section.rows.count)")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.trailing, 14)
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .accessibilityIdentifier("sidebar.list")
+    }
+
+    private func row(_ session: SidebarSession, workspace: String?) -> some View {
+        SessionRow(
+            session: session,
+            workspace: workspace,
+            onRename: { beginRename(.session(id: session.id, title: session.displayTitle)) },
+            onFork: { model.forkSession(id: session.id) },
+            onArchive: { model.archive(sessionId: session.id) }
+        )
+        // **选中高亮一律交给 List 自己画，别加 `.listRowBackground`。**
+        // 自己再画一层就是两层背景：List 那层（内缩 10pt）套在自绘那层里面，
+        // 半透明材质一用立刻露成一个"回"字（早先没露馅只因为填的是不透明纯色）。
+        // 系统那层还白送焦点态（有键盘焦点时 accent、失焦转灰）与浅深色适配。
+    }
+
+    /// 空态。**说清是"筛出来空"还是"本来就空"**——不然用户会以为会话丢了。
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Text(emptyText)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            if filter.isNarrowed || searching {
+                Button("清除筛选") {
+                    filter.query = ""
+                    filter.mode = .all
+                    filter.hiddenGroups = []
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 12))
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("sidebar.empty")
+    }
+
+    private var emptyText: String {
+        if searching { return "没有匹配「\(filter.query)」的会话" }
+        switch filter.mode {
+        case .pending: return "没有等待批准的会话"
+        default:
+            return filter.isNarrowed ? "当前筛选下没有会话" : "还没有会话"
+        }
+    }
+
     // MARK: - 对话框
 
     private var renamePresented: Binding<Bool> {
-        Binding(get: { renameTarget != nil },
-                set: { if !$0 { renameTarget = nil } })
+        Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
     }
 
     private var deletePresented: Binding<Bool> {
-        Binding(get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } })
+        Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
     }
 
     private var errorPresented: Binding<Bool> {
-        Binding(get: { model.actionError != nil },
-                set: { if !$0 { model.actionError = nil } })
+        Binding(get: { model.actionError != nil }, set: { if !$0 { model.actionError = nil } })
     }
 
     private func beginRename(_ target: RenameTarget) {
@@ -429,40 +642,37 @@ public struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    // MARK: - 区段头
+    // MARK: - 底栏
 
-    /// 列表区段头：「工作区」标题 + 添加按钮（对齐 web 的 sectionHeader）。
-    /// 新增的对象是工作区，按钮就贴着工作区列表的头——比压在列表底栏好找。
-    /// 第 3 批的视图选项按钮也落这一行，在加号左边。
-    private var sectionHeader: some View {
+    /// 左下角的「添加工作区」。
+    ///
+    /// 原本它是「工作区」那条区段头右端的一个小加号。整条区段头删掉了——
+    /// 分组头自己已经带着文件夹图标，上面再顶一行"工作区"是同义反复，
+    /// 白占一行还把列表往下推。加号搬到左下角：**这是侧边栏级别的动作**
+    /// （给整个侧边栏加一个工作区），不属于任何一组，左下角正是原生 App
+    /// 放这类动作的地方（Music、Photos 的 + 都在那儿）。
+    private var addWorkspaceBar: some View {
         HStack(spacing: 0) {
-            Text("工作区")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("sidebar.section.workspaces")
-            Spacer(minLength: 8)
             Button(action: addWorkspace) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("添加工作区")
             .accessibilityLabel(Text("添加工作区"))
             .accessibilityIdentifier("sidebar.addWorkspace")
+            Spacer(minLength: 0)
         }
-        // 左缘与分组头的文件夹图标同列；右缘与分组头 chevron 同列。
-        .padding(.leading, 14)
+        .padding(.leading, 10)
         .padding(.trailing, 10)
-        .padding(.bottom, 2)
+        .padding(.vertical, 4)
     }
 
     /// 添加工作区 = 选一个已存在的目录交给 host 登记（`workspace.create`）。
-    /// web 那边走的是 directory-picker 插件；原生直接用 NSOpenPanel，代价是
-    /// **默认 app 与 dsh 同机**——当前架构本来就如此（endpoint 是本地文件）。
-    /// 选中一个已登记的目录不算错：host 回 `created: false` 并回显原有工作区。
+    /// 原生直接用 NSOpenPanel，代价是**默认 app 与 dsh 同机**——当前架构本来就如此。
     private func addWorkspace() {
         let model = self.model
         let panel = NSOpenPanel()
@@ -476,7 +686,6 @@ public struct SidebarView<Model: SidebarModel>: View {
             guard response == .OK, let url = panel.url else { return }
             model.createWorkspace(path: url.path)
         }
-        // 附在窗口上（sheet）是 macOS 的默认期待；没有 key window 时退回独立面板。
         if let window = NSApp.keyWindow {
             panel.beginSheetModal(for: window, completionHandler: adopt)
         } else {
@@ -485,14 +694,11 @@ public struct SidebarView<Model: SidebarModel>: View {
     }
 
     /// Dev 构建判定。插件由壳在运行时编译，**没有 `-DDEBUG`**，
-    /// 所以 `#if DEBUG` 在这里永远不成立——改看壳的 bundle id
-    /// （Debug 产物是 io.wenbo.dash.dev）。
+    /// 所以 `#if DEBUG` 在这里永远不成立——改看壳的 bundle id。
     private var isDevBuild: Bool {
         Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
     }
 
-    /// Dev 构建专属：侧边栏底部橙色 DEV 状态条（含构建时间戳），
-    /// 一眼区分 Debug/Release，并确认跑的是哪次构建。
     private var devFooter: some View {
         HStack(spacing: 6) {
             Circle()
@@ -515,7 +721,6 @@ public struct SidebarView<Model: SidebarModel>: View {
         .accessibilityIdentifier("sidebar.devFooter")
     }
 
-    /// 构建时间戳：主 App prebuild 脚本写入 Resources/BuildTimestamp.txt。
     private var buildTimestamp: String { Self.readBuildTimestamp() }
 
     private static func readBuildTimestamp() -> String {
@@ -525,36 +730,21 @@ public struct SidebarView<Model: SidebarModel>: View {
         else { return "" }
         return text
     }
+}
 
-    private var searchField: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("搜索会话", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .accessibilityIdentifier("sidebar.search")
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("sidebar.search.clear")
-            }
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color.primary.opacity(0.06))
-        )
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+/// 「按时间」视图的分段。
+///
+/// 独立成 enum 而不是塞进 `SidebarView`：**泛型类型里放不了 static 存储属性**
+/// （`SidebarView` 对 Model 泛型），swiftc 会直接拒编。
+enum TimeBuckets {
+    /// 固定顺序。照遍历顺序攒会让「更早」插到「昨天」前面。
+    static let order = ["今天", "昨天", "前 7 天", "更早"]
+
+    static func of(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "今天" }
+        if calendar.isDateInYesterday(date) { return "昨天" }
+        let days = calendar.dateComponents([.day], from: date, to: Date()).day ?? 0
+        return days <= 7 ? "前 7 天" : "更早"
     }
 }

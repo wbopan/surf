@@ -44,6 +44,24 @@ const apiProxy = {
 		list: async (r) => (calls.push("sessions.list"), ok(r, { items: sessionRows })),
 		rename: async (r) => (calls.push(`sessions.rename:${r.payload.sessionId}`), ok(r, { title: r.payload.title, seq: 1 })),
 		fork: async (r) => (calls.push(`sessions.fork:${r.payload.sessionId}`), ok(r, { sessionId: "session-child" })),
+		// 副行摘要：尾部一页。形状照 0.1.1-rc.2 的 sessionHistoryValueSchema 捏。
+		// 故意把 user 那条排在 assistant 之后（用户刚发了下一句、模型还没答），
+		// 用来钉住"优先取 assistant"这条规则。
+		history: async (r) => {
+			calls.push(`sessions.history:${r.payload.sessionId}`);
+			return ok(r, { hasMore: true, events: [
+				{ event: {
+					type: "assistant/message", seq: 9, time: 0,
+					data: { message: { content: [{ type: "text",
+						text: "## 标题 \n - **状态**：好的，我先把\n`侧边栏`拆开  " }] } },
+				} },
+				{ event: {
+					type: "user/message", seq: 10, time: 0,
+					data: { content: [{ type: "text",
+						text: "接着弄 <system-reminder>别念这段</system-reminder>" }] },
+				} },
+			] });
+		},
 	},
 	workspace: {
 		list: async (r) => (calls.push("workspace.list"), ok(r, {
@@ -84,15 +102,17 @@ source.onChange((immediate) => pushes.push({ immediate, groups: source.groups() 
 
 after(() => source.dispose());
 
-test("首轮投影：分组、归一化、归档过滤、排序", async () => {
+test("首轮投影：分组、归一化、归档标记、排序", async () => {
 	await sleep(50);
 	const groups = source.groups();
 	assert.equal(groups.length, 2, "一个工作区组 + 一个兜底组");
 
 	assert.equal(groups[0].workspaceId, "ws1");
 	assert.equal(groups[0].title, "proj", "空 title 退回路径末段");
-	assert.deepEqual(groups[0].sessions.map((s) => s.id), ["session-a"],
-		"已归档的 session-arch 被滤掉（归档是数据事实，在 node 侧滤）");
+	assert.deepEqual(groups[0].sessions.map((s) => s.id), ["session-a", "session-arch"],
+		"归档**不再滤掉**：侧边栏有了「显示已归档」开关，显不显示成了 UI 政策");
+	assert.equal(groups[0].sessions[0].archived, false);
+	assert.equal(groups[0].sessions[1].archived, true, "归档只是打个标记");
 	assert.equal(groups[0].sessions[0].title, "重构侧边栏", "title 取自 projections.values");
 
 	assert.equal(groups[1].workspaceId, null);
@@ -140,12 +160,40 @@ test("domain/changed 只认 workspace", async () => {
 		"别的 domain 不该惊动侧边栏");
 });
 
-test("归档：采信回包里的归档集合，行立刻消失", async () => {
+test("归档：采信回包里的归档集合，行立刻翻成 archived", async () => {
 	await source.archiveSession("session-b");
 	assert.ok(calls.includes("workspace.archiveSession:session-b"));
-	const ids = source.groups().flatMap((g) => g.sessions).map((s) => s.id);
-	assert.ok(!ids.includes("session-b"), "不等重取，回包即生效");
+	const row = source.groups().flatMap((g) => g.sessions).find((s) => s.id === "session-b");
+	assert.ok(row !== undefined, "行还在——归档不再让它从投影里消失");
+	assert.equal(row.archived, true, "不等重取，回包即生效");
 	await sleep(500);
+});
+
+test("副行摘要：取最后一条 assistant，空会话不取，文本抹干净", async () => {
+	await sleep(50);
+	const rows = source.groups().flatMap((g) => g.sessions);
+	const a = rows.find((s) => s.id === "session-a");
+	assert.equal(a.preview, "标题 状态：好的，我先把 侧边栏拆开",
+		"取的是 assistant 那条（user 更靠后也不要），换行/空白折干净，"
+		+ "Markdown 记号抹平（井号 / 列表符 / 强调 / 行内代码）");
+	const blank = rows.find((s) => s.id === "session-c");
+	assert.equal(blank.preview, null, "空会话没有内容可摘，一次都不去取");
+	assert.ok(!calls.includes("sessions.history:session-c"));
+});
+
+test("副行摘要的两把钥匙：冷会话不重取，有新消息的行立刻作废", async () => {
+	const cold = calls.filter((c) => c === "sessions.history:session-a").length;
+	// 与摘要无关的事件：只该触发重取列表，不该重读历史。
+	fire("session/event", { id: "session-a" }, { type: "tool/call" });
+	await sleep(600);
+	assert.equal(calls.filter((c) => c === "sessions.history:session-a").length, cold,
+		"updatedAt 没动、又没有新消息，就不该再读一次历史");
+
+	// 落了一条新消息：**必须**重读，哪怕 updatedAt 没动。
+	fire("session/event", { id: "session-a" }, { type: "assistant/message" });
+	await sleep(600);
+	assert.equal(calls.filter((c) => c === "sessions.history:session-a").length, cold + 1,
+		"只靠 updatedAt 比对会把摘要钉死在第一次取到的那句上");
 });
 
 test("titleOf / forkSession", async () => {

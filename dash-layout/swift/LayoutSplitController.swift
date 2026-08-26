@@ -39,6 +39,9 @@ final class LayoutSplitController: NSSplitViewController {
     private var toolbarContributions: [DashContributions.Contribution] = []
     /// 快照签名。变了才重建工具栏（幂等的判据）。
     private var toolbarSignature = ""
+    /// 贡献项的菜单代理。`NSMenu.delegate` 是 **unowned(unsafe)**，
+    /// 不在这儿留一份强引用就会在下一次弹出时野指针崩掉。键是贡献的 `key`。
+    private var toolbarMenuDelegates: [String: ContributionMenuDelegate] = [:]
 
     init(host: DashHost, webView: WKWebView) {
         self.host = host
@@ -246,14 +249,25 @@ final class LayoutSplitController: NSSplitViewController {
 
 // MARK: - 工具栏贡献槽
 
+/// 工具栏贡献槽的公开门面。
+///
+/// `LayoutSplitController` 自己是 internal（它是本插件的实现细节），
+/// 但槽名与默认主题是**跨插件的约定**，下游得能按名字引用而不是抄字符串。
+public enum LayoutToolbar {
+    /// 贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
+    public static let slot = "toolbar"
+    /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
+    public static let activateTopic = "dash.toolbar.activate"
+}
+
 extension LayoutSplitController {
     /// 本插件认得的贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
-    static let toolbarSlot = "toolbar"
+    static let toolbarSlot = LayoutToolbar.slot
     /// 贡献项的 `NSToolbarItem.Identifier` 前缀，后面接 `owner/id`。
     static let contributionPrefix = "dash.contribution."
     /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
     /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`。
-    static let toolbarActivateTopic = "dash.toolbar.activate"
+    static let toolbarActivateTopic = LayoutToolbar.activateTopic
 }
 
 /// ## `toolbar` 贡献槽的约定（第三方插件照这个写，不用改壳也不用改本插件）
@@ -264,11 +278,15 @@ extension LayoutSplitController {
 ///     "symbol":  "sparkles",              // 选填：SF Symbol 名
 ///     "tooltip": "干点什么",               // 选填，缺省取 label
 ///     "event":   "myplugin.doSomething",  // 选填，缺省 "dash.toolbar.activate"
+///     // 选填：给了它就是下拉菜单，点击不再发事件。类型必须是
+///     // `@convention(block) (NSMenu) -> Void`（跨 dylib 装箱只有 ObjC block 稳）。
+///     "menu":    buildMenu as @convention(block) (NSMenu) -> Void,
 /// ]) { AnyView(MyFallbackButton()) }
 /// host.events.subscribe("myplugin.doSomething") { _ in ... }
 /// ```
 ///
-/// **两条渲染路线，给了 `symbol` 就走原生那条**：`NSToolbarItem` +
+/// **三条渲染路线，给了 `symbol` 就走原生那条**（再给 `menu` 就是下拉菜单版，
+/// `NSMenuToolbarItem`，同样一身系统皮）：`NSToolbarItem` +
 /// `isBordered = true`，macOS 26 的圆形玻璃按钮、按下态、红绿灯对齐全是白送的，
 /// 拿 SwiftUI 重画只会得到一个更差的仿制品。代价是点击回调必须另有通道——
 /// 于是统一走事件总线：消费方只管 emit，贡献者自己 subscribe。
@@ -324,8 +342,31 @@ extension LayoutSplitController: NSToolbarDelegate {
         item.paletteLabel = label
         item.toolTip = tooltip
 
-        if let symbol = contribution.metadata["symbol"] as? String,
-           let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) {
+        let image = (contribution.metadata["symbol"] as? String).flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: label)
+        }
+
+        // 下拉菜单路线：给了 `menu` block 的贡献点开是一张菜单而不是发一条事件。
+        // 菜单**每次弹出前重建**（`menuNeedsUpdate`），所以贡献方的 block 里读
+        // 什么状态都是当场的——勾选态不会停在上一次打开时的样子。
+        if let image,
+           let build = contribution.metadata["menu"] as? @convention(block) (NSMenu) -> Void {
+            let item = NSMenuToolbarItem(itemIdentifier: identifier)
+            item.label = label
+            item.paletteLabel = label
+            item.toolTip = tooltip
+            item.image = image
+            item.isBordered = true
+            item.showsIndicator = false // 图标自己已经说明是筛选器，再加个小箭头只是噪音
+            let delegate = ContributionMenuDelegate(build: build)
+            toolbarMenuDelegates[contribution.key] = delegate
+            let menu = NSMenu()
+            menu.delegate = delegate
+            item.menu = menu
+            return item
+        }
+
+        if let image {
             item.image = image
             item.isBordered = true // 玻璃观感白送
             item.target = self
@@ -356,5 +397,23 @@ struct SidebarSlotView: View {
         } else {
             Color.clear
         }
+    }
+}
+
+/// 贡献项菜单的代理：把重建这件事转给贡献方的 block。
+///
+/// 用 `@convention(block)` 而不是裸 Swift 闭包，是因为它要穿过 dylib 边界
+/// 装在 `[String: Any]` 里——ObjC block 是个货真价实的对象，装箱取箱都稳；
+/// 裸闭包的函数类型元数据跨 image 取回来是碰运气。
+final class ContributionMenuDelegate: NSObject, NSMenuDelegate {
+    private let build: @convention(block) (NSMenu) -> Void
+
+    init(build: @escaping @convention(block) (NSMenu) -> Void) {
+        self.build = build
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        build(menu)
     }
 }

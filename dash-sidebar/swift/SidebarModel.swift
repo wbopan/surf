@@ -7,7 +7,8 @@ import SwiftUI
 // 这道窄口子就是为此存在的。
 // （M6 前这些住在 Packages/DSHSidebarUI，随插件化整体迁入。）
 
-/// 会话状态点（对齐 web 侧边栏语义）。
+/// 会话状态（对齐 web 侧边栏语义）。画成什么样见 `StatusIndicator`——
+/// 不都是点：正在跑是系统 spinner，等你动作的两个是语义符号。
 public enum SidebarSessionStatus: Equatable {
     case running
     case pendingApproval
@@ -19,18 +20,25 @@ public enum SidebarSessionStatus: Equatable {
 public struct SidebarSession: Identifiable, Equatable {
     public let id: String
     public let title: String
+    /// 副行摘要。空串 = 还没取到（行仍然占两行的高度，只是不写字）。
+    public let preview: String
     public let status: SidebarSessionStatus
     public let updatedAt: Date
     /// 新建未输入的空会话（web 侧显示占位标题）。
     public let blank: Bool
+    /// 已归档。默认不显示，「筛选」里打开「显示已归档」才出现（并挂一枚归档符号）。
+    public let archived: Bool
 
-    public init(id: String, title: String, status: SidebarSessionStatus,
-                updatedAt: Date, blank: Bool = false) {
+    public init(id: String, title: String, preview: String = "",
+                status: SidebarSessionStatus, updatedAt: Date,
+                blank: Bool = false, archived: Bool = false) {
         self.id = id
         self.title = title
+        self.preview = preview
         self.status = status
         self.updatedAt = updatedAt
         self.blank = blank
+        self.archived = archived
     }
 
     public var displayTitle: String {
@@ -57,7 +65,8 @@ public struct SidebarGroup: Identifiable, Equatable {
 /// 侧边栏数据 + 选择模型（ObservableObject，由 AppSidebarModel 实现）。
 @MainActor
 public protocol SidebarModel: ObservableObject {
-    /// 按上游顺序排列的分组（已滤除归档）。
+    /// 按上游顺序排列的分组。**归档行照常在里面**（带 `archived: true`），
+    /// 露不露由 `SidebarFilterState.showArchived` 说了算。
     var groups: [SidebarGroup] { get }
     /// 当前选中的会话（点击原生行与页面上报双向同步的唯一真源）。
     var selectedSessionId: String? { get }

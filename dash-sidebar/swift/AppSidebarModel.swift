@@ -90,12 +90,15 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     /// 插一行 New Session"，但那行的存亡挂在选中态上——点走别处它就凭空消失，
     /// 列表里于是有一条随焦点闪进闪出的幽灵行。原生侧边栏的取舍是：没落下第一句
     /// prompt 的会话不算列表成员；上游在首个 prompt 后把 blank 翻成 false，
-    /// 那一刻行自然出现，且已经是选中态。归档已在 node 半边的投影里滤除。
+    /// 那一刻行自然出现，且已经是选中态。
     ///
     /// **规则留在显示层而不是随数据面一起搬去 node**：它是 UI 政策
     /// （"列表里显示什么"），不是数据事实；投影照实带上 `blank` / `isSubagent`。
     ///
     /// 副作用（有意接受）：新建后到首个 prompt 之间，列表无任何高亮行。
+    ///
+    /// **归档不在这儿滤**：v3 起它随投影原样下来，由视图按「显示已归档」开关决定
+    /// ——那是个用户当场能拨的开关，滤在这里的话开关就够不着了。
     private func visible(_ s: SidebarSnapshot.Session) -> Bool {
         !s.isSubagent && !s.blank
     }
@@ -149,14 +152,16 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
         SidebarSession(
             id: s.id,
             title: s.title ?? "",
-            status: Self.statusDot(s.status),
+            preview: s.preview ?? "",
+            status: Self.statusIcon(s.status),
             updatedAt: s.date,
-            blank: s.blank
+            blank: s.blank,
+            archived: s.archived ?? false
         )
     }
 
-    /// wire 上的状态串 → 状态点。未知值当 idle（node 加新状态时旧壳不至于失真成别的）。
-    private static func statusDot(_ raw: String) -> SidebarSessionStatus {
+    /// wire 上的状态串 → 状态指示器。未知值当 idle（node 加新状态时旧壳不至于失真成别的）。
+    private static func statusIcon(_ raw: String) -> SidebarSessionStatus {
         switch raw {
         case "running": return .running
         case "pendingApproval": return .pendingApproval

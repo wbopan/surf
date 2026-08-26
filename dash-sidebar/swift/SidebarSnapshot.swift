@@ -13,6 +13,9 @@ struct SidebarSnapshot {
         let id: String
         /// 会话标题；空会话没有标题（`projections.values.title` 缺席）。
         let title: String?
+        /// 副行摘要（尾部一条消息的文本）。node 半边还没取到时为 nil——
+        /// 显示层留着两行的位置不填字，别塞"加载中"之类的占位。
+        let preview: String?
         /// `running` / `pendingApproval` / `pendingQuestion` / `idle`。
         /// 用字符串而不是枚举过 wire：node 加了新状态时旧壳解码不会失败。
         let status: String
@@ -23,6 +26,9 @@ struct SidebarSnapshot {
         /// subagent 子会话。**投影里保留、显示层过滤**——可见性是 UI 政策，
         /// 见 `AppSidebarModel.visible`。
         let isSubagent: Bool
+        /// 已归档。v3 起归档不再在 node 侧滤除（侧边栏有了「显示已归档」开关），
+        /// 缺席按 false 解——旧 node 配新壳时归档行本来就不会来。
+        let archived: Bool?
 
         var date: Date { Date(timeIntervalSince1970: updatedAt / 1000) }
     }

@@ -28,9 +28,11 @@ dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint �
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
 dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
-                   （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献）；
+                   （工具栏按钮全部来自贡献，本插件自己一颗都不放；三条路线：
+                   symbol=玻璃按钮 / menu=NSMenuToolbarItem / 兜底托管 SwiftUI）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏。**数据面在 node 半边**
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待批准三枚胶囊 +
+                   两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
                    按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
@@ -444,5 +446,19 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   要给终端前的人看的进度必须自己写 stderr（dash-app / dash-bridge 都是两边都喂）。
 - **别覆写 `NSSplitViewController.loadView()`**：默认实现会把 splitView 装成 view，
   换成空 `NSView` 窗口直接全白。
+- **`NSViewRepresentable` 每轮 update 会把环境值回写进 NSControl**，`makeNSView` 里
+  设的同名属性被悄悄抹掉，不报错不警告。`NSSearchField` 的高度就栽在这上面：
+  `field.controlSize = .extraLarge` 写在 `makeNSView` 里永远是 24pt，贴成 SwiftUI 的
+  `.controlSize(.extraLarge)` 立刻 36pt（regular=24 / large=28 / extraLarge=36，量过）。
+  连带一条：macOS 26 的 `NSSearchField` 内部是 `_NSCoreHostingView<AppKitSearchField>`
+  占满 frame，**不走 cell 绘制**——`frame(height:)`、`intrinsicContentSize`、
+  `layout()` 强撑、放大字号、覆写 `NSSearchFieldCell` 的 rect 方法全是死路。
+  **别为了尺寸去拆这个控件**（`isBezeled = false` 补底板 / 塞进 `NSGlassEffectView`）：
+  按压胀缩和光效是控件自带的，拆了就是拿质感换尺寸。
+- **sidebar List 的选中高亮别自己画**：`.tint()` 改不动它，而拿 `.listRowBackground`
+  盖一层的话，系统那层（内缩 10pt）会套在自绘那层里面，半透明一用就露成"回"字
+  （填不透明纯色时看不出来，所以**必须截图量而不是看代码**）。系统那层白送焦点态
+  与浅深色适配，让它画就是了。
+  两处都**不报错、不警告**，只是设了没反应，所以改完一定要截图量一次而不是看代码。
 - **`NSHostingController.sizingOptions` 默认含 `.preferredContentSize`**：槽内插件每换一代
   重建视图都会把分栏拉成 SwiftUI 内容的 fitting 宽度，用户调好的宽度就没了。设成 `[]`。
