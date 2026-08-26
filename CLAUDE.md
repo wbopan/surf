@@ -38,8 +38,10 @@ dash-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编�
                    数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
                    agentPresets / pluginInventory（权威计划 docs/dash-settings-plan.md）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
-                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
-                   （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
+                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）。几乎全是 CSS，无构建步骤。
+                   node 半边只干一件事：注册设置 ns `dash-nativeify`（唯一一项是对话区
+                   字号），client 半边订它——两处都是可选的运行时嵌套 inject，缺席即退到
+                   默认值，CSS 照常首帧生效
 tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 dash-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）

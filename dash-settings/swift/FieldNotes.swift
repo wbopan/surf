@@ -90,6 +90,13 @@ enum FieldNotes {
             "maxUses": Note("每次请求最多搜几次"),
         ],
 
+        // ── 我们自己的插件 ────────────────────────────────────────────
+        "dash-nativeify": [
+            "bodyFontSize": Note("对话区字号",
+                                 "只管对话正文那一列；控件、侧边栏、工具调用行钉在系统的 13pt 上。",
+                                 unit: "px"),
+        ],
+
         // ── 模型页 ───────────────────────────────────────────────────
         "agent-default-model": [
             "provider": Note("默认 provider"),
@@ -146,6 +153,11 @@ enum NamespaceNotes {
         "ui-onboarding": Note(title: "引导状态",
                               summary: "记着新手引导放到哪儿了，一般不用动。",
                               featured: []),
+
+        // 我们自己的。机械美化会得到 "Dash Nativeify"，那是包名不是人话。
+        "dash-nativeify": Note(title: "原生观感",
+                               summary: "网页那半边的排版与手感。",
+                               featured: ["bodyFontSize"]),
     ]
 
     static func note(ns: String) -> Note? { table[ns] }

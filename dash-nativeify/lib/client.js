@@ -32,6 +32,18 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
 		const STYLE_ID = "dash-nativeify-style";
+		/**
+		 * 字体那一层**单独一张 style**，因为它是唯一随设置变化的部分。
+		 *
+		 * 合在 STYLE_ID 那张里也能工作，代价是改一次字号要把上面那整摞玻璃 CSS
+		 * （几十 KB、八层 box-shadow、三个 @property）连带重建一遍——@property 重新
+		 * 注册会让已注册的自定义属性瞬时回到 initial-value，按钮表面在那一帧塌掉。
+		 * 拆开之后改字号只重写这一张的 textContent，别的一个字节都不动。
+		 *
+		 * 拆开不影响取胜：字体那批规则靠 `html body`（0,0,2）的特异性压过 dsh 的
+		 * `body`（0,0,1），本来就不靠源码顺序——文件头 typeTokenDecls 那段写着理由。
+		 */
+		const FONT_STYLE_ID = "dash-nativeify-font";
 
 		/**
 		 * 「实体按钮」白名单——按钮原生化只作用于这些。
@@ -154,7 +166,41 @@ window.__ModuleLoader__.load({
 		};
 
 		const CONTROL = 13;   // NSFont.systemFontSize：控件 / 工具调用行 / 次级标签
-		const BODY = 15;      // 对话阅读列。改字号只动这一个数，其余全部派生。
+
+		/**
+		 * 对话阅读列的字号——**唯一可配置的旋钮**（设置 → 插件 → dash-nativeify →
+		 * 对话区字号）。其余全部派生，包括标题阶梯、行内代码、代码块、表格、
+		 * 用户气泡与 composer。
+		 *
+		 * **CONTROL 不给调，这是有意的**：13 = `NSFont.systemFontSize`，它不是口味
+		 * 而是"像原生"这件事的定义本身。菜单、工具栏、列表行在 macOS 上就是这一档，
+		 * 壳的原生侧边栏也是；调它等于让 WebView 那半边和原生那半边用两套字，
+		 * 本插件存在的理由当场作废。阅读列不一样——那是长文，字号是纯口味。
+		 *
+		 * 12~22 这个范围不是随手定的，是被 NATIVE_LINE_HEIGHT 那张实测表的边界
+		 * 卡死的：BODY 会派生出 BODY-4（12 → 8，正好是表的下界）与标题档 26
+		 * （22 → 26，在上界 28 之内）。**表里没有的字号 lh() 直接抛**，而它跑在
+		 * 构造 CSS 的路上，一抛就是整段字体规则消失。要放宽范围先补测行高。
+		 */
+		const BODY_DEFAULT = 15;
+		const BODY_MIN = 12;
+		const BODY_MAX = 22;
+
+		/**
+		 * 收到 [BODY_MIN, BODY_MAX] 的整数。
+		 *
+		 * schema 那边已经写了 min/max，**这里仍要收一次**：设置文档是用户可以拿
+		 * 编辑器手改的文本文件，而越界值的后果不是"字大了点"，是 lh() 抛错、
+		 * 整段字体 CSS 一条都不生效。宁可默默夹住。
+		 *
+		 * @param {unknown} v 设置里的原始值。
+		 * @returns {number} 可安全喂给 lh() 的字号。
+		 */
+		const clampBody = (v) => {
+			const n = Math.round(Number(v));
+			if (!Number.isFinite(n)) return BODY_DEFAULT;
+			return Math.min(BODY_MAX, Math.max(BODY_MIN, n));
+		};
 
 		/**
 		 * 标题阶梯 h1~h4。走 macOS 的语义档（largeTitle 26 / title1 22 / title2 17 /
@@ -162,7 +208,7 @@ window.__ModuleLoader__.load({
 		 * 靠字重和颜色分，不靠字号跳变，这是原生做法。
 		 * BODY 换档时这四个数要一起看，所以写在一起。
 		 */
-		const HEADINGS = BODY >= 16 ? [26, 22, 20, BODY] : [20, 17, 15, BODY];
+		const headings = (BODY) => (BODY >= 16 ? [26, 22, 20, BODY] : [20, 17, 15, BODY]);
 
 		const NATIVE_FONT_FAMILY = "var(--dsw-font-family)";   // 别动：第一位已是 -apple-system
 		const NATIVE_MONO_FAMILY = "var(--ds-font-family-code)";
@@ -182,7 +228,9 @@ window.__ModuleLoader__.load({
 		 *
 		 * 每项 = [token 名, 字号, 字重(0=不指定即400), 斜体?, 字族]；行高一律查表。
 		 */
-		const TYPE_TOKENS = [
+		// **表体一字不改**：BODY 与 HEADINGS 从模块常量变成这两个参数，于是
+		// 下面每一行的写法（`BODY - 2`、`HEADINGS[0]`）与它们的取值理由都原样成立。
+		const typeTokens = (BODY, HEADINGS = headings(BODY)) => [
 			// —— markdown 正文族：`._markdown` 及其子元素，助手回复的全部文字 ——
 			//    字号维持在阅读档，收的是行高（dsh 16/28 → 17/24，倍数 1.75 → 1.41）。
 			["markdown-base",                 BODY,       0, 0, NATIVE_FONT_FAMILY],
@@ -231,7 +279,7 @@ window.__ModuleLoader__.load({
 		 * 实测 dsh 当前**只引用简写、长手零引用**，但两者失配是颗定时炸弹——dsh 哪天
 		 * 改用长手就会一半新一半旧地分裂——所以六个一起写，成本只是几 KB。
 		 */
-		const typeTokenDecls = TYPE_TOKENS.flatMap(([name, size, weight, italic, family]) => {
+		const typeTokenDecls = (BODY) => typeTokens(BODY).flatMap(([name, size, weight, italic, family]) => {
 			const lineHeight = lh(size);
 			const shorthand = [
 				italic ? "italic" : "",
@@ -281,8 +329,13 @@ window.__ModuleLoader__.load({
 			"svg", "svg *",            // 图标内部有按 em 定尺的几何，别碰
 		].join(", ");
 
-		/** 字体那一层的全部 CSS。两个旋钮见上面的 CONTROL / BODY。 */
-		const fontRules = [
+		/**
+		 * 字体那一层的全部 CSS。两个旋钮见上面的 CONTROL / BODY_DEFAULT。
+		 *
+		 * @param {number} BODY 对话阅读列字号（已 clamp）。
+		 * @returns {string[]} CSS 行。
+		 */
+		const fontRules = (BODY) => [
 				// ===== 字体原生化（macOS 度量）=====
 				//
 				// 度量表、两个旋钮（CONTROL / BODY）与取值理由见文件头。
@@ -297,7 +350,7 @@ window.__ModuleLoader__.load({
 				// 这里写 `html body`（0,0,2）稳压一头——**刻意不靠源顺序取胜**：
 				// dsh 的 UI 插件是运行时逐个注入 <style> 的，谁先谁后不受本插件控制。
 				"html body {",
-				...typeTokenDecls,
+				...typeTokenDecls(BODY),
 				"}",
 
 				// 行内代码。dsh 写的是 `._markdown :not(pre) > code { font-size:.875em !important }`，
@@ -441,6 +494,12 @@ window.__ModuleLoader__.load({
 			if (!insideDash()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
+
+			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
+			let body = BODY_DEFAULT;
+			/** 字体那一层的 style 元素；设置一变就重写它的 textContent。 */
+			let fontStyle = null;
+
 			ctx.effect(() => {
 				document.getElementById(STYLE_ID)?.remove();
 				const style = document.createElement("style");
@@ -885,19 +944,61 @@ window.__ModuleLoader__.load({
 					"  " + solidActive + " { scale: 1 !important; }",
 					"  " + solidActive + " { --dash-press-r: 100% !important; }",
 					"}",
-
-					...fontRules,
 				];
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
 				return () => { style.remove(); };
+			});
+
+			// 字体那一层。**首帧就用默认值把它装上**，不等任何服务——见文件尾
+			// `exports.inject = []` 那条注释：这段 CSS 的全部意义就是抢在首帧之前
+			// 生效。设置到位之后再改字号，用户看到的是"字号跳一下"，而不是
+			// "整页字先是 dsh 的原样、过一会儿才原生化"。
+			ctx.effect(() => {
+				document.getElementById(FONT_STYLE_ID)?.remove();
+				const style = document.createElement("style");
+				style.id = FONT_STYLE_ID;
+				style.textContent = fontRules(body).join("\n");
+				document.head.appendChild(style);
+				fontStyle = style;
+				return () => {
+					// **只在还是自己那张时才清引用**：HMR 的重载顺序是"新实例先启、
+					// 旧实例后清"，无条件置 null 会把新实例刚装好的那张抹掉，
+					// 于是新实例后续的设置变更再也写不进 DOM（CLAUDE.md 踩坑记录）。
+					if (fontStyle === style) fontStyle = null;
+					style.remove();
+				};
+			});
+
+			// 设置面：`dash-nativeify` 这个命名空间由本包的 node 半边注册，
+			// 原生设置窗口与 dsh 页内设置都会自动列出它（一个都不用改）。
+			//
+			// **运行时嵌套 inject，不是 `exports.inject`**：静态依赖会把上面那两张
+			// style 一起推迟到 settingsScope 就绪之后，那正是文件尾那条注释要避免的
+			// 首帧闪动。缺席（远程浏览器的设置 RPC 只走 loopback，那边永远缺席）
+			// 时字号就一直是默认值——退化，不是故障。
+			ctx.inject(["settingsScope"], (scoped) => {
+				const scope = scoped.settingsScope.bind({ namespace: "dash-nativeify" });
+				const sync = () => {
+					const snap = scope.getSnapshot();
+					// `loading` / `unavailable` 时 value 还没有意义，退到默认值。
+					const next = clampBody(snap.status === "ready" ? snap.value?.bodyFontSize : BODY_DEFAULT);
+					if (next === body) return;
+					body = next;
+					if (fontStyle) fontStyle.textContent = fontRules(next).join("\n");
+				};
+				scoped.effect(() => scope.subscribe(sync));
+				sync();
 			});
 		}
 
 		exports.apply = apply;
 		// 顶层留空是刻意的：这段 CSS 的全部意义就是抢在首帧之前生效。挂上任何
 		// 硬依赖都会把它推迟到那些服务就绪之后，且服务重载会连带本插件卸载重挂
-		// （= 用户能看见的一次背景闪动）。本插件也确实不需要任何服务。
+		// （= 用户能看见的一次背景闪动）。
+		//
+		// 本插件唯一够得着的服务是 `settingsScope`（对话区字号），而它**必须**是
+		// 可选的——所以走 apply 里的运行时嵌套 `ctx.inject`，不进这张表。
 		exports.inject = [];
 		return module.exports;
 	}
