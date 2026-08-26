@@ -1,27 +1,23 @@
 import SwiftUI
 
-/// 「模型」页——对齐 dsh Web 的 Models。
+/// 「模型」页——主从版式：带边框的源列表 + 右边的详情。
 ///
-/// Web 的形状：一句说明 + **只列已经在用的那几个 provider**（点状态 + 编辑），
-/// 底下「添加 provider」把 38 个目录收在一个下拉框里。上一版我把 38 个全平铺成
-/// 一列主从列表，看着专业，其实是把"目录"和"我的配置"混成了一坨
-/// ——用户九成时间只关心自己那三个。
+/// 上一版是一坨灰色圆角背景里排三行，每行右边一个「编辑」按钮，点开就地展开。
+/// 那是网页的做法。macOS 偏好设置里"一组同类东西，选一个改它"只有一种形状，
+/// 参考设计里 Mimestream 的 Accounts 就是标准答案：
+/// `List(selection:)` + `.listStyle(.bordered)` + 底下一条 `+ −`，右边是详情表单。
 ///
-/// **状态点的含义照 Web**：绿 = 凭据已配置，红 = 没有 key。
-/// 实测 `deepseek-official` 是"路由已注册但凭据未配置"（key 从别处来），
-/// Web 给的就是红点，所以路由状态另用文字说，不跟点抢含义。
+/// 换来的不只是好看：选中、键盘上下键、⌘/⇧ 多选全是系统给的，而"编辑"这个
+/// 中间状态整个消失了——选中即编辑，少一次点击、少一个要记的状态。
 ///
-/// **范围仍然收窄**（计划 D3）：列出、看状态、设/清 key、改 provider 自己那段设置。
-/// Web 的「添加自定义 provider」要往配置里写出一整个 provider 对象，
-/// 那是计划 §5 红线 1 附近的形状，单独一轮做对。
+/// **列出的判据没变**：路由活着，或者凭据配好了。38 个只在目录里的 provider 藏在
+/// `+` 后面（Web 也是这么分的）。
 struct ModelsPage: View {
     @ObservedObject var model: SettingsModel
 
-    @State private var editing: String?
+    @State private var selection: String?
     @State private var adding = false
 
-    /// 在用的：路由活着，或者凭据配好了。**这条判据是照着 Web 的结果反推的**
-    /// ——它列出的正好是这两类的并集（实测 3 个，另有 35 个只在目录里）。
     private var configured: [ProviderRow] {
         model.providers.filter { $0.live || $0.credentialConfigured == true }
     }
@@ -31,39 +27,84 @@ struct ModelsPage: View {
         return model.providers.filter { !shown.contains($0.provider) }
     }
 
+    /// 当前选中的那个。**选中项消失时回落到第一个**——provider 列表是后到的，
+    /// 首帧 `selection` 必然是 nil，不回落的话详情栏会空一拍。
+    private var current: ProviderRow? {
+        configured.first { $0.provider == selection } ?? configured.first
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !model.modelsAvailable {
-                Text("llm 服务不在场，这一页填不了。默认模型仍可在配置文件里改。")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                Text("填入 API key 就能用下面这些 provider 的模型。")
-                    .font(.callout).foregroundStyle(.secondary)
-
-                VStack(spacing: 0) {
-                    ForEach(Array(configured.enumerated()), id: \.element.id) { index, row in
-                        if index > 0 { Divider() }
-                        ProviderRowView(model: model, row: row, editing: $editing)
-                    }
-                }
-                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-
-                AddProviderBox(model: model, catalog: catalog, open: $adding)
+        if !model.modelsAvailable {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("llm 服务不在场，这一页填不了。").font(.callout)
+                Text("默认模型仍可在配置文件里改。").font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 16) {
+                    providerList
+                    detail
+                }
+                .frame(maxHeight: .infinity)
 
-            defaultModelSection
+                // **这条是整窗宽的**，跟 `FormRule` 不是一回事：它分的是页面的两块
+                // （"改哪个 provider" 与 "默认用哪个模型"），不是一张表单里的两组控件。
+                Divider().padding(.vertical, 12)
+
+                defaultModelForm
+            }
+            .sheet(isPresented: $adding) {
+                AddProviderSheet(model: model, catalog: catalog, done: { adding = false })
+            }
+        }
+    }
+
+    private var providerList: some View {
+        List(configured, selection: $selection) { row in
+            HStack(spacing: 7) {
+                StatusDot(color: dotColor(row), help: dotHelp(row))
+                Text(row.displayName).lineLimit(1).truncationMode(.middle)
+            }
+            .tag(row.provider)
+            .accessibilityIdentifier("settings.provider.\(row.provider)")
+        }
+        .sourceListChrome(width: 196) {
+            SourceListFooter(
+                add: { adding = true },
+                addHelp: "添加 provider",
+                // **`−` 是清 key，不是删 provider**。provider 是不是在场由配置决定，
+                // 这里能安全撤销的只有凭据——写一个会真的删配置的 `−`，得先想清楚
+                // 内建适配器和用户自己加的那种删起来根本不是一回事。
+                remove: { clearKey() },
+                removeHelp: "清除这个 provider 的 API key",
+                canRemove: current.map { $0.credentialWritable && $0.credentialConfigured == true } ?? false)
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let current {
+            ProviderDetail(model: model, row: current)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            VStack {
+                Spacer()
+                Text("还没有配好的 provider。点 + 添加一个。")
+                    .font(.callout).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     /// 默认模型。**Web 没有这一段**（它把选模型放在输入框那条工具栏上），
-    /// 但 `agent-default-model` 是实打实的设置项，没有别的地方能露面，
-    /// 藏起来就等于丢了。放在这一页末尾是最不意外的去处。
+    /// 但 `agent-default-model` 是实打实的设置项，没有别的地方能露面。
+    /// 用一个右对齐的组标签带三行——照参考设计里 Advanced 那页 `Reset:` 的写法。
     @ViewBuilder
-    private var defaultModelSection: some View {
+    private var defaultModelForm: some View {
         if let snapshot = model.namespace(SettingsTabs.defaultModelNs),
            case .object(let fields, _) = snapshot.schema, !fields.isEmpty {
-            Divider().padding(.top, 4)
-            Text("默认模型").font(.callout.weight(.medium))
             Form {
                 ForEach(fields, id: \.key) { field in
                     FieldOrGroup(model: model, snapshot: snapshot,
@@ -73,59 +114,23 @@ struct ModelsPage: View {
             .formStyle(.columns)
         }
     }
-}
 
-/// 一行 provider：折叠时只有名字与状态点，点「编辑」就地展开。
-struct ProviderRowView: View {
-    @ObservedObject var model: SettingsModel
-    let row: ProviderRow
-    @Binding var editing: String?
-
-    private var isEditing: Bool { editing == row.provider }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text(row.displayName)
-                StatusDot(row: row)
-                Spacer()
-                Button(isEditing ? "收起" : "编辑") {
-                    editing = isEditing ? nil : row.provider
-                }
-                .controlSize(.small)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-
-            if isEditing {
-                ProviderEditor(model: model, row: row)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
-            }
+    private func clearKey() {
+        guard let current else { return }
+        model.unsetCredential(ref: current.keyRef) { failure in
+            if let failure { model.notice = failure }
         }
-        .accessibilityIdentifier("settings.provider.\(row.provider)")
-    }
-}
-
-struct StatusDot: View {
-    let row: ProviderRow
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .help(help)
     }
 
-    private var color: Color {
+    private func dotColor(_ row: ProviderRow) -> Color {
         switch row.credentialConfigured {
         case true: return .green
         case false: return .red
-        default: return .secondary.opacity(0.4)   // 凭据服务不在场 = 不知道
+        default: return .secondary.opacity(0.4)
         }
     }
 
-    private var help: String {
+    private func dotHelp(_ row: ProviderRow) -> String {
         let credential: String
         switch row.credentialConfigured {
         case true: credential = "凭据已配置"
@@ -136,11 +141,19 @@ struct StatusDot: View {
     }
 }
 
-/// 展开后的 provider 编辑区：API key + 自定义设置。
-struct ProviderEditor: View {
+/// 一个 provider 的详情。两栏用分段控件分开，照参考设计里
+/// Account Information / Inbox Categories / Vacation 那条。
+struct ProviderDetail: View {
     @ObservedObject var model: SettingsModel
     let row: ProviderRow
 
+    private enum Facet: String, CaseIterable, Identifiable {
+        case credential, settings
+        var id: String { rawValue }
+        var title: String { self == .credential ? "凭据" : "自定义设置" }
+    }
+
+    @State private var facet: Facet = .credential
     @State private var entry = ""
     @State private var busy = false
     @State private var error: String?
@@ -155,65 +168,87 @@ struct ProviderEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(row.displayName).font(.callout.weight(.medium))
-                Text(row.provider).font(.caption.monospaced()).foregroundStyle(.tertiary)
-                Spacer()
-                Text(row.live ? "路由已注册" : "路由未注册")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            DetailHeader(title: row.displayName,
+                         subtitle: row.live ? "路由已注册" : "路由未注册",
+                         identifier: row.provider)
+
+            // 只有一栏内容时不摆分段控件——一个只有一段的分段控件是个假控件。
+            if !scopedFields.isEmpty {
+                // **靠左**：它切的是这一栏详情的内容，不是整页——居中会读成页级导航，
+                // 跟插件页顶上那条页级分段撞在一起。
+                Picker("", selection: $facet) {
+                    ForEach(Facet.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
             }
 
-            Form {
-                if row.credentialWritable {
-                    LabeledContent("API key：") {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                // 占位符走 prompt——第一个参数是标签，会漏成控件旁的文字。
-                                SecureField("", text: $entry,
-                                            prompt: Text(configured ? "留空 = 保留现有的" : "填入 API key"))
-                                    .labelsHidden()
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 240)
-                                    .onSubmit(save)
-                                Button("保存", action: save)
-                                    .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                                if configured { Button("清除", action: clear).disabled(busy) }
-                            }
-                            Text("存在设置文件之外，引用名 \(row.keyRef)"
-                                 + (row.keyRefStored ? "" : "（按命名约定推出来的）"))
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let error {
-                                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                            }
+            if facet == .credential || scopedFields.isEmpty {
+                credentialForm
+            } else {
+                settingsForm
+            }
+
+            Spacer(minLength: 0)
+        }
+        // provider 一换，草稿与错误都要清——**不清的话上一个 provider 的错误
+        // 会挂在下一个头上**，看着像刚刚这个也失败了。
+        .onChange(of: row.provider) { _, _ in entry = ""; error = nil; facet = .credential }
+    }
+
+    private var credentialForm: some View {
+        Form {
+            if row.credentialWritable {
+                LabeledContent("API key：") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            // 占位符走 prompt——第一个参数是标签，会漏成控件旁的文字。
+                            SecureField("", text: $entry,
+                                        prompt: Text(configured ? "留空 = 保留现有的" : "填入 API key"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                // **别钉死宽度**：详情栏只有三百来点宽，236 + 「保存」
+                                // 挤不下，按钮会被切掉半个（实测）。让输入框吃剩下的。
+                                .frame(minWidth: 110)
+                                .onSubmit(save)
+                            Button("保存", action: save)
+                                .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                        }
+                        Text("存在设置文件之外，引用名 \(row.keyRef)"
+                             + (row.keyRefStored ? "" : "（按命名约定推出来的）"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let error {
+                            Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                         }
                     }
-                } else {
-                    LabeledContent("API key：") {
-                        Text("由只读来源提供（环境变量或 .env），这里改不了。")
-                            .foregroundStyle(.secondary)
+                }
+            } else {
+                LabeledContent("API key：") {
+                    Text("由只读来源提供（环境变量或 .env），这里改不了。")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .formStyle(.columns)
+    }
+
+    private var settingsForm: some View {
+        // **只渲染这个 provider 自己那棵子树**：`llm-pi-ai` 这个 ns 是所有自定义
+        // provider 共用的，整段铺开会把别人的配置也摆出来。
+        ScrollView {
+            Form {
+                if let snapshot = model.namespace(row.settingsNs) {
+                    ForEach(scopedFields, id: \.key) { field in
+                        FieldOrGroup(model: model, snapshot: snapshot,
+                                     path: row.settingsPath + [field.key], node: field.node)
                     }
                 }
             }
             .formStyle(.columns)
-
-            if !scopedFields.isEmpty, let snapshot = model.namespace(row.settingsNs) {
-                // Web 管这叫 Customized settings，里面是 Base URL 与 Models 表。
-                DisclosureGroup("自定义设置（\(scopedFields.count) 项）") {
-                    Form {
-                        ForEach(scopedFields, id: \.key) { field in
-                            FieldOrGroup(model: model, snapshot: snapshot,
-                                         path: row.settingsPath + [field.key], node: field.node)
-                        }
-                    }
-                    .formStyle(.columns)
-                    .padding(.top, 6)
-                }
-                .font(.callout)
-            }
         }
-        .padding(10)
-        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func save() {
@@ -225,24 +260,19 @@ struct ProviderEditor: View {
             if failure == nil { entry = "" }
         }
     }
-
-    private func clear() {
-        busy = true; error = nil
-        model.unsetCredential(ref: row.keyRef) { failure in
-            busy = false; error = failure
-        }
-    }
 }
 
-/// 「添加 provider」：目录收在下拉框里 + 一个 key 输入。
+/// 「添加 provider」。
 ///
-/// 对内建适配器来说"添加"就是**给它配上 key**——配好了 llm 就会注册它，
-/// `live` 随之变真。所以这里不写配置，只写凭据，语义和 Web 的 Apply 一致。
-/// （Web 还有「添加自定义 provider」，那个要往配置里写整个 provider 对象，不在本轮。）
-struct AddProviderBox: View {
+/// 从内联的一块框改成 sheet：`+` 在列表页脚上，而 macOS 里页脚 `+` 的惯例就是
+/// 弹一张 sheet（参考设计的 Accounts 亦然）。内联展开会把下面的默认模型那组顶下去。
+///
+/// 对内建适配器来说"添加"就是**给它配上 key**——配好了 llm 就会注册它。
+/// Web 还有「添加自定义 provider」（要往配置里写整个 provider 对象），不在本轮。
+struct AddProviderSheet: View {
     @ObservedObject var model: SettingsModel
     let catalog: [ProviderRow]
-    @Binding var open: Bool
+    let done: () -> Void
 
     @State private var picked: String = ""
     @State private var entry = ""
@@ -254,37 +284,24 @@ struct AddProviderBox: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                open.toggle()
-            } label: {
-                Label("添加 provider", systemImage: "plus")
-            }
-            .controlSize(.small)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("添加 provider").font(.headline)
 
-            if open, let target {
+            if let target {
                 Form {
                     Picker("Provider：", selection: Binding(
                         get: { target.provider },
                         set: { picked = $0; entry = "" })) {
-                        ForEach(catalog) { row in
-                            Text(row.displayName).tag(row.provider)
-                        }
+                        ForEach(catalog) { row in Text(row.displayName).tag(row.provider) }
                     }
                     .pickerStyle(.menu)
-                    .fixedSize()
 
                     LabeledContent("API key：") {
                         VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                SecureField("", text: $entry, prompt: Text("填入 API key"))
-                                    .labelsHidden()
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 240)
-                                    .onSubmit { save(target) }
-                                Button("保存") { save(target) }
-                                    .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                            }
+                            SecureField("", text: $entry, prompt: Text("填入 API key"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { save(target) }
                             Text("会写到引用名 \(target.keyRef)")
                                 .font(.caption).foregroundStyle(.secondary)
                             if let error {
@@ -294,10 +311,21 @@ struct AddProviderBox: View {
                     }
                 }
                 .formStyle(.columns)
-                .padding(10)
-                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+
+                HStack {
+                    Spacer()
+                    Button("取消", action: done).keyboardShortcut(.cancelAction)
+                    Button("添加") { save(target) }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                }
+            } else {
+                Text("目录里的 provider 都已经配过了。").foregroundStyle(.secondary)
+                HStack { Spacer(); Button("好", action: done).keyboardShortcut(.defaultAction) }
             }
         }
+        .padding(20)
+        .frame(width: 420)
     }
 
     private func save(_ target: ProviderRow) {
@@ -306,7 +334,7 @@ struct AddProviderBox: View {
         busy = true; error = nil
         model.setCredential(ref: target.keyRef, value: value) { failure in
             busy = false; error = failure
-            if failure == nil { entry = ""; open = false }
+            if failure == nil { done() }
         }
     }
 }

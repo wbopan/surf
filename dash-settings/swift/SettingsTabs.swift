@@ -55,9 +55,30 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var width: CGFloat {
         switch self {
         case .general: return 620
-        case .models: return 660
-        case .plugins: return 660
-        case .presets: return 680
+        case .models: return 700
+        case .plugins: return 720
+        case .presets: return 700
+        }
+    }
+
+    /// 定高的页返回高度，自适应的页返回 nil。
+    ///
+    /// **判据是"这一页里有没有自己会滚的原生控件"**：`List` 和 `Table` 都要一个
+    /// 确定的高度才知道自己能显示几行，而 `SelfSizingScroll` 干的正是相反的事
+    /// ——量内容有多高。两个凑一块儿是死循环：列表想问外面多高，外面在问列表多高，
+    /// 实测结果是列表塌成一行或者把窗口顶出屏幕。
+    ///
+    /// 所以主从与表格的三页定高、页内自己滚；只有纯 `Form` 的「通用」页继续跟着
+    /// 内容长（那是 `.preference` 窗口本该有的样子，参考设计里 General 就比
+    /// Accounts 矮一截）。
+    ///
+    /// 「插件」取两个子栏里较高的那个：子栏一切换窗口就重新动画一次高度，很晃眼。
+    var height: CGFloat? {
+        switch self {
+        case .general: return nil
+        case .models: return 430
+        case .plugins: return 480
+        case .presets: return 360
         }
     }
 }

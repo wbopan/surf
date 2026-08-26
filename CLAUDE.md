@@ -350,6 +350,11 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   可靠的做法是把资源放进 `host.objects`，新一代 `activate` 时主动收拾上一代留下的那份。
   **存 AppKit 类型而不是自定义类型**——世代之间类型身份隔离（module 名取自 contentHash），
   `as? 自定义类` 跨代必然失败，`as? NSWindow` 才成立。
+- **SwiftUI 在 `NSTabViewController(tabStyle: .toolbar)` 里够不着工具栏**：`.searchable`
+  于是一个像素都不画，且不报错。要原生搜索框只能包 `NSSearchField`
+  （dash-settings/swift/SettingsChrome.swift）。同一处还记着另外三条 `Form` 版式的坑
+  （`Divider()` 在 `LabeledContent` 里变竖线、`EmptyView()` label 让整行塌成全宽、
+  `.safeAreaInset` 塞不进 bordered list 的边框）——写偏好设置版式前先读那份 README。
 - **多显示器下 peekaboo 的按元素点击会间歇失灵**（`Bridge operation target attribution
   failed` / `axElementNotFound`），尤其当同 App 还有一扇无标题的"自动填充"面板时。
   截图不受影响。卡住时重启 App 通常能恢复；别在这上面耗，改用探针从数据面验。

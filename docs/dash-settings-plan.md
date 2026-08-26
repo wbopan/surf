@@ -446,3 +446,24 @@ add plugin mutation controls"。那个「已启用/已停用」标签是编排�
 **顺手对齐的一处**：`agent-presets.default` 的 schema 就是个自由字符串，照直渲染
 是个让人手敲 id 的文本框；Web 是下拉框且显示「标准模式」而不是 `standard`。
 预设清单这轮已经在手上，直接借过来做成 Picker，清单读不到时回落成文本框。
+
+### 改版：把四页收进两种原生版式 —— 2026-08-26 完成
+
+上一版内容到位、版式失控：一页表单、一页灰色圆角列表、一页手风琴卡片、一页两列
+卡片网格——四页四种排版，没有一种是 macOS 偏好设置那套语法。用户的原话是"缺乏品位"。
+
+先出草图（`docs/design/settings-layout/`，六块画板，artifact 链接在 README 里），
+定下**只许两种布局**：能一屏排完的用 `Form(.columns)`，一组同类东西的用
+`List(.bordered)` 主从；插件列表那 171 条用 `Table` + 斑马纹。然后按草图重写了
+八个 Swift 文件，新增 `SettingsChrome.swift` 收公用件（FormRule / 源列表外框与
+`+ −` / NSSearchField / StatusDot / DetailHeader）。
+
+实打实的收益有两处，都不是"好看"：
+
+1. 插件页那层「更多设置（N 项）」的折叠**删掉了**。详情栏一次摊得下 `shell` 全部
+   六个字段，§2.2 的零遗漏不再需要拿一次点击去换。
+2. 预设页那个"勾上了又置灰"的默认复选框换成了两个不撒谎的形状——已是默认就是一句
+   带 ✓ 的陈述，不是默认就是一个真能按的「设为默认」。
+
+四页都截图核过（`tools/shot.sh` + AX 量真实坐标，截图本身别拿来量尺寸）。
+踩到的五个 SwiftUI 坑记在 `dash-settings/README.md` 的「版式」一节。

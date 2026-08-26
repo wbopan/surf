@@ -17,11 +17,52 @@ lib/models.js    模型页数据面：llm × credentials，运行时嵌套
 lib/presets.js   预设画廊数据面：agentPresets（**不是** ctx.settings）
 lib/inventory.js 插件列表数据面：pluginInventory，只读
 swift/           SettingsSchema/JSONValue（解码）· SettingsModel（状态）·
+                 SettingsChrome（版式公用件：FormRule / 源列表外框 / NSSearchField）·
                  FieldRow/FieldControls/ScalarListEditor（七种编辑器语义）·
                  GeneralPage/ModelsPage/PluginsPage/PresetsPage（四栏）·
                  PluginInventoryList（插件列表）· FieldNotes（注解表）
 tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
 ```
+
+## 版式：两种布局，不许有第三种
+
+草图与依据在 [`docs/design/settings-layout/`](../docs/design/settings-layout/)。
+一句话：**能一屏排完的用表单，是一组同类东西的用主从**。
+
+| | 用在哪 | 长相 |
+|---|---|---|
+| 表单 | 通用 | `Form(.columns)`：右对齐标签列 + 左对齐控件列，组间一条只跨控件列的线 |
+| 主从 | 模型 / 插件配置 / 智能体预设 | `List(selection:)` + `.listStyle(.bordered)` 左列，右边详情 |
+| 表 | 插件列表 | `Table` + `.tableStyle(.bordered(alternatesRowBackgrounds: true))` |
+
+主从换来的不只是好看：选中、上下键、⌘/⇧ 多选全归系统，而"编辑"这个中间状态
+整个消失了。插件页那层「更多设置（N 项）」的折叠因此可以删掉——详情栏一次摊得下
+`shell` 全部六个字段，**零遗漏不再需要拿一次点击去换**。
+
+### 四条踩过的坑
+
+- **`Divider()` 放进 `LabeledContent` 会变成竖线。** 它的方向跟父容器布局轴走，
+  而 `LabeledContent` 内部是 HStack。要横线就自己画 `Rectangle().frame(height: 1)`。
+- **`LabeledContent` 的 label 写 `EmptyView()`，整行会塌成全宽**，线从窗口左边距
+  一直画到右边距。给一个零尺寸但真实存在的 label（`Color.clear.frame(width: 0)`），
+  它照常占住标签列，线才从控件列起点开始。用红色 3pt 线截一次图就看出来了。
+- **`.safeAreaInset` 塞不进 bordered list 的边框里**，只会得到一条没对齐、还比列表
+  宽的浮条。macOS 这一代本来就是 `+ −` 在框外下方（用户与群组、Mimestream 都是）。
+- **`.searchable` 在这扇窗里一个像素都画不出来**（不报错）。它要把搜索框塞进导航
+  容器的工具栏，而我们的工具栏是 `NSTabViewController(tabStyle: .toolbar)` 建的，
+  SwiftUI 够不着。包一层 `NSSearchField` 是拿到这个原生控件的唯一路子。
+- **`TableColumn` 的排序键必须是 `String` 或别的有专属重载的类型。** 中文字面量在
+  `value:` 是非 String `Comparable` 时会在 `LocalizedStringKey` 与
+  `LocalizedStringResource` 两个重载间歧义；换成 `Text` 标签又会解析到
+  `SortDescriptor` 那一族，和 `Table(sortOrder:)` 的 `KeyPathComparator` 不兼容。
+  办法是给 model 加一个 `String` 计算属性（`statusText`）按它排——顺带保证
+  **排的和显示的是同一个东西**。
+
+### 定高页与自量高页
+
+`SettingsTab.height` 非空的页是定高的（模型 430 / 插件 480 / 预设 360），只有纯表单
+的通用页走 `SelfSizingScroll` 量内容。**两者不能叠**：`List` / `Table` 要一个确定
+高度才肯布局，外面再套一层量高度的滚动容器就互相等死。
 
 ## 为什么数据面在 node 半边而不是 Swift 直连 HTTP
 

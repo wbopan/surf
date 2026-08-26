@@ -14,7 +14,7 @@ struct GeneralPage: View {
             ForEach(Array(SettingsTabs.generalRows.enumerated()), id: \.offset) { _, row in
                 if let snapshot = model.namespace(row.ns),
                    let node = snapshot.schema.node(at: row.path) {
-                    if row.dividerBefore { Divider().padding(.vertical, 2) }
+                    if row.dividerBefore { FormRule() }
                     if row.ns == "ui-theme" {
                         // 外观在 Web 里是三张并排的卡片，不是下拉框。
                         AppearanceRow(model: model, snapshot: snapshot, path: row.path, node: node)
@@ -32,7 +32,7 @@ struct GeneralPage: View {
             }
 
             if model.hasDocument {
-                Divider().padding(.vertical, 2)
+                FormRule()
                 // Web 把这个按钮放在对话框头部。`.preference` 工具栏没有那条头部，
                 // 所以落在通用页末尾——它是全局动作，通用页是最不意外的去处。
                 LabeledContent("配置文件：") {
@@ -48,60 +48,63 @@ struct GeneralPage: View {
     }
 }
 
-/// 外观：三张并排的卡片，照 Web 的 Light / Dark / System。
+/// 外观：一个分段控件，照参考设计里 Text Size / Keyboard Shortcuts 那一行的密度。
 ///
-/// 为什么单独做一个控件而不是复用下拉框：这是**三选一且选项固定**的东西，
-/// Web 用卡片是因为它值得一眼看全；换成下拉框会让"现在是哪个"要点开才知道。
+/// 上一版是三张 76×50 的卡片（图标 + 文字）。那是**系统设置**（Ventura 之后那个
+/// 全屏应用）的写法，不是**偏好设置窗口**的写法——参考的 Mimestream / 信息
+/// 都是一行一个控件，三张卡片在这套语法里占三倍高度，还得自己发明选中态
+/// （实测跟按钮的蓝色焦点环撞在一起，得再加描边才分得清"选中"和"有焦点"）。
+///
+/// `Picker(.segmented)` 一行搞定，选中态、键盘、焦点环全是系统的。
 struct AppearanceRow: View {
     @ObservedObject var model: SettingsModel
     let snapshot: NamespaceSnapshot
     let path: [String]
     let node: SchemaNode
 
-    private static let symbols = ["light": "sun.max", "dark": "moon", "system": "display"]
-
-    private var current: String? {
+    private var current: String {
         if case .string(let value)? = snapshot.value.value(at: path) { return value }
-        return nil
+        return ""
+    }
+
+    private var options: [String] {
+        (node.constOptions ?? []).compactMap {
+            if case .string(let raw) = $0 { return raw }
+            return nil
+        }
     }
 
     var body: some View {
-        LabeledContent("外观：") {
-            HStack(spacing: 8) {
-                ForEach(node.constOptions ?? [], id: \.self) { option in
-                    if case .string(let raw) = option {
-                        card(raw)
+        LabeledContent {
+            HStack(spacing: 6) {
+                Picker("", selection: Binding(
+                    get: { current },
+                    set: { model.set(ns: snapshot.ns, path: path, value: .string($0)) })) {
+                    ForEach(options, id: \.self) { raw in
+                        Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path, value: .string(raw)))
+                            .tag(raw)
                     }
                 }
-            }
-            .disabled(!model.writable)
-        }
-    }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .disabled(!model.writable)
+                .accessibilityIdentifier("settings.field.\(snapshot.ns).\(path.joined(separator: "."))")
 
-    private func card(_ raw: String) -> some View {
-        let selected = current == raw
-        return Button {
-            model.set(ns: snapshot.ns, path: path, value: .string(raw))
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: Self.symbols[raw] ?? "circle")
-                    .font(.system(size: 14))
-                Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path, value: .string(raw)))
-                    .font(.caption)
+                if snapshot.isOverridden(path: path) {
+                    Button {
+                        model.unset(ns: snapshot.ns, path: path)
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("重置（退回继承）")
+                }
             }
-            .foregroundStyle(selected ? Color.accentColor : Color.primary)
-            .frame(width: 76, height: 50)
-            // **选中态要压过焦点环**：只靠 0.06→0.16 的底色差，实测跟按钮自带的
-            // 蓝色焦点环撞在一起，看上去像"第一张被选中了"。用强调色描边 + 染色
-            // 把"选中"和"有焦点"分成两件看得出区别的事。
-            .background(selected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.25),
-                              lineWidth: selected ? 1.5 : 0.5))
+        } label: {
+            Text(FieldNotes.title(ns: snapshot.ns, path: path) + "：")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("settings.appearance.\(raw)")
     }
 }
 

@@ -34,20 +34,30 @@ struct SettingsPage: View {
                 Text("正在连接 dsh…").font(.callout).foregroundStyle(.secondary)
             }
             .frame(height: 180)
-        } else {
-            SelfSizingScroll(maxHeight: maxHeight) {
-                Group {
-                    switch tab {
-                    case .general: GeneralPage(model: model, openPath: openPath)
-                    case .models: ModelsPage(model: model)
-                    case .plugins: PluginsPage(model: model)
-                    case .presets: PresetsPage(model: model, openPath: openPath)
-                    }
-                }
-                .frame(width: tab.width - 52, alignment: .leading)
+        } else if let height = tab.height {
+            // 定高的页：页内的 List / Table 自己会滚，外面不能再套一层量高度的
+            // 滚动容器（见 SettingsTab.height 的注释）。
+            page
+                .frame(width: tab.width - 52, height: height, alignment: .topLeading)
                 .padding(.vertical, 20)
                 .padding(.horizontal, 26)
+        } else {
+            SelfSizingScroll(maxHeight: maxHeight) {
+                page
+                    .frame(width: tab.width - 52, alignment: .leading)
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, 26)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        switch tab {
+        case .general: GeneralPage(model: model, openPath: openPath)
+        case .models: ModelsPage(model: model)
+        case .plugins: PluginsPage(model: model)
+        case .presets: PresetsPage(model: model, openPath: openPath)
         }
     }
 

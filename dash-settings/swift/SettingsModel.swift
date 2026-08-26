@@ -117,6 +117,14 @@ struct InventoryEntry: Identifiable {
         return name.isEmpty ? moduleName : name
     }
 
+    /// 状态列显示什么——**同时就是这一列的排序键**。
+    ///
+    /// 排序键取显示文案而不是 `enabled` 这个 Bool，两个理由：用户看到什么就按什么排；
+    /// 而且 `TableColumn(_:value:)` 的 Bool 重载在这儿会解析到 `SortDescriptor`
+    /// 那一族，跟 `Table(sortOrder:)` 要的 `KeyPathComparator` 对不上——
+    /// String 的键路径有专用重载，没有这个歧义。
+    var statusText: String { enabled ? phaseLabel : "已停用" }
+
     /// Cordis 状态的中文说法。**照抄上游 zh 词典**（`dsh-client-ui-settings-plugin-inventory`
     /// 的 locales），两边说的是同一件事就该用同一个词。
     var phaseLabel: String {

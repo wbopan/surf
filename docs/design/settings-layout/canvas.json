@@ -1,0 +1,100 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 620,
+      "h": 480
+    },
+    {
+      "file": "Models.dc.html",
+      "x": 760,
+      "y": 0,
+      "w": 700,
+      "h": 520
+    },
+    {
+      "file": "Plugins.dc.html",
+      "x": 1600,
+      "y": 0,
+      "w": 700,
+      "h": 500
+    },
+    {
+      "file": "Anatomy.dc.html",
+      "x": 0,
+      "y": 760,
+      "w": 620,
+      "h": 800
+    },
+    {
+      "file": "PluginList.dc.html",
+      "x": 760,
+      "y": 760,
+      "w": 700,
+      "h": 600
+    },
+    {
+      "file": "Presets.dc.html",
+      "x": 1600,
+      "y": 760,
+      "w": 700,
+      "h": 420
+    }
+  ],
+  "annotations": [
+    {
+      "id": "thesis",
+      "x": 0,
+      "y": -250,
+      "w": 700,
+      "text": "一句话：整扇窗只要两种版式。\n\n通用 = 纯表单（右对齐标签列 + 左对齐控件列）。\n模型 / 插件 / 智能体预设 = 主从（带边框的源列表 + 右边的详情），而详情里用的还是同一套表单语法。\n\n现在的问题不是内容，是每页各长各的：一页表单、一页灰色圆角列表、一页手风琴、一页两列卡片网格。"
+    },
+    {
+      "id": "models-note",
+      "x": 760,
+      "y": -190,
+      "w": 700,
+      "text": "模型：灰色圆角列表 + 「编辑」按钮 → NSTableView 主从 + 底部 + − 页脚（照 Mimestream 的 Accounts）。\n\nprovider 的两组内容（凭据 / 自定义设置）用内层 tab 条分开，不再靠一个「自定义设置（19 项）」的折叠三角。\n\n「默认模型」收在下面，用右对齐组标签带三个弹出菜单（照 Advanced 的 Reset: 那一组）。"
+    },
+    {
+      "id": "plugins-note",
+      "x": 1600,
+      "y": -190,
+      "w": 700,
+      "text": "插件配置：手风琴 → 主从。\n\n换来的不只是好看——详情栏一次能摊开 shell 全部六个字段，所以「更多设置（4 项）」那层折叠可以整个删掉，零遗漏不再要用一次点击去换。\n\n左列仍保留「手工登记的三个在前、其余在后」的排序，只是变成一条分组横线而不是排在后面的卡片。"
+    },
+    {
+      "id": "list-note",
+      "x": 760,
+      "y": 640,
+      "w": 700,
+      "text": "插件列表：两列卡片网格 → 带边框的表，隔行底色（照「信息 · 共享给你」）。\n\n171 条里要找一个插件，扫一列比扫两列快；条目 id 从「点开才看得到」变成常驻的一列，展开这个交互就没必要存在了。"
+    },
+    {
+      "id": "presets-note",
+      "x": 1600,
+      "y": 640,
+      "w": 700,
+      "text": "智能体预设：卡片画廊 → 主从。\n\n「设为默认」从卡片上的按钮变成详情里的一个无标签复选框——按钮是动作，默认是状态，复选框才说得清「现在是不是它」。\n\n4 个内建时画廊还行，用户写到 20 个自定义就散了。"
+    },
+    {
+      "id": "anatomy-note",
+      "x": 0,
+      "y": 690,
+      "w": 620,
+      "text": "下面这张是版式规则本身：网格尺寸、分隔线的跨度、说明文字的位置，以及这套设计允许用的原生控件清单。改任何一页之前先对一遍这张。"
+    },
+    {
+      "id": "native-controls",
+      "x": 2400,
+      "y": 760,
+      "w": 700,
+      "text": "这些清单都有原生大控件，不用自己拿 VStack 搭（macOS 27 SDK 里逐个核过）：\n\n插件列表 = Table(of:selection:sortOrder:) + TableColumn\n  .tableStyle(.bordered(alternatesRowBackgrounds: true))\n  白送的：表头点一下排序、⌘/⇧ 多选、键盘上下、列宽拖拽；\n  TableColumnCustomization + customizationID 还能让用户自己\n  增删列并记住。\n\n主从的源列表 = List(selection:) + .listStyle(.bordered(alternatesRowBackgrounds:))\n  + − 页脚用 .safeAreaInset(edge: .bottom) 挂在列表底下。\n\n搜索框 = .searchable(text:placement:prompt:)，不是自己画的 TextField。\n\n还有 .alternatingRowBackgrounds() 这个独立修饰符，能给任意容器上隔行底色。\n\n一句话：我们现在这 171 条是 LazyVGrid 手搓的，排序、多选、键盘导航、列宽全都没有——换成 Table 是白捡的。"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
