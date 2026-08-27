@@ -18,14 +18,22 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 OUT="build-sdk"
-TARGET="arm64-apple-macos26.0"
+TARGET="arm64-apple-macos27.0"
 FORCE="${1:-}"
 
 mkdir -p "$OUT"
 
 # 内容 hash（不看 mtime；换 git 分支不误判）。
+#
+# **构建参数也要折进来。** 只按源码算的话，改了 TARGET 而源码没动就会被判成
+# "未变动，跳过"——.swiftinterface 里还写着旧的三元组，插件跟着用旧的部署目标编，
+# 于是新 API 报 "only available in macOS 27.0 or newer"，而脚本刚刚打印了"跳过"。
+# 这个失败模式很难查：报错在插件那边，原因在这个脚本的缓存里。
 sources_hash() {
-  find "$@" -type f -name '*.swift' | sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1
+  { find "$@" -type f -name '*.swift' | sort | xargs shasum -a 256
+    echo "target=$TARGET"
+    xcrun swiftc --version
+  } | shasum -a 256 | cut -d' ' -f1
 }
 
 build_module() { # build_module <module 名> <源码目录...>

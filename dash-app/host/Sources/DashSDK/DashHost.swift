@@ -50,7 +50,8 @@ public final class DashHost {
         self.logger = log
     }
 
-    /// 写一行进壳的日志（`<AppSupport>/logs/dash.log`），自动带插件名与世代号。
+    /// 写一行进壳的日志（`<AppSupport>/logs/dash.<worktree>.log`，一个 App 实例一份），
+    /// 自动带插件名与世代号。
     public func log(_ message: String) {
         logger(message)
     }

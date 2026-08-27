@@ -1,3 +1,4 @@
+import AppKit
 import DashLayout
 import DashSDK
 import Foundation
@@ -81,8 +82,51 @@ final class SidebarPlugin: DashPlugin {
             model.pageDidSelect(sessionId: id)
         }.kept(by: handle)
 
+        // 筛选 / 视图状态。列表（SwiftUI）与工具栏那枚菜单（AppKit）共读这一份。
+        let filter = SidebarFilterState()
+
         host.register(slot: "sidebar") {
-            AnyView(SidebarView(model: model, surface: surface))
+            AnyView(SidebarView(model: model, filter: filter, surface: surface))
+        }.kept(by: handle)
+
+        // 工具栏的「筛选」。**dash-layout 那格原本是「新建会话」**——新建的入口
+        // 还有三个（⌘N、分组头的加号、页面自己的按钮），而"哪些工作区显示、
+        // 归档要不要露出来"没有别的地方可放，这一格给了它更值。
+        //
+        // 走 `menu` 路线拿的是 `NSMenuToolbarItem`：玻璃按钮 + 系统菜单，
+        // 勾选态、键盘操作、深浅色、缩到窄窗口时的溢出全归系统。
+        // 设计稿里画的是 NSPopover，落地改成菜单——贡献槽递不出锚点视图，
+        // 而"一串带勾的开关"本来就是菜单的母语。
+        let buildMenu: @convention(block) (NSMenu) -> Void = { menu in
+            MainActor.assumeIsolated {
+                Self.populate(menu: menu, model: model, filter: filter)
+            }
+        }
+        host.contribute(to: LayoutToolbar.slot,
+                        id: "filter",
+                        order: -100,
+                        metadata: [
+                            "label": "筛选",
+                            "symbol": "line.3.horizontal.decrease",
+                            "tooltip": "筛选会话",
+                            "menu": buildMenu,
+                        ]) {
+            // 兜底视图：系统认不出那个 SF Symbol 时才用得上。菜单路线走不了，
+            // 退化成"把筛选清空"这一个动作——比一颗点不动的按钮有用。
+            AnyView(
+                Button {
+                    MainActor.assumeIsolated {
+                        filter.hiddenGroups = []
+                        filter.showArchived = false
+                        filter.mode = .all
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("清除筛选")
+                .accessibilityIdentifier("toolbar.sidebarFilter")
+            )
         }.kept(by: handle)
 
         // 请求一份 fresh 全量。**每代都要问**：node 半边只在数据变化时推，
@@ -91,5 +135,39 @@ final class SidebarPlugin: DashPlugin {
 
         host.log("sidebar 上线（种子快照 v\(seed.version)，已请求全量）")
         return handle
+    }
+
+    /// 现场填「筛选」菜单。**每次弹出前重建**（`ContributionMenuDelegate`），
+    /// 所以这里读到的分组、勾选态都是当场的。
+    @MainActor
+    private static func populate(menu: NSMenu, model: AppSidebarModel, filter: SidebarFilterState) {
+        let groups = model.groups
+        if !groups.isEmpty {
+            // 这一段**不加分区标题**：四个带勾的工作区名自己已经说清是什么，
+            // 而 AppKit 在菜单**首项**上的分区标题不渲染（`.sectionHeader` 和
+            // disabled 的普通项都试过，一个都不出来）。
+            for group in groups {
+                let key = group.workspaceId ?? SidebarFilterState.otherGroupKey
+                menu.addItem(MenuActionTarget.item(group.title, checked: filter.isShown(key)) {
+                    MainActor.assumeIsolated { filter.toggleGroup(key) }
+                })
+            }
+            menu.addItem(.separator())
+        }
+
+        menu.addItem(MenuActionTarget.item("显示已归档", checked: filter.showArchived) {
+            MainActor.assumeIsolated { filter.showArchived.toggle() }
+        })
+
+        if filter.isNarrowed {
+            menu.addItem(.separator())
+            menu.addItem(MenuActionTarget.item("清除筛选") {
+                MainActor.assumeIsolated {
+                    filter.hiddenGroups = []
+                    filter.showArchived = false
+                    filter.mode = .all
+                }
+            })
+        }
     }
 }

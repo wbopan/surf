@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 dev                一行启动本 worktree 的整套 dash（薄封装，逻辑在 dash/bin/dash.js）
 dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，不含运行时代码
-  cordis.patch.yml 装哪六个插件、什么顺序、什么配置——改编排只改这里
+  cordis.patch.yml 装哪七个插件、什么顺序、什么配置——改编排只改这里
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
@@ -29,10 +29,14 @@ dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS 
                    子出口 `./plugin` = createSwiftPlugin 工厂
 dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
                    （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献；
-                   贡献带 region=sidebar|content 决定落在分隔线哪侧、sizing=fixed|dynamic
-                   决定要不要冻死宽度，两维都缺省成老行为）；
+                   贡献带 region=sidebar|content 决定落在分隔线哪侧、align=leading|trailing
+                   决定夹在 flexibleSpace 哪边、spaced 决定要不要断开玻璃胶囊、
+                   sizing=fixed|dynamic 决定要不要冻死宽度，全部缺省成老行为；
+                   四条渲染路线由 kind 选：button / group / menu / view，另有一条
+                   `menu` block 路线给"内容由贡献方本地状态决定"的菜单）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏。**数据面在 node 半边**
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待批准三枚胶囊 +
+                   两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
 dash-header/       把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
                    （Mail / Notes 那条裸文字），工具栏只剩四格可操作的原生
@@ -46,16 +50,21 @@ dash-header/       把主内容区的 web header 搬进原生：**标识走 wind
                    面包屑不只是文字：末段带**子代理计数下拉**、子代理段是**兄弟切换器**，
                    点开是原生重画的 catalog 树——**子代理会话不进侧边栏，这是唯一入口**
                    （docs/native-subagent-catalog.md）
+dash-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
+                   数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
+                   agentPresets / pluginInventory（权威计划 docs/dash-settings-plan.md）
 dash-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
-                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）
-                   （纯 client 半边，几乎全是 CSS，零服务依赖，无构建步骤）
+                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）。几乎全是 CSS，无构建步骤。
+                   node 半边只干一件事：注册设置 ns `dash-nativeify`（唯一一项是对话区
+                   字号），client 半边订它——两处都是可选的运行时嵌套 inject，缺席即退到
+                   默认值，CSS 照常首帧生效
 tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 dash-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
-六个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
+七个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
 "去掉 scope"）。**它们自己都不再声明 `dsh.bundle`**——编排权集中在伞包那张表上，
 一处真相。详见下面「profile 与伞 bundle」。
 
@@ -67,7 +76,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 ./dev --help       # 其余选项
 ```
 
-`./dev` 幂等，随便重复跑。它会把本 worktree 的六个插件 + 伞包 link 进
+`./dev` 幂等，随便重复跑。它会把本 worktree 的七个插件 + 伞包 link 进
 profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。dash-app 随之
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
@@ -130,7 +139,7 @@ Debug 与 Release 是两个不同 App，可并存运行：
 | App 名 | dash Dev | dash |
 | Bundle ID | io.wenbo.dash.dev | io.wenbo.dash |
 | 图标 | 橙色 DEV 徽章 | 原图标 |
-| UI 标记 | 标题栏 DEV pill、侧边栏 DEV BUILD 条（含构建时间戳）、bootstrap 斜纹 | 无 |
+| UI 标记 | bootstrap 斜纹 | 无 |
 | 位置 | dash-app/host/build/Build/Products/Debug/ | /Applications/ |
 
 构建时间戳：prebuild 脚本 `scripts/write-build-timestamp.sh` 每次构建把时间写入
@@ -219,6 +228,11 @@ scripts/embed-modules.sh   → Contents/Frameworks/lib<M>.dylib（壳按 @rpath 
 （dsh 的 wire 模型 + 会话镜像）随 M10 整体退役——数据面搬进 dash-sidebar 的 node
 半边了。`embed-modules.sh` 只拷不删，所以在旧的 `build/` 里可能还躺着
 `libDSHKit.dylib` 的残骸；`rm -rf build` 重来一次就干净了。
+
+**`build-modules.sh` 的跳过判据里含构建参数（TARGET、swiftc 版本），不只是源码 hash**
+——只按源码算的话，改了部署目标而源码没动会被判成"未变动，跳过"，`.swiftinterface`
+里还写着旧三元组，插件跟着用旧目标编，新 API 报 "only available in macOS 27.0 or
+newer"，而脚本刚刚打印了"跳过"。**报错在插件那边，原因在这个脚本的缓存里。**
 **改 DashSDK 会让所有插件的 contentHash 失效、全量重编**（工具链指纹里含它的
 `.swiftinterface` 摘要），这是对的：`.swiftmodule` 对不上比慢几秒糟得多。
 
@@ -270,13 +284,13 @@ npm workspace 或手工 symlink，那是机器本地状态，新克隆的仓库�
 1. **`@deepseek-ai/dsh-web-app` 得手动列进 `bundles`。** dsh 的 `PROFILE_TEMPLATES`
    只给 `web` 和 `headless` 两个名字配了模板，别的 profile 初始化时只拿到
    `dsh-base`，web 那一层不会自己出现。
-2. **六个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
+2. **七个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
    列上去会让 `loadProfile` 直接 fails loud（"列为 bundle 却没有声明"是配置错误，
    不是"没有 patch"）。从旧结构升级上来的 profile 尤其要清。
 
-### 为什么开发期要单独 link 那六个插件
+### 为什么开发期要单独 link 那七个插件
 
-`./dev` 会把六个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
+`./dev` 会把七个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
 **pnpm 对 `link:` 依赖不会去装被 link 目标自己的 dependencies**，而 cordis loader
 解析插件包名时的锚点是 **profile 目录**——伞包自带的 `node_modules` 根本不在
 Node 的向上查找链上。不 link 它们，启动即炸：
@@ -285,7 +299,7 @@ Node 的向上查找链上。不 link 它们，启动即炸：
 Cannot find package '@wenbo/dash-bridge' imported from ~/.dsh/profiles/dash/
 ```
 
-发布之后没有这个问题：那时六个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
+发布之后没有这个问题：那时七个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
 profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，因为编排权
 始终在伞包那张表上——这正是摘掉子包 `dsh.bundle` 声明换来的好处。
 
@@ -304,7 +318,18 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-`endpoint` 发现文件**已经按 profile 分片**（`endpoints/<profile>.json`），不再互相覆盖。
+**`<AppSupport>/io.wenbo.dash/` 下的三样东西都已经按实例分片**，别再假设"日志只有一份"：
+
+| 文件 | 分片键 | 不分片会怎样 |
+|---|---|---|
+| `endpoints/<profile>.json` | profile | 后启动的抹掉先启动的，被抹的那套再也接不到手动双击的壳 |
+| `logs/dash.<worktree>.log`（壳自己写） | **产物所在 worktree 目录名**（`DashPaths.instanceTag` 从 bundle 路径里抠） | 两个 App 实例 bundle id 相同、追加写同一文件，**邻居 worktree 的插件编译错误混进你的日志**，长得和自己的一模一样 |
+| `logs/dash-app-build.<profile>.<配置>.log`（node 侧写） | profile | 这份是**覆盖写**：邻居一构建就把你整份换掉，终端指给你的路径里躺着别人的错误 |
+
+壳的日志跟着**产物**分片而不是跟着连上的 dsh：断连重连可以换 dsh，跑的代码始终是自己那份。
+装到 `/Applications` 的 Release 全机只有一份，仍是无后缀的 `dash.log`。
+拿不准该看哪个文件就开 ⌥⌘D，「路径」一栏写的是本进程日志的**全路径**。
+（分片是新增的，老的 `dash.log` / `dash-app-build.<配置>.log` 还躺在目录里，删掉即可。）
 
 **新 worktree 有两样本地状态不在库里，`./dev` 替你补齐**，别手动折腾：
 
@@ -316,7 +341,7 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 
 第 2 条缺了会**安静地**毁掉整个壳：dsh 照常起、HTTP 200，只是
 `spawn …/tools/xcodegen ENOENT` 埋在
-`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.Debug.log` 里，
+`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.<profile>.Debug.log` 里，
 终端只留一句"dash-app 优雅缺席"。`bin/dash.js` 的 `ensureXcodegen` 现在按
 **同仓库的其它 worktree → PATH 上的 `xcodegen`** 的顺序取件并拷过来；两处都没有
 就打印补法（`brew install xcodegen`）而不是让它静默缺席。三个调用点也各自加了
@@ -354,6 +379,15 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
 "我这一套"。发现文件是给手动双击起来的壳兜底的——**别删它**：用户 ⌘Q 之后 dsh
 不会再拉起 App（`launch` 只在 activate 时跑一次），双击是唯一的回来路径，而双击
 没有 flag。
+
+**没有 flag 时，候选先按"是不是我这一套"排，再按 `startedAt` 倒序。**
+判据是硬事实而不是名字推断：dash-app 把自己的 `dash-app/host` 绝对路径写进发现文件
+（`hostDir`），壳从自己的 bundle 路径算出同一个值比对（`DashPaths.ownHostDir` ↔
+`DashEndpoint.isOwn`）。只按 `startedAt` 排会**安静地连错**：双击起来的壳挑中邻居
+worktree 最近启动的那个 dsh，于是去编译**邻居的**插件源码——编译失败时那条错误
+原样落进自己的日志，读日志的人完全看不出它属于别人家（实测过，日志里冒出本
+worktree 根本没有的插件名）。自己那套没在跑时仍然会退到邻居（总比引导页有用），
+但接入那行日志与 ⌥⌘D 都会标出「⚠️ 不是本 worktree 那一套」。
 
 **壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底、
 替网页把下载与外链落地。
@@ -418,6 +452,27 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
   反过来，**被正确挡住的构建输入也要有人补**：`dash-app/host/tools/xcodegen` 就是
   这样一份"该挡、但缺了整个壳就没了"的文件，兜底在 `./dev` 里（见「多 worktree」）。
+- **别把清理逻辑只挂在 `DashPluginHandle` 的析构上**。壳换代时 `loaded[name]` 一换、
+  旧 `LoadedPlugin` 本该是最后一个强引用，但实测四十多次换代里 handle 只 deinit 过三次
+  ——注册撤销之所以没出事，是因为 registry 用 token 校验兜住了"新的赢"，跟析构没关系。
+  **没有 token 兜底的东西（窗口是典型）就会积累**：每改一次 Swift 多叠一扇设置窗口。
+  可靠的做法是把资源放进 `host.objects`，新一代 `activate` 时主动收拾上一代留下的那份。
+  **存 AppKit 类型而不是自定义类型**——世代之间类型身份隔离（module 名取自 contentHash），
+  `as? 自定义类` 跨代必然失败，`as? NSWindow` 才成立。
+- **SwiftUI 在 `NSTabViewController(tabStyle: .toolbar)` 里够不着工具栏**：`.searchable`
+  于是一个像素都不画，且不报错。要原生搜索框只能包 `NSSearchField`
+  （dash-settings/swift/SettingsChrome.swift）。同一处还记着另外三条 `Form` 版式的坑
+  （`Divider()` 在 `LabeledContent` 里变竖线、`EmptyView()` label 让整行塌成全宽、
+  `.safeAreaInset` 塞不进 bordered list 的边框）——写偏好设置版式前先读那份 README。
+- **多显示器下 peekaboo 的按元素点击会间歇失灵**（`Bridge operation target attribution
+  failed` / `axElementNotFound`），尤其当同 App 还有一扇无标题的"自动填充"面板时。
+  截图不受影响。卡住时重启 App 通常能恢复；别在这上面耗，改用探针从数据面验。
+- **dsh 的设置 modal 渲染在侧边栏列内部，不是 portal 到 body**：DOM 链是
+  `_sidebarCol > … > _settingsArea > _overlay > _panel`。dash-layout 的原生侧边栏模式
+  给整列上 `visibility: hidden`，于是 modal 点得中、挂载成功、就是看不见，且不报错
+  ——而它正是 dash-settings 缺席时 ⌘, 唯一的入口。client.js 里给 `_overlay` 留了
+  `visibility: visible` 的例外（overlay 是 `position: fixed`，不受 frame 平移影响）。
+  推论：**给某个容器整体隐形之前，先查清有没有别人往里面挂 portal 之外的浮层。**
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
   **但优先找 `[data-slot="<槽名>"]`**：每个槽 outlet 都带这个属性（`display: contents`，
@@ -557,5 +612,19 @@ flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 wor
   要给终端前的人看的进度必须自己写 stderr（dash-app / dash-bridge 都是两边都喂）。
 - **别覆写 `NSSplitViewController.loadView()`**：默认实现会把 splitView 装成 view，
   换成空 `NSView` 窗口直接全白。
+- **`NSViewRepresentable` 每轮 update 会把环境值回写进 NSControl**，`makeNSView` 里
+  设的同名属性被悄悄抹掉，不报错不警告。`NSSearchField` 的高度就栽在这上面：
+  `field.controlSize = .extraLarge` 写在 `makeNSView` 里永远是 24pt，贴成 SwiftUI 的
+  `.controlSize(.extraLarge)` 立刻 36pt（regular=24 / large=28 / extraLarge=36，量过）。
+  连带一条：macOS 26 的 `NSSearchField` 内部是 `_NSCoreHostingView<AppKitSearchField>`
+  占满 frame，**不走 cell 绘制**——`frame(height:)`、`intrinsicContentSize`、
+  `layout()` 强撑、放大字号、覆写 `NSSearchFieldCell` 的 rect 方法全是死路。
+  **别为了尺寸去拆这个控件**（`isBezeled = false` 补底板 / 塞进 `NSGlassEffectView`）：
+  按压胀缩和光效是控件自带的，拆了就是拿质感换尺寸。
+- **sidebar List 的选中高亮别自己画**：`.tint()` 改不动它，而拿 `.listRowBackground`
+  盖一层的话，系统那层（内缩 10pt）会套在自绘那层里面，半透明一用就露成"回"字
+  （填不透明纯色时看不出来，所以**必须截图量而不是看代码**）。系统那层白送焦点态
+  与浅深色适配，让它画就是了。
+  两处都**不报错、不警告**，只是设了没反应，所以改完一定要截图量一次而不是看代码。
 - **`NSHostingController.sizingOptions` 默认含 `.preferredContentSize`**：槽内插件每换一代
   重建视图都会把分栏拉成 SwiftUI 内容的 fitting 宽度，用户调好的宽度就没了。设成 `[]`。

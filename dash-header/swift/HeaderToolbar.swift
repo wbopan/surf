@@ -1,4 +1,5 @@
 import AppKit
+import DashLayout
 import DashSDK
 import Foundation
 import Observation
@@ -311,19 +312,4 @@ final class HeaderToolbarSync {
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
-}
-
-/// dash-layout 的 `toolbar` 槽约定里那几个主题名。
-///
-/// **硬写字符串，不去 import dash-layout 的常量**：槽约定是插件之间的字符串
-/// 约定（同槽名本身），跨 module 取常量反而给两边加了一条编译期耦合。
-enum LayoutToolbar {
-    static let updateTopic = "dash.toolbar.update"
-    static let activateTopic = "dash.toolbar.activate"
-    static let menuSelectTopic = "dash.toolbar.menuSelect"
-    static let menuOpenTopic = "dash.toolbar.menuOpen"
-    static let windowTitleTopic = "dash.window.title"
-    static let windowTitleRequestTopic = "dash.window.requestTitle"
-    static let titlebarMetricsTopic = "dash.layout.titlebarMetrics"
-    static let titlebarMetricsRequestTopic = "dash.layout.requestTitlebarMetrics"
 }

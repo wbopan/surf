@@ -7,10 +7,13 @@ dash macOS 壳的宿主插件。载荷是 `host/` 里的整个 Xcode 工程—�
 
 `dsh web` 加载到本行时（`inject: ["webServer"]`，端口已定）：
 
-1. **写 endpoint 发现文件** `~/Library/Application Support/io.wenbo.dash/endpoint.json`
-   （`{httpBase, bridgePath, pid, startedAt, profile}`，原子写）。先于构建落地，
+1. **写 endpoint 发现文件** `~/Library/Application Support/io.wenbo.dash/endpoints/<profile>.json`
+   （`{httpBase, bridgePath, pid, startedAt, profile, hostDir}`，原子写）。先于构建落地，
    一个已经开着的 app 立刻就能接入，不必等分钟级的首次构建。fiber 卸载时按 pid
    匹配删除——两个 dsh 并存时，先退的那个不会把后来者的文件删掉。
+   `hostDir` 是本插件所在的 `dash-app/host` 绝对路径：没拿到 flag 的壳靠它认出
+   "哪一份是我这一套"（壳的 bundle 就在 `<hostDir>/build/Build/Products/<配置>/`），
+   否则多 worktree 时它会连上邻居的 dsh 并编译邻居的插件源码。
 2. **按需构建**：源码 hash 变了或产物缺失 → `write-build-timestamp.sh` +
    `xcodegen generate` + `xcodebuild -derivedDataPath build`（与 `scripts/dev.sh`
    同一套步骤）。hash 只看内容不看 mtime，换 git 分支不会被误判成"改过"。
@@ -73,5 +76,6 @@ ShellRootView 退化成整窗 WebView——功能不缺，只是没有原生分�
 进度写终端（`dash-app: …`，仿 dsh 自己的 `dsh web: …`），同时喂 `ctx.logger`。
 **`dsh web` 默认不装 logger exporter**，只走 logger 的消息进环形缓冲、终端上看不见——
 这就是本插件另外直写 stderr 的原因。完整 xcodebuild 输出落
-`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.<配置>.log`，
-终端只留结论与失败时的最后 20 行。
+`~/Library/Application Support/io.wenbo.dash/logs/dash-app-build.<profile>.<配置>.log`，
+终端只留结论与失败时的最后 20 行。**文件名带 profile 是必须的**：这份日志是覆盖写，
+多 worktree 各跑各的 dsh 时，共用文件名就会让你打开终端指的那条路径、读到邻居的编译错误。

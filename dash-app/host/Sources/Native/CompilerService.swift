@@ -184,7 +184,7 @@ actor CompilerService {
     /// 实际用的那个，抄它就不可能对不上（写死常量迟早会与 build-modules.sh 漂移）。
     private func targetTriple() async -> String {
         if let cached = targetTripleCache { return cached }
-        let fallback = "arm64-apple-macos26.0"
+        let fallback = "arm64-apple-macos27.0"
         let interface = modulesDir.appendingPathComponent("\(Self.abiModule).swiftinterface")
         guard let text = try? String(contentsOf: interface, encoding: .utf8) else {
             targetTripleCache = fallback

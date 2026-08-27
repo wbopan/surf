@@ -67,6 +67,14 @@ do {
 
 // 只保留真正的应用窗口：有归属 App 且 App 名非空、尺寸像样。系统里飘着几千个
 // CursorUIViewService 小窗口和无名的 "Display N Shield" 遮罩，不滤掉 --list 没法看。
+//
+// **显示器睡着时这个列表会骗人**：SCK 会列出一堆早就关掉、窗口服务还没回收的
+// 残影（尺寸标题俱全，和真窗口分不出来），同时任何截图都报
+// `-3811 audio/video capture failure`。实测被骗过一次，差点去修一个不存在的
+// 窗口泄漏——真相是 AppKit 那边 `NSApp.windows` 只认一扇。
+// **判据：截图一报 -3811 就先 `caffeinate -u -t 1` 把屏幕叫醒，再重看列表。**
+// （不能靠 `w.isOnScreen` 过掉它们：那条同时会滤掉在别的 Space 里的真窗口，
+// 而"不怕被盖住、不怕不在当前 Space"正是这个工具存在的理由。）
 let visible = content.windows
     .filter { w in
         guard let app = w.owningApplication, !app.applicationName.isEmpty else { return false }

@@ -41,5 +41,10 @@ public final class DashObjects {
         /// 会话展示面。协议由 dash-layout 定义（`DashConversationSurface`），
         /// 消费者需 `import DashLayout` 后转型。
         public static let conversationSurface = "dash.conversationSurface"
+        /// 设置面板的主人。**取值只看在不在**，所以放一个光秃秃的 `NSObject` 就够
+        /// ——正因为只看在不在，它可以是系统类型，不违反"禁止放插件自己定义的类型"。
+        /// dash-settings 在场时占住它，dash-layout 见有主就不再用页内 modal 响应 ⌘,；
+        /// 它不在场时页内 modal 是唯一的设置入口，逃生舱模式也得能改设置。
+        public static let settingsOwner = "dash.settingsOwner"
     }
 }

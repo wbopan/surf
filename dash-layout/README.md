@@ -43,3 +43,24 @@ WKWebView 实例归**壳**，放在保管箱（`DashObjects.Key.webView`）里�
 归本插件（计划原本写"留壳"）：`NSTrackingSeparatorToolbarItem` 要 splitView，而 splitView
 在这儿。壳只留菜单——⌘, 走 EventBus 的 `dash.menu.command` 广播出来，本插件接住再调
 会话展示面。壳喊话，有能力的插件干活。
+
+工具栏上的按钮**全部来自 `toolbar` 贡献槽**，本插件自己一颗都不放。
+完整约定写在 `swift/LayoutSplitController.swift` 底部那段注释里，摘要：
+
+| metadata | 拿到什么 | 什么时候用 |
+|---|---|---|
+| `label` | 标题 + 无障碍名 | 必填 |
+| `symbol` | `NSToolbarItem` + `isBordered`，玻璃观感白送 | 有 SF Symbol 就给 |
+| `menu` | `NSMenuToolbarItem` + 系统菜单（勾选态、键盘、溢出全白送） | 点开是一串开关 |
+| `event` | 点击广播的主题名（缺省 `dash.toolbar.activate`） | 走 `symbol` 那条时 |
+
+`menu` 的类型必须是 `@convention(block) (NSMenu) -> Void`：它要装在 `[String: Any]` 里
+穿过 dylib 边界，ObjC block 是个货真价实的对象，装箱取箱都稳；裸 Swift 闭包的函数类型
+元数据跨 image 取回来是碰运气。菜单**每次弹出前重建**（`ContributionMenuDelegate`），
+所以 block 里读什么状态都是当场的，勾选态不会停在上次打开时的样子。
+
+槽名与默认主题从 `public enum LayoutToolbar` 引（`LayoutSplitController` 自己是
+internal，它是实现细节）。
+
+**「新建会话」不在工具栏上**：那一格让给了 dash-sidebar 的「筛选」。
+`LayoutPlugin.newSessionTopic` 这条主题仍然在——⌘N 与第三方按钮都 emit 它。

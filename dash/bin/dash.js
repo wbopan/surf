@@ -11,14 +11,14 @@
  *
  *   link 模式（本仓库开发）
  *     node dash/bin/dash.js        （或仓库根的 ./dev）
- *     兄弟目录里有 dash-app/ 等 → 把本 worktree 的五个插件 + 伞包全部 link
+ *     兄弟目录里有 dash-app/ 等 → 把本 worktree 的七个插件 + 伞包全部 link
  *     进 profile。改一行存盘即生效，不必发布任何东西。
  *
- * **为什么 link 模式要单独 link 那五个插件**：pnpm 对 `link:` 依赖不会去装
+ * **为什么 link 模式要单独 link 那七个插件**：pnpm 对 `link:` 依赖不会去装
  * 被 link 目标自己的 dependencies，而 cordis loader 解析插件包名时的锚点是
  * **profile 目录**——伞包自带的 node_modules 根本不在 Node 的向上查找链上。
  * 所以它们必须自己出现在 profile 的 node_modules 里。这不会造成重复挂载：
- * 五个插件都已摘掉 dsh.bundle 声明，reconcile 不会把它们加进 bundles，
+ * 七个插件都已摘掉 dsh.bundle 声明，reconcile 不会把它们加进 bundles，
  * 编排权只在伞包那张表上。
  *
  * **worktree**：profile 名随 worktree 走（主 worktree = `dash`，其余 =
@@ -54,7 +54,7 @@ function main() {
 	if (opts.help) return usage();
 
 	const manifest = readJson(join(UMBRELLA_DIR, "package.json"));
-	/** 被编排的五个插件包名，从伞包的 dependencies 取——加插件只需改那里。 */
+	/** 被编排的七个插件包名，从伞包的 dependencies 取——加插件只需改那里。 */
 	const pluginNames = Object.keys(manifest.dependencies ?? {});
 
 	const repoRoot = detectRepoRoot(pluginNames);
@@ -129,7 +129,7 @@ function git(cwd, args) {
 function installInto(profile, repoRoot, pluginNames) {
 	const specs = repoRoot === undefined
 		? [UMBRELLA]
-		// 顺序有讲究：先让五个插件在 node_modules 里就位，再 link 伞包，
+		// 顺序有讲究：先让七个插件在 node_modules 里就位，再 link 伞包，
 		// 这样伞包那张表指向的包名在任何时刻都解析得到。
 		: [...pluginNames.map((n) => `link:${join(repoRoot, dirOf(n))}`), `link:${UMBRELLA_DIR}`];
 
@@ -149,7 +149,7 @@ function installInto(profile, repoRoot, pluginNames) {
  *     `resolveBundleDir` 会从 dsh 安装目录解析，不必装；但只有 `web` 和
  *     `headless` 两个名字有 shipped template，别的 profile 初始化时只给
  *     `dsh-base`，web 那一层得自己列上。
- *  2. **踢掉被编排的五个插件**。它们本身已不是 bundle，正常不会被 reconcile
+ *  2. **踢掉被编排的七个插件**。它们本身已不是 bundle，正常不会被 reconcile
  *     加进来；这里防的是从旧结构升级上来的 profile——那时它们各自是 bundle，
  *     留在列表里会和伞包的表各 insert 一遍，同一个插件挂载两次。
  *

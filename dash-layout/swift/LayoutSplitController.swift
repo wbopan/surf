@@ -53,6 +53,9 @@ final class LayoutSplitController: NSSplitViewController {
     private var displayModeObservation: NSKeyValueObservation?
     /// 快照签名。变了才重建工具栏（幂等的判据）。
     private var toolbarSignature = ""
+    /// 贡献项的菜单代理。`NSMenu.delegate` 是 **unowned(unsafe)**，
+    /// 不在这儿留一份强引用就会在下一次弹出时野指针崩掉。键是贡献的 `key`。
+    var toolbarMenuDelegates: [String: ContributionMenuDelegate] = [:]
 
     init(host: DashHost, webView: WKWebView) {
         self.host = host
@@ -390,14 +393,54 @@ final class LayoutSplitController: NSSplitViewController {
 
 // MARK: - 工具栏贡献槽
 
+/// 工具栏贡献槽的公开门面。
+///
+/// `LayoutSplitController` 自己是 internal（它是本插件的实现细节），
+/// 但槽名与默认主题是**跨插件的约定**，下游得能按名字引用而不是抄字符串。
+public enum LayoutToolbar {
+    /// 贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
+    public static let slot = "toolbar"
+
+    // MARK: 贡献者 → 消费方（改活项的状态）
+
+    /// 改活项的**流量**通道：徽标、选中态、菜单内容、显隐、标题。
+    ///
+    /// **别拿 metadata 传这些**——metadata 是拓扑，一变就重建整条工具栏，
+    /// 状态会跟着项一起没。载荷见 `ToolbarItemState`。
+    public static let updateTopic = "dash.toolbar.update"
+
+    // MARK: 消费方 → 贡献者（回来的动作）
+
+    /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
+    /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`，
+    /// group 另带 `index` 与 `itemId`。
+    public static let activateTopic = "dash.toolbar.activate"
+    /// 菜单项被选中。载荷同上，另带被选项的 `itemId`。
+    public static let menuSelectTopic = "dash.toolbar.menuSelect"
+    /// 菜单**将要打开**。给贡献者一个预热的机会（拉数据、刷新勾选态）。
+    public static let menuOpenTopic = "dash.toolbar.menuOpen"
+
+    // MARK: 窗口标识与标题栏几何
+
+    /// 设置 `window.title` / `window.subtitle`。载荷 `title` / `subtitle`。
+    /// 空标题 = 交回给壳。
+    public static let windowTitleTopic = "dash.window.title"
+    /// 请求重发一次标识。**只在变化时推，所以后到的订阅者得自己喊一嗓子**。
+    public static let windowTitleRequestTopic = "dash.window.requestTitle"
+    /// 标题栏当前厚度（`inset`，pt）。显示模式一变就跟着变。
+    public static let titlebarMetricsTopic = "dash.layout.titlebarMetrics"
+    /// 请求重发一次厚度。理由同 `windowTitleRequestTopic`。
+    public static let titlebarMetricsRequestTopic = "dash.layout.requestTitlebarMetrics"
+}
+
 extension LayoutSplitController {
     /// 本插件认得的贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
-    static let toolbarSlot = "toolbar"
+    static let toolbarSlot = LayoutToolbar.slot
     /// 贡献项的 `NSToolbarItem.Identifier` 前缀，后面接 `owner/id`。
     static let contributionPrefix = "dash.contribution."
     /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
     /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`。
-    static let toolbarActivateTopic = "dash.toolbar.activate"
+    static let toolbarActivateTopic = LayoutToolbar.activateTopic
 
     /// 贡献落在分隔线的哪一侧。缺省 `sidebar`——**老贡献一个字都不用改**。
     static func region(of contribution: DashContributions.Contribution) -> String {
@@ -441,12 +484,22 @@ extension LayoutSplitController {
 ///     "sizing":  "dynamic",               // 选填，缺省 "fixed"（只对 view 路线有意义）
 ///     "kind":    "button",                // 选填，见下；缺省由 symbol 推断
 ///     "priority": "low",                  // 选填，缺省 "standard"（窗口收窄谁先让）
-///     "items":   [[...]],                 // group 的分段 / menu 的初始菜单
+///     "items":   [[...]],                 // group 的分段 / menu 的初始菜单（数据路线）
+///     // 选填：菜单的**另一条**路线——自己现场建。给了它就不看 `kind`/`items`，
+///     // 点开是菜单而不是发事件。类型必须是
+///     // `@convention(block) (NSMenu) -> Void`（跨 dylib 装箱只有 ObjC block 稳）。
+///     "menu":    buildMenu as @convention(block) (NSMenu) -> Void,
 /// ]) { AnyView(MyFallbackButton()) }
 /// host.events.subscribe("myplugin.doSomething") { _ in ... }
 /// ```
 ///
 /// ### 四条渲染路线（`kind`）
+///
+/// **能走原生就别自己画**：`NSToolbarItem` 那身系统皮——macOS 26 的圆形玻璃
+/// 按钮、按下态、红绿灯对齐——全是白送的，拿 SwiftUI 重画只会得到一个更差的
+/// 仿制品。代价是点击回调必须另有通道，于是统一走事件总线：消费方只管 emit，
+/// 贡献者自己 subscribe。这也顺手解决了"闭包跨世代"的问题：主题名是字符串，
+/// 热替换后新一代重新订阅即可。
 ///
 /// | kind | 造出来的东西 | 白送什么 |
 /// |---|---|---|
@@ -589,5 +642,23 @@ struct SidebarSlotView: View {
         } else {
             Color.clear
         }
+    }
+}
+
+/// 贡献项菜单的代理：把重建这件事转给贡献方的 block。
+///
+/// 用 `@convention(block)` 而不是裸 Swift 闭包，是因为它要穿过 dylib 边界
+/// 装在 `[String: Any]` 里——ObjC block 是个货真价实的对象，装箱取箱都稳；
+/// 裸闭包的函数类型元数据跨 image 取回来是碰运气。
+final class ContributionMenuDelegate: NSObject, NSMenuDelegate {
+    private let build: @convention(block) (NSMenu) -> Void
+
+    init(build: @escaping @convention(block) (NSMenu) -> Void) {
+        self.build = build
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        build(menu)
     }
 }

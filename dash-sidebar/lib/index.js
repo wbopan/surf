@@ -24,12 +24,15 @@
  * | `forked` | `{sourceId, sessionId}` | `fork` 完成，供 Swift 切到子会话 |
  * | `error` | `{action, message}` | 任一写动作抛错（Swift 弹一次 alert） |
  *
- * 会话行的字段：`{id, title, status, updatedAt, blank, isSubagent}`。
+ * 会话行的字段：`{id, title, preview, status, updatedAt, blank, isSubagent, archived}`。
+ * `preview` 是副行摘要（尾部一条消息的文本，取不到时为 null，见 `dsh-source.js`
+ * 的「预览行从哪来」）；`archived` 是归档标记——**归档不再在数据层滤掉**，
+ * 侧边栏有了「显示已归档」开关之后，显不显示成了 UI 政策。
  * `status` 是字符串（`running` / `pendingApproval` / `idle`；壳还认一个
  * `pendingQuestion`，但 node 侧现在推不出来，原因见 `dsh-source.js` 的 `statusOf`）
  * 而不是数字枚举：加新状态时旧壳解码不会失败，只会当成 idle。
- * `blank` / `isSubagent` 原样带上、**不在这里过滤**——"列表里显示什么"是 UI 政策，
- * 归 Swift 的 `AppSidebarModel.visible`。归档则相反，是数据事实，在这里就滤掉。
+ * `blank` / `isSubagent` / `archived` 原样带上、**不在这里过滤**——"列表里显示什么"
+ * 是 UI 政策，归 Swift 的 `AppSidebarModel`。
  *
  * 上行（Swift `bridge.send(action:payload:)`，一律 fire-and-forget）：
  *
@@ -69,9 +72,10 @@ const COALESCE_MS = 30;
 /**
  * 本插件与 Swift 半身之间数据形状的版本。**改了投影字段就 +1**——它折进
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
- * v1 = M6 的"没有数据面"，v2 = 本次的投影协议。
+ * v1 = M6 的"没有数据面"，v2 = M10 的投影协议，v3 = 副行摘要 `preview` +
+ * 归档不再在数据层滤除（新增 `archived`）。
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** 七个上行动作。表在这里定死，实现随数据面就绪后挂进 `RUNTIME`。 */
 const ACTIONS = ["snapshot", "archive", "renameSession", "fork",

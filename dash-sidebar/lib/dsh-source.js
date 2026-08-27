@@ -41,6 +41,25 @@
  * **workspaceRegistry 一个 cordis 事件都不发**，`domain/changed` 是唯一来源
  * （apiproxy 自己也是这么转 `host/workspace-*` 帧的）。
  *
+ * ## 预览行（副行摘要）从哪来
+ *
+ * **`session.list` 的行里没有任何消息文本**（实测 schema：sessionId / updatedAt /
+ * running / blank / parentSessionId / origin / cwd / agentPreset / projections，
+ * 而注册在案的投影只有 title / todos / goal / plan / permissions 之流）。所以副行
+ * 只能另取：`session.history({ sessionId, maxMessages: 1 })` 读尾部一页
+ * （上游按消息边界倒着数、切在 `turn/start` 上，拿到的是尾巴），
+ * 从里面挑**最后一条 `assistant/message`**——副行要的是"它上次回了什么"。
+ * 冷会话那次是一次文件尾读，一轮最多并发 4 条、最多取 PREVIEW_BUDGET 条，
+ * 取完再推一次投影。
+ *
+ * 缓存**两把钥匙都要**：按 `updatedAt` 比对（冷会话永不重取），外加收到
+ * `assistant/message` / `user/message` 时**显式作废那一行**。只靠 `updatedAt`
+ * 会把摘要钉死在第一次取到的那句上——它未必每条消息都动。
+ *
+ * 文本提取是**深走 data 捡 `{type:"text"}` 块**而不是按 message 形状取：
+ * user/message 与 assistant/message 的包法不同（前者 data.content，后者
+ * data.message.content），而且历史上还有 legacy 变体。捡 text 块对三种都成立。
+ *
  * ## 为什么这里还留着增量
  *
  * 桥上只有全量 snapshot（在进程内组一份投影是纯遍历，便宜）。但**向 dsh 要数据
@@ -62,6 +81,13 @@ export const SOURCE_SERVICES = ["apiProxy"];
 /** 结构类变化的合并窗口（毫秒）。DSHKit 当年也是 400。 */
 const REFETCH_DEBOUNCE_MS = 400;
 
+/** 一轮最多补多少条预览（防止几百条会话的库把启动拖住）。 */
+const PREVIEW_BUDGET = 80;
+/** 预览的并发上限。 */
+const PREVIEW_CONCURRENCY = 4;
+/** 预览裁到多长（Swift 那边两行也就放得下这么多）。 */
+const PREVIEW_MAX_CHARS = 140;
+
 /**
  * @param {object} ctx 已注入 `apiProxy` 的 cordis 上下文。
  * @param {{info:Function, warn:Function, error:Function}} log
@@ -75,6 +101,10 @@ export function createSessionSource(ctx, log) {
 	let archived = new Set();
 	/** 正等用户审批的会话。 */
 	const pendingApproval = new Set();
+	/** sessionId → { at: updatedAt, text }。`at` 对不上就重取，对得上永不重取。 */
+	const previews = new Map();
+	/** 预览补取正在进行中（同一时刻只跑一轮）。 */
+	let previewRun;
 
 	let listeners = [];
 	let timer;
@@ -176,8 +206,10 @@ export function createSessionSource(ctx, log) {
 
 	/**
 	 * 组投影：工作区按上游顺序，其余会话进兜底组（按 updatedAt 倒序）。
-	 * 归档在这里滤掉（数据事实）；blank / subagent **不滤**，原样带给显示层
-	 * ——"列表里显示什么"是 UI 政策，归 Swift 的 `AppSidebarModel.visible`。
+	 *
+	 * **归档不再滤掉**，原样带上 `archived: true`——侧边栏有了「显示已归档」开关，
+	 * 于是"显示不显示"变成了 UI 政策，和 blank / subagent 同类。数据层只说事实。
+	 * （M10 时归档是在这儿滤的：那时没有开关，滤掉与不显示等价。）
 	 */
 	function groups() {
 		const grouped = new Set();
@@ -189,11 +221,11 @@ export function createSessionSource(ctx, log) {
 				id: workspace.workspaceId,
 				workspaceId: workspace.workspaceId,
 				title: workspaceTitle(workspace),
-				sessions: ids.filter((id) => !archived.has(id) && rows.has(id)).map(sessionView),
+				sessions: ids.filter((id) => rows.has(id)).map(sessionView),
 			});
 		}
 		const others = [...rows.keys()]
-			.filter((id) => !archived.has(id) && !grouped.has(id))
+			.filter((id) => !grouped.has(id))
 			.map(sessionView)
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 		if (others.length > 0) {
@@ -209,9 +241,12 @@ export function createSessionSource(ctx, log) {
 		return {
 			id,
 			title: typeof title === "string" && title !== "" ? title : null,
+			// 副行摘要。还没取到就是 null——显示层留空两行的位置，不显示占位文案。
+			preview: previews.get(id)?.text ?? null,
 			status: statusOf(id, row),
 			updatedAt: Number(row.updatedAt ?? 0),
 			blank: row.blank === true,
+			archived: archived.has(id),
 			// wire 上 subagent 行带 `origin:"subagent"`；`parentSessionId` 在场也算
 			// （与 DSHKit 的判据一致，宁可多认不可漏认）。
 			isSubagent: row.origin === "subagent" || typeof row.parentSessionId === "string",
@@ -268,6 +303,13 @@ export function createSessionSource(ctx, log) {
 			if (pendingApproval.delete(id)) emit(true);
 			return;
 		}
+		// 有新消息落盘 = 尾部变了 = 副行摘要过期。**必须显式作废**：
+		// 缓存键是 `updatedAt`，而它未必每条消息都动（实测会话在跑的时候连着
+		// 好几条消息 updatedAt 都是同一个值），只靠它比对的话摘要就钉死在
+		// 第一次取到的那句上——那正是"preview 是固定的"这个 bug。
+		if (event?.type === "assistant/message" || event?.type === "user/message") {
+			previews.delete(id);
+		}
 		// 其余事件只意味着"这一行可能该动了"（标题、updatedAt、blank 翻牌）。
 		scheduleRefetch();
 	}
@@ -321,7 +363,12 @@ export function createSessionSource(ctx, log) {
 				for (const id of [...pendingApproval]) {
 					if (!rows.has(id)) pendingApproval.delete(id);
 				}
+				for (const id of [...previews.keys()]) {
+					if (!rows.has(id)) previews.delete(id);
+				}
 				emit(false);
+				// 预览是慢的那一半：先把列表推出去，摘要随后补一轮再推一次。
+				void refreshPreviews();
 			} catch (error) {
 				// **读失败不抬到用户面前**：列表保持上一份，下一个事件自然会再试。
 				// 写操作失败才值得弹窗（那是用户刚点过的东西）。
@@ -331,6 +378,71 @@ export function createSessionSource(ctx, log) {
 			}
 		})();
 		return inFlight;
+	}
+
+	// ------------------------------------------------------------ 副行摘要
+
+	/**
+	 * 给"该取而没取"的行补预览。`updatedAt` 是缓存键：同一行没动过就不会再取。
+	 * 全程失败静默——副行是锦上添花，取不到就空着，绝不能因此让列表出不来。
+	 */
+	async function refreshPreviews() {
+		if (previewRun !== undefined) return previewRun;
+		previewRun = (async () => {
+			const stale = [];
+			for (const [id, row] of rows) {
+				if (row.blank === true) continue; // 空会话没有内容可摘
+				const at = Number(row.updatedAt ?? 0);
+				if (previews.get(id)?.at === at) continue;
+				stale.push([id, at]);
+				if (stale.length >= PREVIEW_BUDGET) break;
+			}
+			if (stale.length === 0) return;
+
+			let cursor = 0;
+			let changed = false;
+			const worker = async () => {
+				while (!disposed) {
+					const next = stale[cursor++];
+					if (next === undefined) return;
+					const [id, at] = next;
+					const text = await previewOf(id);
+					// 取回来的这一刻行可能已经又变了：`at` 记的是取的是哪一版，
+					// 下一轮据此再补。宁可晚半拍，不要缓存和事实对不上。
+					previews.set(id, { at, text });
+					if (text !== null) changed = true;
+				}
+			};
+			await Promise.all(Array.from({ length: PREVIEW_CONCURRENCY }, worker));
+			if (!disposed && changed) emit(false);
+		})().finally(() => { previewRun = undefined; });
+		return previewRun;
+	}
+
+	/** 取一条会话的尾部文本。任何失败都返回 null（连日志都不打——会刷屏）。 */
+	async function previewOf(sessionId) {
+		try {
+			const value = await call("sessions", "history",
+				{ sessionId, maxMessages: 1 }, "读取会话摘要");
+			const entries = Array.isArray(value?.events) ? value.events : [];
+			// **先找最后一条 assistant/message**：副行要的是"它上次回了什么"。
+			// 倒扫时不分角色的话，用户刚发出一句、模型还没答的那一刻，副行会翻成
+			// 用户自己刚打的字（还常常拖着一大段 <system-reminder> 脚手架）——
+			// 那是把用户已经知道的东西又念了一遍。
+			const lastOf = (type) => {
+				for (let i = entries.length - 1; i >= 0; i--) {
+					const event = entries[i]?.event;
+					if (event?.type !== type) continue;
+					const text = collectText(event.data);
+					if (text !== "") return text;
+				}
+				return null;
+			};
+			// 退回用户那条只为一种情况：新会话发了第一句、还没有任何回复。
+			return lastOf("assistant/message") ?? lastOf("user/message");
+		} catch {
+			return null;
+		}
 	}
 
 	function emit(immediate) {
@@ -356,6 +468,60 @@ export function createSessionSource(ctx, log) {
 		const error = result?.error;
 		throw new Error(`${what}：${error?.message ?? error?.code ?? "上游没有说明原因"}`);
 	}
+}
+
+/**
+ * 深走一个事件的 data，把 `{ type: "text", text }` 块拼起来。
+ *
+ * **不按 message 形状取**：user/message 的正文在 `data.content`，
+ * assistant/message 在 `data.message.content`，持久化层还会把 legacy 变体
+ * 改写成第三种形状。捡 text 块对三者都成立，多一层包装也不会漏。
+ */
+function collectText(data) {
+	const parts = [];
+	const seen = new Set();
+	const walk = (node, depth) => {
+		if (node === null || typeof node !== "object" || depth > 6) return;
+		if (seen.has(node)) return;
+		seen.add(node);
+		if (Array.isArray(node)) {
+			for (const item of node) walk(item, depth + 1);
+			return;
+		}
+		if (node.type === "text" && typeof node.text === "string") {
+			parts.push(node.text);
+			return;
+		}
+		for (const value of Object.values(node)) walk(value, depth + 1);
+	};
+	walk(data, 0);
+	const text = flattenMarkdown(parts.join(" ")).replace(/\s+/g, " ").trim();
+	return text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS)}…` : text;
+}
+
+/**
+ * 把 Markdown 记号抹平成人话。副行是**一行摘要**，不是文档——
+ * `## ✅ Limitations` / `- **状态**: ok` 这种原样端上去只是噪音。
+ *
+ * 刻意做得很浅（只认行首记号与成对的强调符），**不做嵌套解析**：
+ * 摘要错一点无所谓，为它引一个 Markdown 解析器才是错的成本。
+ */
+function flattenMarkdown(raw) {
+	return raw
+		// 注入的脚手架整段丢掉：它是给模型看的，不是任何人"说"的话。
+		.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, " ")
+		// 没闭合的那半段（被 maxMessages 截断时会遇到）也一起吃掉。
+		.replace(/<\/?system-reminder>/g, " ")
+		// 围栏代码块的栅栏行整行去掉（连同语言标注）。
+		.replace(/^[ \t]*```.*$/gm, " ")
+		// 行首记号：标题井号、引用尖括号、无序/有序列表符。
+		.replace(/^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+|\d+\.[ \t]+)/gm, "")
+		// [文字](链接) → 文字；![图](…) 里的叹号一并吃掉。
+		.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+		// 成对的强调/行内代码，取里面的字。
+		.replace(/(\*\*|__)(.+?)\1/g, "$2")
+		.replace(/(?<![*_\w])([*_])(?!\s)(.+?)(?<!\s)\1(?![*_\w])/g, "$2")
+		.replace(/`([^`]+)`/g, "$1");
 }
 
 function errorText(error) {

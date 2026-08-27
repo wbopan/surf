@@ -30,41 +30,22 @@ final class LayoutPlugin: DashPlugin {
         // 壳的菜单只喊命令，不做事——会话展示面在这里，所以由本插件接。
         host.events.subscribe(DashEventBus.Topic.menuCommand) { payload in
             switch payload["command"] as? String {
-            case "openSettings": surface.openSettings()
+            case "openSettings":
+                // 有原生设置窗口就让它来（dash-settings 在场时占着 settingsOwner）。
+                // 两边都响应的话，原生窗口开出来的同时主窗口里还会弹一层网页 modal。
+                if host.objects.object(DashObjects.Key.settingsOwner) == nil {
+                    surface.openSettings()
+                }
             case "newSession": surface.startSession(workspaceId: nil)
             default: break
             }
         }.kept(by: handle)
 
-        // 工具栏上的"新建会话"：**本插件也只是一个普通贡献者**。
-        // 消费端（LayoutSplitController）不认得这个按钮，它只会把点击翻译成
-        // 下面这条广播——第三方插件加按钮走的是一模一样的路。
+        // 「新建会话」不再占工具栏：那一格让给了 dash-sidebar 的「筛选」。
+        // 入口还有三个——⌘N（菜单）、侧边栏分组头 hover 出的加号、页面自己的按钮，
+        // 所以这条主题保留：第三方要往工具栏放一颗新建按钮，emit 它即可。
         host.events.subscribe(Self.newSessionTopic) { _ in
             surface.startSession(workspaceId: nil)
-        }.kept(by: handle)
-
-        host.contribute(to: LayoutSplitController.toolbarSlot,
-                        id: "newSession",
-                        order: -100, // 排在所有第三方贡献之前
-                        metadata: [
-                            "label": "新建会话",
-                            "symbol": "square.and.pencil",
-                            "tooltip": "新建会话",
-                            "event": Self.newSessionTopic,
-                        ]) {
-            // 兜底视图：`symbol` 认不出来时（比如系统没这个 SF Symbol）
-            // 消费端会改托管这个 SwiftUI 按钮。两条路线触发的是同一条广播，
-            // 行为不会分叉。
-            AnyView(
-                Button {
-                    host.events.emit(LayoutPlugin.newSessionTopic)
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .buttonStyle(.borderless)
-                .help("新建会话")
-                .accessibilityIdentifier("toolbar.newSession")
-            )
         }.kept(by: handle)
 
         host.register(slot: "root") {

@@ -32,6 +32,18 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
 		const STYLE_ID = "dash-nativeify-style";
+		/**
+		 * 字体那一层**单独一张 style**，因为它是唯一随设置变化的部分。
+		 *
+		 * 合在 STYLE_ID 那张里也能工作，代价是改一次字号要把上面那整摞玻璃 CSS
+		 * （几十 KB、八层 box-shadow、三个 @property）连带重建一遍——@property 重新
+		 * 注册会让已注册的自定义属性瞬时回到 initial-value，按钮表面在那一帧塌掉。
+		 * 拆开之后改字号只重写这一张的 textContent，别的一个字节都不动。
+		 *
+		 * 拆开不影响取胜：字体那批规则靠 `html body`（0,0,2）的特异性压过 dsh 的
+		 * `body`（0,0,1），本来就不靠源码顺序——文件头 typeTokenDecls 那段写着理由。
+		 */
+		const FONT_STYLE_ID = "dash-nativeify-font";
 
 		/**
 		 * 「实体按钮」白名单——按钮原生化只作用于这些。
@@ -154,7 +166,41 @@ window.__ModuleLoader__.load({
 		};
 
 		const CONTROL = 13;   // NSFont.systemFontSize：控件 / 工具调用行 / 次级标签
-		const BODY = 15;      // 对话阅读列。改字号只动这一个数，其余全部派生。
+
+		/**
+		 * 对话阅读列的字号——**唯一可配置的旋钮**（设置 → 插件 → dash-nativeify →
+		 * 对话区字号）。其余全部派生，包括标题阶梯、行内代码、代码块、表格、
+		 * 用户气泡与 composer。
+		 *
+		 * **CONTROL 不给调，这是有意的**：13 = `NSFont.systemFontSize`，它不是口味
+		 * 而是"像原生"这件事的定义本身。菜单、工具栏、列表行在 macOS 上就是这一档，
+		 * 壳的原生侧边栏也是；调它等于让 WebView 那半边和原生那半边用两套字，
+		 * 本插件存在的理由当场作废。阅读列不一样——那是长文，字号是纯口味。
+		 *
+		 * 12~22 这个范围不是随手定的，是被 NATIVE_LINE_HEIGHT 那张实测表的边界
+		 * 卡死的：BODY 会派生出 BODY-4（12 → 8，正好是表的下界）与标题档 26
+		 * （22 → 26，在上界 28 之内）。**表里没有的字号 lh() 直接抛**，而它跑在
+		 * 构造 CSS 的路上，一抛就是整段字体规则消失。要放宽范围先补测行高。
+		 */
+		const BODY_DEFAULT = 15;
+		const BODY_MIN = 12;
+		const BODY_MAX = 22;
+
+		/**
+		 * 收到 [BODY_MIN, BODY_MAX] 的整数。
+		 *
+		 * schema 那边已经写了 min/max，**这里仍要收一次**：设置文档是用户可以拿
+		 * 编辑器手改的文本文件，而越界值的后果不是"字大了点"，是 lh() 抛错、
+		 * 整段字体 CSS 一条都不生效。宁可默默夹住。
+		 *
+		 * @param {unknown} v 设置里的原始值。
+		 * @returns {number} 可安全喂给 lh() 的字号。
+		 */
+		const clampBody = (v) => {
+			const n = Math.round(Number(v));
+			if (!Number.isFinite(n)) return BODY_DEFAULT;
+			return Math.min(BODY_MAX, Math.max(BODY_MIN, n));
+		};
 
 		/**
 		 * 标题阶梯 h1~h4。走 macOS 的语义档（largeTitle 26 / title1 22 / title2 17 /
@@ -162,7 +208,7 @@ window.__ModuleLoader__.load({
 		 * 靠字重和颜色分，不靠字号跳变，这是原生做法。
 		 * BODY 换档时这四个数要一起看，所以写在一起。
 		 */
-		const HEADINGS = BODY >= 16 ? [26, 22, 20, BODY] : [20, 17, 15, BODY];
+		const headings = (BODY) => (BODY >= 16 ? [26, 22, 20, BODY] : [20, 17, 15, BODY]);
 
 		const NATIVE_FONT_FAMILY = "var(--dsw-font-family)";   // 别动：第一位已是 -apple-system
 		const NATIVE_MONO_FAMILY = "var(--ds-font-family-code)";
@@ -182,7 +228,9 @@ window.__ModuleLoader__.load({
 		 *
 		 * 每项 = [token 名, 字号, 字重(0=不指定即400), 斜体?, 字族]；行高一律查表。
 		 */
-		const TYPE_TOKENS = [
+		// **表体一字不改**：BODY 与 HEADINGS 从模块常量变成这两个参数，于是
+		// 下面每一行的写法（`BODY - 2`、`HEADINGS[0]`）与它们的取值理由都原样成立。
+		const typeTokens = (BODY, HEADINGS = headings(BODY)) => [
 			// —— markdown 正文族：`._markdown` 及其子元素，助手回复的全部文字 ——
 			//    字号维持在阅读档，收的是行高（dsh 16/28 → 17/24，倍数 1.75 → 1.41）。
 			["markdown-base",                 BODY,       0, 0, NATIVE_FONT_FAMILY],
@@ -231,7 +279,7 @@ window.__ModuleLoader__.load({
 		 * 实测 dsh 当前**只引用简写、长手零引用**，但两者失配是颗定时炸弹——dsh 哪天
 		 * 改用长手就会一半新一半旧地分裂——所以六个一起写，成本只是几 KB。
 		 */
-		const typeTokenDecls = TYPE_TOKENS.flatMap(([name, size, weight, italic, family]) => {
+		const typeTokenDecls = (BODY) => typeTokens(BODY).flatMap(([name, size, weight, italic, family]) => {
 			const lineHeight = lh(size);
 			const shorthand = [
 				italic ? "italic" : "",
@@ -281,8 +329,13 @@ window.__ModuleLoader__.load({
 			"svg", "svg *",            // 图标内部有按 em 定尺的几何，别碰
 		].join(", ");
 
-		/** 字体那一层的全部 CSS。两个旋钮见上面的 CONTROL / BODY。 */
-		const fontRules = [
+		/**
+		 * 字体那一层的全部 CSS。两个旋钮见上面的 CONTROL / BODY_DEFAULT。
+		 *
+		 * @param {number} BODY 对话阅读列字号（已 clamp）。
+		 * @returns {string[]} CSS 行。
+		 */
+		const fontRules = (BODY) => [
 				// ===== 字体原生化（macOS 度量）=====
 				//
 				// 度量表、两个旋钮（CONTROL / BODY）与取值理由见文件头。
@@ -297,7 +350,7 @@ window.__ModuleLoader__.load({
 				// 这里写 `html body`（0,0,2）稳压一头——**刻意不靠源顺序取胜**：
 				// dsh 的 UI 插件是运行时逐个注入 <style> 的，谁先谁后不受本插件控制。
 				"html body {",
-				...typeTokenDecls,
+				...typeTokenDecls(BODY),
 				"}",
 
 				// 行内代码。dsh 写的是 `._markdown :not(pre) > code { font-size:.875em !important }`，
@@ -441,6 +494,12 @@ window.__ModuleLoader__.load({
 			if (!insideDash()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
+
+			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
+			let body = BODY_DEFAULT;
+			/** 字体那一层的 style 元素；设置一变就重写它的 textContent。 */
+			let fontStyle = null;
+
 			ctx.effect(() => {
 				document.getElementById(STYLE_ID)?.remove();
 				const style = document.createElement("style");
@@ -547,6 +606,45 @@ window.__ModuleLoader__.load({
 					//          坐的是页面灰不是纯白，肉眼比对下提亮更像玻璃。
 					//
 					// 发光为什么必须是四层的几何衰减，见 glowLayers() 的注释。
+					//
+					// ── 背景模糊 ──────────────────────────────────────────────────
+					// 上面那些是**表面**，这两个是**材质本身**：玻璃先把背后的东西
+					// 糊掉、把颜色提饱和，然后才谈描边和高光。缺了这一层，按钮在
+					// 花哨背景（会话气泡、代码块、渐变）上就是一块贴纸。
+					//
+					// 数值实测自 `.glassEffect(.regular)`，探针在 docs/spikes/glass-blur/：
+					// 玻璃条底下垫一条竖直硬边（左黑右白），理想硬边被 σ 的高斯核糊过
+					// 之后是条 erf 曲线，10%→90% 的宽度 W 与 σ 成定比 W = 2.5631 σ。
+					// 只看曲线**形状**，所以玻璃自己的提亮/描边（都是仿射变换）不干扰。
+					//
+					//   96pt 面板   σ = 26.28 图像 px
+					//   48pt 条     σ = 26.02
+					//   32pt 条     σ = 25.88      ← 三档几乎重合
+					//   无玻璃对照  σ =  0.34      ← 确认硬边本身是锐的
+					//
+					// 截图是 2x，所以 **σ ≈ 13pt**。CSS 的 `blur(<length>)` 参数按规范
+					// 就是标准差，可以原样填。
+					//
+					// **模糊半径不随控件尺寸缩放**——这和本文件上面量到的"剖面不随尺寸
+					// 缩放"是同一条事实的两面：玻璃的所有度量都是绝对量。
+					//
+					// 两个只有量了才知道的细节：
+					//  · **系统的模糊在线性光里做**。直接拿 sRGB 码值扫剖面会得到一条明显
+					//    不对称的曲线（暗侧拖长、亮侧收紧），σ 被高估 ~2%；解码回线性光
+					//    之后 50% 穿越点正好落在几何边界上。CSS 的 backdrop-filter 是在
+					//    sRGB 里做的，这一条我们复刻不了，只能接受过渡略偏暗。
+					//  · **底色的合成确实在 sRGB 里**：玻璃盖纯黑读 145.0、盖纯白读 254.0，
+					//    这条直线预测中灰 127 → 199.3，实测 199.2。所以下面的 --dash-glass-fill
+					//    用普通 alpha 合成就对，不需要换空间。
+					//    （顺带：这两个点解出的是 rgba(253,253,253,0.5725)，比下面定稿的
+					//     0.5272 更透一点。定稿是只拿白底一个点校的，两者在白底上等价，
+					//     在深色背景上才分得出。真要更贴系统就改那一行，不必动这里。）
+					"  --dash-glass-blur: 13px;",
+					// 饱和度。模糊会把颜色搅浑，系统靠提饱和补回来——这就是"糊了却不脏"
+					// 的来源。四条中间色带（避开纯色，纯红/纯绿在提亮后会撞 255 天花板，
+					// 一 clip 就再也解不出系数）逐通道做最小二乘，得 S = 1.966；网上复刻
+					// 液态玻璃的教程普遍给 saturate(180%)，量出来的正好落在同一档。
+					"  --dash-glass-sat: 1.95;",
 					"  --dash-glass-edge: rgba(0, 0, 0, 0.197);",
 					"  --dash-glass-edge-w: 0.25px;",
 					// 发光的颜色。无色玻璃是白的；**带色玻璃不是** —— 系统蓝键的峰值是 #00C0FF，
@@ -612,7 +710,19 @@ window.__ModuleLoader__.load({
 					"  --dash-tint-press: rgba(255, 255, 255, 0.113);",
 					"  --dash-glass-drop: rgba(0, 0, 0, 0.25);",
 					"}",
-					
+
+					// 深色档的页面底色。dsh 的 `body` 规则是
+					// `background: var(--dsw-alias-bg-base, #fff)`，所以**改这一个 token
+					// 就等于改整页底色**，不用去猜哪个容器在画背景、也不用打 !important。
+					// 和字体那层是同一个套路（见 README「token 重映射」）。
+					//
+					// 特异性写 `html body[…]`（0,1,2）而不是 `body[…]`（0,1,1）：dsh 自己
+					// 在哪一层定义这个 token 没查到（不在前端 dist 里，运行时注入的），
+					// 多垫一个 `html` 是便宜的保险。自定义属性会继承，body 子树全跟着走。
+					"html body[data-ds-dark-theme] {",
+					"  --dsw-alias-bg-base: #1E1E1E;",
+					"}",
+
 					// ── 窗口失活 ──────────────────────────────────────────────────────
 					// **失活时 macOS 把玻璃整个换成一块平色，零结构。** 四格矩阵实测：
 					//
@@ -686,6 +796,19 @@ window.__ModuleLoader__.load({
 					// **`_primary` 不在这条里** —— 它的色是 dsh 画的，我们再盖一层就是两处给色。
 					neutral + " {",
 					"  background-color: var(--dash-glass-fill) !important;",
+					// 材质层。**跟着 --dash-glass-fill 走，只给这一组**：`_primary` 那枚
+					// 强调键是 dsh 自己画的实色，背后糊什么都看不见，给它上 backdrop-filter
+					// 只是白白多一个合成层。
+					//
+					// 不加 `-webkit-` 前缀：本插件由 UA 门控（含 `Dash/`），只会跑在壳的
+					// WKWebView 里，那是 Safari 26 的引擎，无前缀版本从 Safari 18 就有了。
+					//
+					// 一条 WebKit/Blink 的共同行为要知道：backdrop-filter 的采样**基本只
+					// 取元素正后方那块**，边界处是钳位而不是把外面的内容卷进来。所以 32px
+					// 高的按钮不会真的糊进 13px 半径外的东西，读起来更像"把身下这块摊匀"。
+					// 这和系统玻璃在小控件上的观感是一致的，不用去补 Comeau 那套
+					// 「撑高 200% 再拿 mask 裁回来」的花招——那是给整条横幅用的。
+					"  backdrop-filter: blur(var(--dash-glass-blur)) saturate(var(--dash-glass-sat));",
 					"}",
 					solid + " {",
 					"  transition:",
@@ -821,19 +944,61 @@ window.__ModuleLoader__.load({
 					"  " + solidActive + " { scale: 1 !important; }",
 					"  " + solidActive + " { --dash-press-r: 100% !important; }",
 					"}",
-
-					...fontRules,
 				];
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
 				return () => { style.remove(); };
+			});
+
+			// 字体那一层。**首帧就用默认值把它装上**，不等任何服务——见文件尾
+			// `exports.inject = []` 那条注释：这段 CSS 的全部意义就是抢在首帧之前
+			// 生效。设置到位之后再改字号，用户看到的是"字号跳一下"，而不是
+			// "整页字先是 dsh 的原样、过一会儿才原生化"。
+			ctx.effect(() => {
+				document.getElementById(FONT_STYLE_ID)?.remove();
+				const style = document.createElement("style");
+				style.id = FONT_STYLE_ID;
+				style.textContent = fontRules(body).join("\n");
+				document.head.appendChild(style);
+				fontStyle = style;
+				return () => {
+					// **只在还是自己那张时才清引用**：HMR 的重载顺序是"新实例先启、
+					// 旧实例后清"，无条件置 null 会把新实例刚装好的那张抹掉，
+					// 于是新实例后续的设置变更再也写不进 DOM（CLAUDE.md 踩坑记录）。
+					if (fontStyle === style) fontStyle = null;
+					style.remove();
+				};
+			});
+
+			// 设置面：`dash-nativeify` 这个命名空间由本包的 node 半边注册，
+			// 原生设置窗口与 dsh 页内设置都会自动列出它（一个都不用改）。
+			//
+			// **运行时嵌套 inject，不是 `exports.inject`**：静态依赖会把上面那两张
+			// style 一起推迟到 settingsScope 就绪之后，那正是文件尾那条注释要避免的
+			// 首帧闪动。缺席（远程浏览器的设置 RPC 只走 loopback，那边永远缺席）
+			// 时字号就一直是默认值——退化，不是故障。
+			ctx.inject(["settingsScope"], (scoped) => {
+				const scope = scoped.settingsScope.bind({ namespace: "dash-nativeify" });
+				const sync = () => {
+					const snap = scope.getSnapshot();
+					// `loading` / `unavailable` 时 value 还没有意义，退到默认值。
+					const next = clampBody(snap.status === "ready" ? snap.value?.bodyFontSize : BODY_DEFAULT);
+					if (next === body) return;
+					body = next;
+					if (fontStyle) fontStyle.textContent = fontRules(next).join("\n");
+				};
+				scoped.effect(() => scope.subscribe(sync));
+				sync();
 			});
 		}
 
 		exports.apply = apply;
 		// 顶层留空是刻意的：这段 CSS 的全部意义就是抢在首帧之前生效。挂上任何
 		// 硬依赖都会把它推迟到那些服务就绪之后，且服务重载会连带本插件卸载重挂
-		// （= 用户能看见的一次背景闪动）。本插件也确实不需要任何服务。
+		// （= 用户能看见的一次背景闪动）。
+		//
+		// 本插件唯一够得着的服务是 `settingsScope`（对话区字号），而它**必须**是
+		// 可选的——所以走 apply 里的运行时嵌套 `ctx.inject`，不进这张表。
 		exports.inject = [];
 		return module.exports;
 	}

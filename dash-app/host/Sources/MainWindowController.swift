@@ -168,24 +168,6 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let win = NSWindow(contentRect: NSRect(origin: .zero, size: Self.defaultWindowSize),
                            styleMask: style, backing: .buffered, defer: false)
         win.title = AppInfo.displayName
-        #if DEBUG
-        // Dev 构建窗口标题旁常驻 DEV 徽标，与 Release 一眼区分。
-        let devBadge = NSTextField(labelWithString: "DEV")
-        devBadge.font = .systemFont(ofSize: 10, weight: .semibold)
-        devBadge.textColor = .white
-        devBadge.alignment = .center
-        devBadge.wantsLayer = true
-        devBadge.layer?.cornerRadius = 4
-        devBadge.layer?.masksToBounds = true
-        devBadge.layer?.backgroundColor = NSColor.systemOrange.cgColor
-        devBadge.layer?.opacity = 0.92
-        devBadge.translatesAutoresizingMaskIntoConstraints = false
-        win.contentView?.addSubview(devBadge)
-        NSLayoutConstraint.activate([
-            devBadge.topAnchor.constraint(equalTo: win.contentView?.topAnchor, constant: 8),
-            devBadge.centerXAnchor.constraint(equalTo: win.contentView?.centerXAnchor),
-        ])
-        #endif
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
@@ -693,7 +675,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
         lines.append("")
         lines.append("── 路径 ──")
-        lines.append("日志：\(DashPaths.logsDir.path)")
+        // 日志一个实例一份，写全路径而不是目录——多 worktree 时"我该看哪个文件"
+        // 正是最容易搞错的一步。
+        lines.append("日志：\(DashPaths.logURL.path)")
         lines.append("发现文件：\(DashPaths.endpointsDir.path)")
         // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 dash 在跑"。
         let discovered = EndpointLocator.discoveredEndpoints()

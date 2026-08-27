@@ -283,7 +283,9 @@ dsh 未起时双击 → 引导页;dsh 退出 → app 显示断连状态不崩,ds
   两个 dsh 并存时,先退的那个不该把后来者的文件删掉。dsh 被 SIGKILL 时文件会残留,
   这正是壳侧那次 GET 健康检查存在的理由(残留文件 → 探测失败 → 引导页)。
 - **构建日志**:计划写"落 dsh 终端"。实做为终端只留结论(仿 `dsh web:` 的 `dash-app: …` 行),
-  完整 xcodebuild 输出落 `<AppSupport>/logs/dash-app-build.<配置>.log`,失败时终端补最后 20 行。
+  完整 xcodebuild 输出落 `<AppSupport>/logs/dash-app-build.<profile>.<配置>.log`,失败时终端补最后 20 行。
+  (文件名里的 profile 是后补的:这份日志覆盖写,多 worktree 各跑一个 dsh 时共用文件名 =
+  终端指的路径里躺着邻居的编译错误。壳自己的 `dash.log` 同理按 worktree 分片。)
   理由见 §1.7 新增的 logger 事实。
 - **源码 hash 覆盖面**:`project.yml` + `Sources/` + `Packages/` + `scripts/`,内容摘要(不看 mtime,
   换 git 分支不误判)。排除 `Sources/Resources/BuildTimestamp.txt`(prebuild 每次重写,进 hash 会让

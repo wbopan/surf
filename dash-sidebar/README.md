@@ -42,14 +42,103 @@ DSHKit 也是随 bundle 分发的共享 dylib；M10 之后连这个例外都不�
 
 ## 显示层与数据层的分界
 
-投影原样带上 `blank` / `isSubagent`，**过滤在 Swift**（`AppSidebarModel.visible`）：
-"列表里显示什么"是 UI 政策。归档相反——那是数据事实，node 半边直接滤掉。
-兜底组的标题也一样：数据层给空串 + `workspaceId: null`，「未分组」四个字归显示层。
+投影原样带上 `blank` / `isSubagent` / `archived`，**过滤在 Swift**：
+"列表里显示什么"是 UI 政策。兜底组的标题同理：数据层给空串 + `workspaceId: null`，
+「未分组」四个字归显示层。
+
+归档曾经是**例外**（v2 及以前 node 半边直接滤掉，理由是"那是数据事实"）。
+v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 node 那边的话开关就够不着了。
+现在归档只是行上的一个 `archived: true`，行照常下来，由 `SidebarFilterState` 决定露不露。
+
+## 副行摘要（`preview`）
+
+会话行的第二、三行是**最后一条 assistant 回复**的摘要。**上游没有这个字段**
+——`session.list` 的 schema 里一个字的正文都没有，投影里也没有。取法是每行单独读一次
+`session.history({ sessionId, maxMessages: 1 })`（上游按消息边界倒着数、切在
+`turn/start` 上，拿到的是尾巴），从那一页里挑最后一条 `assistant/message`。
+
+**为什么非要挑 assistant**：倒扫时不分角色的话，用户刚发出一句、模型还没答的那一刻，
+副行会翻成用户自己刚打的字——把用户已经知道的东西又念一遍。只有"新会话发了第一句、
+还没有任何回复"才退回用户那条。
+
+**缓存要两把钥匙**（少一把就是"preview 永远不变"这个 bug）：
+
+- 按 `updatedAt` 比对 —— 冷会话永不重取；
+- 收到 `assistant/message` / `user/message` 时**显式作废那一行** —— `updatedAt`
+  未必每条消息都动，只靠它比对会把摘要钉死在第一次取到的那句上。
+
+另有三道闸：
+
+| 闸 | 值 | 为什么 |
+|---|---|---|
+| 缓存键 | `updatedAt` | 会话没动过就永不重取——这是省掉绝大多数请求的那一条 |
+| 并发 | 4 | 首轮 100+ 会话不至于把 apiProxy 一次性打满 |
+| 预算 | 每轮 80 条 | 列表再长也有上限，超出的行就先没有摘要（不是错误） |
+
+`blank` 会话一次都不取（没内容可摘）。取回来的文本会**丢掉
+`<system-reminder>` 整段**（那是给模型看的脚手架，不是任何人"说"的话）并
+**抹平 Markdown 记号**（`flattenMarkdown`）：`## 标题`、`- **状态**`、行内反引号这些原样端上去只是噪音。
+抹得很浅，故意的——摘要错一点无所谓，为它引一个 Markdown 解析器才是错的成本。
+
+## 筛选与视图状态
+
+`SidebarFilterState`（Swift 半边，`UserDefaults` 持久化）握着四样东西：
+
+- `mode`：列表的组织轴。**全部 / 按时间 / 待批准**三枚胶囊。
+  「按时间」把工作区整个换成日期分段（今天 / 昨天 / 前 7 天 / 更早），
+  副行也随之拆成「工作区 / 摘要」各一行——那边没有分组头兜着。
+- `hiddenGroups`：被工具栏「筛选」菜单取消勾选的工作区。
+- `showArchived`：同一张菜单里的开关。
+- `query`：搜索框内容，**不持久化**（重启后还留着上次的搜索词只会让人以为会话丢了）。
+
+工具栏那枚「筛选」是本插件往 dash-layout 的 `toolbar` 槽投的一条贡献，
+走 `menu` 路线拿的是 `NSMenuToolbarItem`。设计稿画的是 NSPopover，落地改成菜单：
+贡献槽递不出锚点视图，而"一串带勾的开关"本来就是菜单的母语。
+
+## 搜索框：一点都不自绘，36pt 的开关是 `.controlSize(.extraLarge)`
+
+它是内置的液态玻璃胶囊——点下去会胀一下、有光效、有聚焦动画，外加放大镜、
+清除按钮、取消响应、⌘F 语义、无障碍角色、输入法行为。整套东西拼不出来，
+所以 `SidebarSearchField` 除了转发文字什么都不做。
+
+**外框高度只跟 `controlSize` 走**：regular=24pt / large=28pt / **extraLarge=36pt**
+（离屏渲染逐像素量过）。macOS 26 的 `NSSearchField` 内部是个
+`_NSCoreHostingView<AppKitSearchField>` 占满 frame，**根本不走 cell 绘制**——所以
+`frame(height:)`、`intrinsicContentSize`、`layout()` 强撑 frame、放大字号一概无效，
+覆写 `NSSearchFieldCell` 的那些 rect 方法更是死路。
+
+**而且 `controlSize` 必须设在 SwiftUI 环境里，不能设在 `makeNSView` 里。**
+NSViewRepresentable 每轮 update 都会把环境的 `controlSize`（默认 `.regular`）
+回写进 NSControl，`makeNSView` 设的 raw 4 到 `updateNSView` 时已被打回 raw 0。
+不报错、不警告——这就是"设了没反应"的全部机制。正解是给 representable 贴
+`.controlSize(.extraLarge)`：环境值本身就是它，回写反而替我们把值钉住。
+
+绘制路径零改动，所以按压胀缩与光效原样保留。**别为了尺寸去拆这个控件**
+（`isBezeled = false` 自己补底板、塞进 `NSGlassEffectView`）——两条都试过，
+底板画得再像也没有那一下手感。
+
+## 会话行长什么样
+
+定高：状态指示器（16pt 槽）+ 标题一行 + 副行**恒占两行**
+（`lineLimit(2, reservesSpace: true)`，摘要长短不一时列表不跳），
+**上下各 16pt 留白**（参照 Messages / Mail：行高的一半花在留白上，
+一屏少几行，换来的是能扫）。
+
+- **行内不显示时间**：时间只作为「按时间」视图的分段头出现。
+- **选中高亮一律交给 List 自己画，别加 `.listRowBackground`。** 自绘那层内缩量和
+  系统那层（10pt）对不上，套成一个"回"字——半透明材质一用立刻露馅（早先没露馅
+  只因为填的是不透明纯色）。绕过这一条的代价还不止观感：系统那层白送焦点态
+  （有键盘焦点时 accent、失焦转灰）与浅深色适配，自绘就得自己养一套。
+  （顺带记一笔：`.tint()` 改不了 sidebar List 的选中色，别在那儿浪费时间。）
+- **状态指示器分三级**（`StatusIndicator.swift`）：正在跑 = 系统 spinner
+  （静止的点表达不了"正在变化"，且不依赖颜色）；等你动作 = 语义符号 + 系统色
+  （叹号/问号的形状本身就能区分，灰度下不丢信息）；空闲 = 什么都不画。
+  绿点被删掉不是口味问题——绿点的既有语义是"一切正常"，拿它表示"正在跑"是反的。
 
 ## 从壳迁进插件时踩到的坑
 
 - **`#if DEBUG` 在插件里永远不成立**：插件由壳在运行时用命令行 swiftc 编译，没有 `-DDEBUG`。
-  底部那条橙色 DEV BUILD 改看壳的 bundle id 后缀（`io.wenbo.dash.dev`）。
+  插件里要判 Dev 只能看壳的 bundle id 后缀（`io.wenbo.dash.dev`）。
 - 选中高亮活过热替换靠 `host.store` 存 `selectedSessionId`。它只是"页面把 `currentSession`
   报回来之前先亮哪一行"的装饰状态，丢了不心疼——真相在 dsh 侧。
 - **分叉标题的序号递增必须自己复刻**（`lib/fork-title.js`，用例在 `test/`）：上游把它
@@ -58,12 +147,15 @@ DSHKit 也是随 bundle 分发的共享 dylib；M10 之后连这个例外都不�
 
 ## 已知缺口
 
-**待回答问题的紫点（`pendingQuestion`）现在推不出来。** `ask_user_question` 在 node 侧
+**待回答问题（`pendingQuestion`，紫色问号）现在推不出来。** `ask_user_question` 在 node 侧
 既不发 cordis 事件也不落 session log，唯一的观察位 `userQuestions.registerProvider`
 是**独占**的，apiproxy 已经占着——抢过来等于把 web UI 的问答面板掐了。待审批的橙点
 不受影响（它有 `approval/asked` / `approval/decided` 两条 log 事件可推导）。
 真要补，正路是订 `ctx.apiProxy.events.mux()`（同进程 async iterable，等价于多开一个
 浏览器标签页），代价是要在 node 半边养一条帧流。
+
+**搜索只搜标题与摘要**，不搜正文——正文要么得全量拉历史，要么得上游给检索接口，
+两条都不是"侧边栏"这一层该扛的。
 
 ## 测试
 

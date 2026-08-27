@@ -38,9 +38,9 @@ import SwiftUI
 
 extension LayoutSplitController {
     /// 活更新的主题。载荷 `["owner": String, "id": String, ...patch]`。
-    static let toolbarUpdateTopic = "dash.toolbar.update"
+    static let toolbarUpdateTopic = LayoutToolbar.updateTopic
     /// 菜单项被选中时广播的主题。载荷 `["slot", "owner", "id", "itemId"]`。
-    static let toolbarMenuSelectTopic = "dash.toolbar.menuSelect"
+    static let toolbarMenuSelectTopic = LayoutToolbar.menuSelectTopic
     /// 某一格的菜单**将要打开**。载荷 `["owner", "id"]`。
     ///
     /// 存在的理由只有一个：**上游的导航有前置状态**。`openSubagent` 会校验
@@ -48,7 +48,7 @@ extension LayoutSplitController {
     /// 没预热过一律被挡（CLAUDE.md 有这条）。菜单打开到用户点中之间那几百毫秒
     /// 正好够 prime 一轮，所以预热挂在这里而不是挂在"贡献一上墙就预热"——
     /// 后者会让每个开着的会话都无条件去拉一次 catalog。
-    static let toolbarMenuOpenTopic = "dash.toolbar.menuOpen"
+    static let toolbarMenuOpenTopic = LayoutToolbar.menuOpenTopic
     /// 窗口标识（Mail / Notes 那条裸文字）。载荷 `["title": String, "subtitle": String]`。
     ///
     /// **这是"标题"唯一正确的原生形态**：`window.title` 由 AppKit 画在分隔线
@@ -57,7 +57,7 @@ extension LayoutSplitController {
     /// 让"标识"长得像"按钮"。
     ///
     /// 空标题 = 交回给壳（`titleVisibility` 复位成 `.hidden`）。
-    static let windowTitleTopic = "dash.window.title"
+    static let windowTitleTopic = LayoutToolbar.windowTitleTopic
     /// **谁有标识，现在报一次**（载荷不看）。
     ///
     /// 和 `requestTitlebarMetrics` 同一条纪律，只是方向反过来：那边是标识的
@@ -65,13 +65,13 @@ extension LayoutSplitController {
     /// ——标识是"只在变化时推"的，而 dash-header 不会因为我们换代就重推一遍；
     /// 叠加 deinit 里那道"归还标识"的兜底，窗口会卡在没有标题的透明态，
     /// 直到用户碰巧切个会话才自愈。
-    static let windowTitleRequestTopic = "dash.window.requestTitle"
+    static let windowTitleRequestTopic = LayoutToolbar.windowTitleRequestTopic
     /// 谁想现在就要一份厚度就喊这个（载荷不看）。**给后到的订阅者用**。
-    static let titlebarMetricsRequestTopic = "dash.layout.requestTitlebarMetrics"
+    static let titlebarMetricsRequestTopic = LayoutToolbar.titlebarMetricsRequestTopic
     /// 标题栏那条带子的厚度变了。载荷 `["inset": Double]`。
     /// **显示模式一改厚度就变**（Icon and Text 会把工具栏撑高），
     /// 所以这不是装配时量一次的常量。
-    static let titlebarMetricsTopic = "dash.layout.titlebarMetrics"
+    static let titlebarMetricsTopic = LayoutToolbar.titlebarMetricsTopic
 
     /// 用哪条渲染路线。
     ///
@@ -162,15 +162,24 @@ extension LayoutSplitController {
         let label = state.label ?? contribution.metadata["label"] as? String ?? contribution.id
         let item: NSToolbarItem
 
-        switch Self.kind(of: contribution) {
-        case "group":
-            item = makeGroupItem(identifier, contribution, state: state)
-        case "menu":
-            item = makeMenuItem(identifier, contribution, state: state)
-        case "button":
-            item = makeButtonItem(identifier, contribution)
-        default:
-            item = makeViewItem(identifier, contribution)
+        // **`menu` block 是另一条路线，优先于 `kind`**：贡献方自己现场建菜单
+        // （dash-sidebar 的筛选器走这条）。菜单每次弹出前重建，所以 block 里读
+        // 什么状态都是当场的——勾选态不会停在上一次打开时的样子。
+        // 数据路线（`kind: "menu"` + `items`）适合内容由投影决定的菜单，
+        // block 路线适合内容由贡献方本地状态决定的菜单，两者不互相取代。
+        if let build = contribution.metadata["menu"] as? @convention(block) (NSMenu) -> Void {
+            item = makeBlockMenuItem(identifier, contribution, build: build)
+        } else {
+            switch Self.kind(of: contribution) {
+            case "group":
+                item = makeGroupItem(identifier, contribution, state: state)
+            case "menu":
+                item = makeMenuItem(identifier, contribution, state: state)
+            case "button":
+                item = makeButtonItem(identifier, contribution)
+            default:
+                item = makeViewItem(identifier, contribution)
+            }
         }
 
         item.label = label
@@ -178,6 +187,26 @@ extension LayoutSplitController {
         item.toolTip = state.tooltip ?? contribution.metadata["tooltip"] as? String ?? label
         item.visibilityPriority = Self.priority(of: contribution)
         applyState(state, to: item)
+        return item
+    }
+
+    /// `menu` block 路线：贡献方自己填菜单，本插件只负责给它一身系统皮。
+    private func makeBlockMenuItem(
+        _ identifier: NSToolbarItem.Identifier,
+        _ contribution: DashContributions.Contribution,
+        build: @escaping @convention(block) (NSMenu) -> Void
+    ) -> NSToolbarItem {
+        let item = NSMenuToolbarItem(itemIdentifier: identifier)
+        item.image = (contribution.metadata["symbol"] as? String).flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+        }
+        item.isBordered = true
+        item.showsIndicator = false // 图标自己已经说明是筛选器，再加个小箭头只是噪音
+        let delegate = ContributionMenuDelegate(build: build)
+        toolbarMenuDelegates[contribution.key] = delegate
+        let menu = NSMenu()
+        menu.delegate = delegate
+        item.menu = menu
         return item
     }
 
