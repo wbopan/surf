@@ -166,6 +166,8 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
         case "running": return .running
         case "pendingApproval": return .pendingApproval
         case "pendingQuestion": return .pendingQuestion
+        case "failed": return .failed
+        case "done": return .done
         default: return .idle
         }
     }

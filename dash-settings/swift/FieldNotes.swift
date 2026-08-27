@@ -96,6 +96,23 @@ enum FieldNotes {
                                  "只管对话正文那一列；控件、侧边栏、工具调用行钉在系统的 13pt 上。",
                                  unit: "px"),
         ],
+        "dash-notify": [
+            "enabled": Note("开启桌面通知",
+                            "关掉之后一条系统通知都不发。侧边栏那枚「待处理」胶囊不受影响"
+                            + "——关的是打扰，不是事实。"),
+            "approval": Note("需要批准时"),
+            "question": Note("智能体提问时"),
+            "done": Note("一个回合跑完时"),
+            "error": Note("智能体出错时"),
+            "actionableApproval": Note("通知上可以直接放行",
+                                       "关掉之后通知上只剩「拒绝」与「打开查看」，"
+                                       + "放行必须进 app 看清上下文再点。"),
+            "sound": Note("通知带提示音"),
+            "doneWhenForeground": Note("app 在前台也报「跑完了」",
+                                       "默认只在你没盯着 app 时报。待批准与待回答不受这一项影响。"),
+            "badgeIncludesDone": Note("角标算上「跑完了」与「出错」",
+                                      "默认只数待批准与待回答——那两类是欠着的事。"),
+        ],
 
         // ── 模型页 ───────────────────────────────────────────────────
         "agent-default-model": [
@@ -158,6 +175,11 @@ enum NamespaceNotes {
         "dash-nativeify": Note(title: "原生观感",
                                summary: "网页那半边的排版与手感。",
                                featured: ["bodyFontSize"]),
+        // 精选的四个就是「什么时候通知我」——那是绝大多数人唯一会来动的东西。
+        // 其余五个（直接批准、声音、前台策略、角标口径）归"其余"，想细调再展开。
+        "dash-notify": Note(title: "通知",
+                            summary: "什么时候给你发桌面通知。",
+                            featured: ["enabled", "approval", "question", "done", "error"]),
     ]
 
     static func note(ns: String) -> Note? { table[ns] }

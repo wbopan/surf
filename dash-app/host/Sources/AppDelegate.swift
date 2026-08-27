@@ -3,6 +3,9 @@ import AppKit
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
+    /// 系统 delegate 中转站。**壳持有它**：那些 delegate 属性多半是 weak 的，
+    /// 而且它必须活得和进程一样久。
+    private let systemDelegates = SystemDelegateRelay()
 
     static func main() {
         let app = NSApplication.shared
@@ -13,6 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+
+        // **必须在这里、必须在启动结束之前**：若干系统 delegate 只认
+        // 启动期装上的那个对象，晚设无效（实测见 SystemDelegateRelay 顶部注释）。
+        // 壳只占位与转发，语义归接手的插件。
+        systemDelegates.install()
 
         // M1 起壳不再探测 Node、不再 spawn dsh：dsh 先于 App 存在，
         // 窗口起来后自己去找它（flag → 发现文件 → 引导页）。

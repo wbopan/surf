@@ -10,9 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 每完成一个里程碑在计划 §12 追加一行执行日志；发现文档与 dsh 源码冲突，
 以源码为准并就地更新计划文档。
 
-**当前进度：M0～M8 已完成，M7（通知）已放弃，下一步 M9（治理硬化）。**
+**当前进度：M0～M8 已完成，下一步 M9（治理硬化）。**（M7 曾被放弃，后来以
+`dash-notify` 插件的形态做成了，权威计划见 `docs/dash-notify-plan.md`。）
 壳里已经没有布局、侧边栏、通知、进程管理代码——业务残留清零，
-只剩"定位 dsh、连桥、编译装载插件、给 root 槽兜底"这四件事。
+只剩"定位 dsh、连桥、编译装载插件、给 root 槽兜底、替系统 delegate 转交给插件"
+这五件事。
 
 **仓库放在哪里都行**——`./dev` 会补上让 `@deepseek-ai/*` 解析得到的那条符号链接。
 （计划 §1.4 说仓库必须待在 `~/.dsh/profiles/` 之下，那条约束已解除，见「dsh 与插件布线」。）
@@ -20,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 dev                一行启动本 worktree 的整套 dash（薄封装，逻辑在 dash/bin/dash.js）
 dash/              伞 bundle `@wenbo/dash`：**本仓库唯一的编排表**，不含运行时代码
-  cordis.patch.yml 装哪六个插件、什么顺序、什么配置——改编排只改这里
+  cordis.patch.yml 装哪些插件、什么顺序、什么配置——改编排只改这里
   bin/dash.js      安装器 + 开发启动器（registry / link 两种模式自动判别）
 dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
@@ -31,9 +33,14 @@ dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放
                    （工具栏按钮全部来自贡献，本插件自己一颗都不放；三条路线：
                    symbol=玻璃按钮 / menu=NSMenuToolbarItem / 兜底托管 SwiftUI）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
-dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待批准三枚胶囊 +
+dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待处理三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
+dash-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。**数据面在 node 半边**
+                   （订 apiProxy.events.mux 的只读广播流，维护一份待办清单；按钮答案
+                   经 apiProxy.respond 回去，先到先得）；Swift 只管发通知、判"要不要
+                   打扰"、报"人在看哪个会话"。它同时是**「有什么在等着你」的唯一真相**
+                   ——经 `dashPending` 服务供给 dash-sidebar 那枚「待处理」胶囊
 dash-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
                    数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
                    agentPresets / pluginInventory（权威计划 docs/dash-settings-plan.md）
@@ -48,7 +55,7 @@ docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结�
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
-六个被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
+被编排的插件包名都是 `@wenbo/dash-*`（目录名不带 scope，两者的映射就是
 "去掉 scope"）。**它们自己都不再声明 `dsh.bundle`**——编排权集中在伞包那张表上，
 一处真相。详见下面「profile 与伞 bundle」。
 
@@ -60,7 +67,7 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 ./dev --help       # 其余选项
 ```
 
-`./dev` 幂等，随便重复跑。它会把本 worktree 的六个插件 + 伞包 link 进
+`./dev` 幂等，随便重复跑。它会把本 worktree 的各插件 + 伞包 link 进
 profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。dash-app 随之
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
@@ -267,13 +274,13 @@ npm workspace 或手工 symlink，那是机器本地状态，新克隆的仓库�
 1. **`@deepseek-ai/dsh-web-app` 得手动列进 `bundles`。** dsh 的 `PROFILE_TEMPLATES`
    只给 `web` 和 `headless` 两个名字配了模板，别的 profile 初始化时只拿到
    `dsh-base`，web 那一层不会自己出现。
-2. **六个插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
+2. **被编排的插件绝不能出现在 `bundles` 里。** 它们已经没有 `dsh.bundle` 声明，
    列上去会让 `loadProfile` 直接 fails loud（"列为 bundle 却没有声明"是配置错误，
    不是"没有 patch"）。从旧结构升级上来的 profile 尤其要清。
 
-### 为什么开发期要单独 link 那六个插件
+### 为什么开发期要单独 link 那些插件
 
-`./dev` 会把六个插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
+`./dev` 会把各插件**和**伞包一起 link 进 profile，看着冗余，其实必要：
 **pnpm 对 `link:` 依赖不会去装被 link 目标自己的 dependencies**，而 cordis loader
 解析插件包名时的锚点是 **profile 目录**——伞包自带的 `node_modules` 根本不在
 Node 的向上查找链上。不 link 它们，启动即炸：
@@ -282,7 +289,7 @@ Node 的向上查找链上。不 link 它们，启动即炸：
 Cannot find package '@wenbo/dash-bridge' imported from ~/.dsh/profiles/dash/
 ```
 
-发布之后没有这个问题：那时六个包是伞包真实的 npm 依赖，pnpm 会把它们平铺进
+发布之后没有这个问题：那时它们是伞包真实的 npm 依赖，pnpm 会把它们平铺进
 profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，因为编排权
 始终在伞包那张表上——这正是摘掉子包 `dsh.bundle` 声明换来的好处。
 
@@ -384,9 +391,19 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   （一槽 N 条，`(owner, id)` 是身份，各家追加互不影响，给工具栏按钮这种
   "谁都可以来一条"的表面用）。贡献槽只收容器不收词汇——载荷就是视图工厂
   加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里。
+  另有 `DashHooks`：**应答钩子表**，给"系统要求在启动完成前就注册好、而实现在插件里"
+  这类事情用（`handle(hook:owner:version:_:)` 登记，壳侧 `dispatch` 派发，没人应答
+  就走系统默认）。表里没有任何具体业务的词汇——第一个用户是通知，但 URL scheme、
+  Dock 拖放、Services、NSUserActivity 都是同一个形状，**再来一个不需要改 SDK**。
 - `dash-app/host/Sources/Native/`：BridgeClient（WS）、CompilerService（内容寻址编译）、
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
-  全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）。
+  全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）、
+  SystemDelegateRelay（占住系统 delegate，经 `DashHooks` 转交插件，见下条）。
+- `dash-app/host/Sources/Native/SystemDelegateRelay.swift`：在
+  `applicationDidFinishLaunching` 的第一句就占住那些**必须在启动完成前装好**的系统
+  delegate（眼下是 `UNUserNotificationCenter`），把回调拍平成字典经 `DashHooks` 问一遍
+  插件，再把答案翻回系统要的形状。**运行时装载的插件永远不可能自己占这些位子**
+  （见「踩坑记录」那条），这里是唯一的转交点。壳侧只有转发，没有业务判断。
 - `dash-app/host/Sources/Native/WebPolicy.swift`：WKWebView 的导航策略与下载。
   **不设它，网页里"能下载的按钮"和"能跳转的链接"全部静默失效**——WKWebView 默认
   既不下载（`Content-Disposition: attachment` 的导航被 policy 中断）也不开新窗口
@@ -422,6 +439,31 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   新建 `tools/`、`build/`、`out/` 这类通用名目录后，用 `git check-ignore -v <文件>` 验一次。
   反过来，**被正确挡住的构建输入也要有人补**：`dash-app/host/tools/xcodegen` 就是
   这样一份"该挡、但缺了整个壳就没了"的文件，兜底在 `./dev` 里（见「多 worktree」）。
+- **广播式事件总线 + 运行时装载的插件 = 晚到的订阅者什么都不知道**：插件必然晚于
+  壳启动，也可能晚于页面第一次报告状态。描述**状态**的消息（当前会话、当前端点）
+  必须用 `DashEventBus.emitSticky` 而不是 `emit`——不粘的话订阅者要等到下一次变化
+  才知道，而那个状态**可能不再变**（用户打开 app 就一直待在同一个会话里），于是
+  它永远不知道。描述**瞬间**的消息（菜单被按了一下）不该粘。粘不粘由 emit 的一方
+  按语义决定，总线本身不认识任何具体主题。
+- **`UNNotificationInterruptionLevel.passive` 的意思是"不弹横幅"，不是"安静一点"**：
+  设成它的通知直接躺进通知中心，屏幕上一点动静都没有，而日志里照常写着"已发送"
+  ——看上去像系统设置（定时摘要 / 专注模式）出了问题，实际是自己配的。要静就把
+  `content.sound` 留空，别动 interruptionLevel。
+- **`UNUserNotificationCenter.delegate` 在启动完成之后再设会被静默忽略**：
+  `center.delegate` 读回来跟你设的一模一样，`willPresent` / `didReceive` 就是永远
+  不触发。Apple 那句 "assign before your app finishes launching" 是硬约束。
+  推论对整类 API 成立——**运行时编译装载的插件天然在启动之后才存在，所以它永远
+  不可能自己占这种位子**。转交机制是 `DashHooks` + `Native/SystemDelegateRelay.swift`：
+  壳在启动第一句占位、经钩子问插件。再遇到同形状的东西（URL scheme、Dock 拖放、
+  Services）照这个套，别去改 SDK 的词汇。
+- **不占槽的插件没有生命周期锚**：占槽的插件有 registry → 视图闭包 → model 这条
+  天然强引用链，不占槽的（dash-notify 这种）在 `activate` 里 new 出来的对象没人持有，
+  函数一返回就被 ARC 回收，所有 `[weak self]` 异步回调静默变 nil。症状极其误导——
+  "上线"日志照常打印，然后什么都不发生，像是数据没来。**让 `activate` 返回那个对象**
+  （它自己再持有 `DashPluginHandle`），壳按住返回值就是锚。
+- **"清掉上一次运行留下的东西"这类动作不能挂在 `activate` 上**：Swift 热替换每改一行
+  就 activate 一次，于是每次都把当前正当值班的东西一起扫掉（dash-notify 是屏幕上的
+  通知）。按进程收口的办法是往 `host.objects` 里插一个标记键——保管箱天然是进程级的。
 - **别把清理逻辑只挂在 `DashPluginHandle` 的析构上**。壳换代时 `loaded[name]` 一换、
   旧 `LoadedPlugin` 本该是最后一个强引用，但实测四十多次换代里 handle 只 deinit 过三次
   ——注册撤销之所以没出事，是因为 registry 用 token 校验兜住了"新的赢"，跟析构没关系。

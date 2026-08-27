@@ -42,11 +42,19 @@ struct StatusIndicator: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.orange)
         case .pendingQuestion:
-            // node 半边现在推不出这个状态（README「已知缺口」）。留着这一支：
-            // 那边一旦能推，壳不用改一行。
             Image(systemName: "questionmark.circle.fill")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.purple)
+        case .failed:
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.red)
+        case .done:
+            // **空心而不是实心**：上面三个是"等你动手"，这个只是"跑完了，看一眼"。
+            // 同样的字号下空心的视觉重量明显轻一档，一列扫下来分得开。
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
         case .idle:
             Color.clear
         }
@@ -57,6 +65,8 @@ struct StatusIndicator: View {
         case .running: return "运行中"
         case .pendingApproval: return "待批准"
         case .pendingQuestion: return "待回答"
+        case .failed: return "出错了"
+        case .done: return "已跑完"
         case .idle: return ""
         }
     }

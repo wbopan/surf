@@ -13,7 +13,20 @@ public enum SidebarSessionStatus: Equatable {
     case running
     case pendingApproval
     case pendingQuestion
+    /// 上一轮跑出错了，人还没看。
+    case failed
+    /// 上一轮跑完了，人还没看。**看一眼就消失**（node 侧收到 `focus` 就清掉）。
+    case done
     case idle
+
+    /// 「待处理」那枚胶囊筛的就是这四个：都是等着人来看一眼的。
+    /// `running` 不算——那是过程，不需要人动手。
+    var needsAttention: Bool {
+        switch self {
+        case .pendingApproval, .pendingQuestion, .failed, .done: return true
+        case .running, .idle: return false
+        }
+    }
 }
 
 /// 侧边栏展示的会话行。

@@ -28,9 +28,11 @@
  * `preview` 是副行摘要（尾部一条消息的文本，取不到时为 null，见 `dsh-source.js`
  * 的「预览行从哪来」）；`archived` 是归档标记——**归档不再在数据层滤掉**，
  * 侧边栏有了「显示已归档」开关之后，显不显示成了 UI 政策。
- * `status` 是字符串（`running` / `pendingApproval` / `idle`；壳还认一个
- * `pendingQuestion`，但 node 侧现在推不出来，原因见 `dsh-source.js` 的 `statusOf`）
- * 而不是数字枚举：加新状态时旧壳解码不会失败，只会当成 idle。
+ * `status` 是字符串而不是数字枚举（加新状态时旧壳解码不会失败，只会当成 idle），
+ * 取值 `running` / `pendingApproval` / `pendingQuestion` / `failed` / `done` / `idle`。
+ * **后四个里有三个不是这一侧算出来的**：`pendingQuestion` / `failed` / `done` 来自
+ * dash-notify 供出来的 `dashPending`（见 `withPending`），dash-notify 缺席时
+ * 就只剩 `running` / `pendingApproval` / `idle` 这三个老取值。
  * `blank` / `isSubagent` / `archived` 原样带上、**不在这里过滤**——"列表里显示什么"
  * 是 UI 政策，归 Swift 的 `AppSidebarModel`。
  *
@@ -73,9 +75,36 @@ const COALESCE_MS = 30;
  * 本插件与 Swift 半身之间数据形状的版本。**改了投影字段就 +1**——它折进
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  * v1 = M6 的"没有数据面"，v2 = M10 的投影协议，v3 = 副行摘要 `preview` +
- * 归档不再在数据层滤除（新增 `archived`）。
+ * 归档不再在数据层滤除（新增 `archived`），v4 = `status` 多了 `pendingQuestion`
+ * / `failed` / `done` 三个取值（经 `dashPending`，见 `withPending`）。
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
+
+/**
+ * `dashPending` 的原因 → 投影里的 `status`。
+ *
+ * 键就是 dash-notify 那份待办的 `kind`；它没供出来的类别（将来新加的）在这里
+ * 查不到就被忽略，不会把一个 Swift 不认得的字符串推下去。
+ */
+const REASON_STATUS = {
+	approval: "pendingApproval",
+	question: "pendingQuestion",
+	error: "failed",
+	done: "done",
+};
+
+/**
+ * 一个会话同时占好几种状态时，画哪一个。**越小越该管。**
+ *
+ * `running` 排在两个"等你"之后、两个"已经发生"之前：正在跑是过程，欠着的事
+ * 比过程重要，而看一眼就完的事没有过程重要。认不出的字符串排到最后。
+ */
+const STATUS_RANK = ["pendingApproval", "pendingQuestion", "running", "failed", "done", "idle"];
+
+function rank(status) {
+	const index = STATUS_RANK.indexOf(status);
+	return index === -1 ? STATUS_RANK.length : index;
+}
 
 /** 七个上行动作。表在这里定死，实现随数据面就绪后挂进 `RUNTIME`。 */
 const ACTIONS = ["snapshot", "archive", "renameSession", "fork",
@@ -108,12 +137,16 @@ export default createSwiftPlugin({
 		let timer;
 		/** 首份有内容的投影是否已经记过日志。 */
 		let announced = false;
+		/** @type {ReturnType<typeof createSessionSource>|undefined} */
+		let source;
+		/** dash-notify 供出来的「有什么在等着你」。缺席时是 undefined。 */
+		let pending;
 
 		// 宿主服务走**作用域 inject**，不写进插件顶层的 `inject` 数组：写上去就是
 		// 硬依赖，dsh 换版本改了服务名会让整个侧边栏（连同 Swift 半身）安静地不挂载。
 		// 放这里的话，最坏情况是壳里一个空列表 + 终端一行 warn，而不是白屏。
 		ctx.inject(SOURCE_SERVICES, (inner) => {
-			const source = createSessionSource(inner, log);
+			source = createSessionSource(inner, log);
 			RUNTIME.set(api, buildActions(source));
 
 			// 数据变了就重推。`immediate` = 状态翻牌（用户正等着那个点亮/熄灭），
@@ -129,8 +162,30 @@ export default createSwiftPlugin({
 			inner.effect(() => () => {
 				RUNTIME.delete(api);
 				clearTimeout(timer);
-				source.dispose();
+				source?.dispose();
+				source = undefined;
 			}, "dash-sidebar 会话数据源");
+		});
+
+		// 「待处理」那枚胶囊要列的不止待批准——待回答、出错、跑完了都算。
+		// 后三样这一侧**推不出来**（`ask_user_question` 不发 cordis 事件也不落
+		// session log，见 dsh-source.js 的 `statusOf`），而 dash-notify 那边为了发
+		// 通知已经养着一条 mux 帧流、维护着一份权威的待办表。真相只该有一份，
+		// 所以订它，而不是在这儿再养一条。
+		//
+		// **运行时嵌套 inject**：dash-notify 是可选的，缺席时侧边栏退回自己那份
+		// approval-only 的状态点，一切照旧。
+		ctx.inject(["dashPending"], (scoped) => {
+			pending = scoped.dashPending;
+			const off = pending.subscribe(() => {
+				// 状态翻牌，用户正等着那个点亮/熄灭——不压拍。
+				if (source !== undefined) schedulePush(source, true);
+			});
+			scoped.effect(() => () => {
+				off();
+				pending = undefined;
+			}, "dash-sidebar 待处理订阅");
+			if (source !== undefined) schedulePush(source, true);
 		});
 
 		// 服务名对不上时不会有任何异常，只是回调永远不跑——所以主动查一次哨。
@@ -186,7 +241,7 @@ export default createSwiftPlugin({
 
 		function pushSnapshot(source) {
 			version += 1;
-			const groups = source.groups();
+			const groups = withPending(source.groups());
 			// 只在第一份有内容的快照上记一行，之后闭嘴——running 每翻一次牌
 			// 都推一次，逐条记会把终端刷没。
 			if (!announced && groups.length > 0) {
@@ -195,6 +250,28 @@ export default createSwiftPlugin({
 				log.info(`首份投影：${count} 条会话 / ${groups.length} 组`);
 			}
 			push("snapshot", { version, groups });
+		}
+
+		/**
+		 * 把 `dashPending` 的原因叠进投影的 `status`。
+		 *
+		 * **只升不降**：两边各自看到的都是真事实，取更该管的那一个（`STATUS_RANK`）。
+		 * dash-notify 缺席时原样返回——这条路径必须存在，它是侧边栏的独立性。
+		 */
+		function withPending(groups) {
+			const map = pending?.snapshot();
+			if (map === undefined) return groups;
+			return groups.map((group) => ({
+				...group,
+				sessions: group.sessions.map((session) => {
+					const reasons = map[session.id];
+					if (reasons === undefined || reasons.length === 0) return session;
+					const status = [session.status, ...reasons.map((r) => REASON_STATUS[r])]
+						.filter((value) => value !== undefined)
+						.sort((a, b) => rank(a) - rank(b))[0];
+					return status === session.status ? session : { ...session, status };
+				}),
+			}));
 		}
 	},
 

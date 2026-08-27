@@ -10,8 +10,8 @@ import SwiftUI
 // **顶部三段**（搜索 / 胶囊 / 列表）：
 //
 // - 搜索是系统 `NSSearchField`（`SidebarSearchField`），不自绘；
-// - 胶囊是列表的组织轴：全部 / 按时间 / 待批准。「按时间」把工作区整个换成日期分段，
-//   「待批准」仍按工作区分组、只留等审批的行；
+// - 胶囊是列表的组织轴：全部 / 按时间 / 待处理。「按时间」把工作区整个换成日期分段，
+//   「待处理」仍按工作区分组、只留需要人看一眼的行（待批准 / 待回答 / 出错 / 跑完了）；
 // - 工具栏那枚「筛选」按钮（工作区显隐 + 显示已归档）在 `SidebarPlugin` 里，
 //   是个 `NSMenuToolbarItem`，与这里共读一份 `SidebarFilterState`。
 //
@@ -324,11 +324,11 @@ struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    /// 一条会话过不过筛：归档开关 → 待批准模式 → 搜索词。
+    /// 一条会话过不过筛：归档开关 → 待处理模式 → 搜索词。
     /// 搜索匹配标题**与摘要**（摘要是用户真正记得住的那句话）。
     private func passes(_ session: SidebarSession) -> Bool {
         if session.archived && !filter.showArchived { return false }
-        if filter.mode == .pending && session.status != .pendingApproval { return false }
+        if filter.mode == .pending && !session.status.needsAttention { return false }
         let q = filter.query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return true }
         return session.displayTitle.lowercased().contains(q)
@@ -345,11 +345,11 @@ struct SidebarView<Model: SidebarModel>: View {
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
                                     title: group.title, sessions: hits)
             }
-            // 组名命中搜索：整组留着（但仍要过归档/待批准那两关）。
+            // 组名命中搜索：整组留着（但仍要过归档/待处理那两关）。
             if !q.isEmpty && group.title.lowercased().contains(q) {
                 let rest = group.sessions.filter { session in
                     if session.archived && !filter.showArchived { return false }
-                    if filter.mode == .pending && session.status != .pendingApproval { return false }
+                    if filter.mode == .pending && !session.status.needsAttention { return false }
                     return true
                 }
                 if rest.isEmpty { return nil }
@@ -493,7 +493,7 @@ struct SidebarView<Model: SidebarModel>: View {
                 .filter { !filter.hiddenGroups.contains(groupKey($0)) }
                 .reduce(0) { sum, group in
                     sum + group.sessions.filter {
-                        $0.status == .pendingApproval && (!$0.archived || filter.showArchived)
+                        $0.status.needsAttention && (!$0.archived || filter.showArchived)
                     }.count
                 }
         }
@@ -602,7 +602,7 @@ struct SidebarView<Model: SidebarModel>: View {
     private var emptyText: String {
         if searching { return "没有匹配「\(filter.query)」的会话" }
         switch filter.mode {
-        case .pending: return "没有等待批准的会话"
+        case .pending: return "没有待处理的会话"
         default:
             return filter.isNarrowed ? "当前筛选下没有会话" : "还没有会话"
         }

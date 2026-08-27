@@ -84,9 +84,11 @@ v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 n
 
 `SidebarFilterState`（Swift 半边，`UserDefaults` 持久化）握着四样东西：
 
-- `mode`：列表的组织轴。**全部 / 按时间 / 待批准**三枚胶囊。
+- `mode`：列表的组织轴。**全部 / 按时间 / 待处理**三枚胶囊。
   「按时间」把工作区整个换成日期分段（今天 / 昨天 / 前 7 天 / 更早），
   副行也随之拆成「工作区 / 摘要」各一行——那边没有分组头兜着。
+  「待处理」筛的是 `SidebarSessionStatus.needsAttention`——待批准 / 待回答 /
+  出错 / 跑完了，四类都算，见下面「状态点从哪来」。
 - `hiddenGroups`：被工具栏「筛选」菜单取消勾选的工作区。
 - `showArchived`：同一张菜单里的开关。
 - `query`：搜索框内容，**不持久化**（重启后还留着上次的搜索词只会让人以为会话丢了）。
@@ -145,14 +147,33 @@ NSViewRepresentable 每轮 update 都会把环境的 `controlSize`（默认 `.re
   放在 client runtime 的 `fork(increaseTitle: true)` 里，服务/wire 层只有
   fork + rename 两步。两个界面分叉出来的会话必须同名。
 
-## 已知缺口
+## 状态点从哪来
 
-**待回答问题（`pendingQuestion`，紫色问号）现在推不出来。** `ask_user_question` 在 node 侧
-既不发 cordis 事件也不落 session log，唯一的观察位 `userQuestions.registerProvider`
-是**独占**的，apiproxy 已经占着——抢过来等于把 web UI 的问答面板掐了。待审批的橙点
-不受影响（它有 `approval/asked` / `approval/decided` 两条 log 事件可推导）。
-真要补，正路是订 `ctx.apiProxy.events.mux()`（同进程 async iterable，等价于多开一个
-浏览器标签页），代价是要在 node 半边养一条帧流。
+行首那颗指示器有五种，**来源是两处**：
+
+| 状态 | 画成什么 | 谁算出来的 |
+|---|---|---|
+| `running` | 系统 spinner | 本插件（`session.list` 的 `running`） |
+| `pendingApproval` | 橙色感叹号 | 两处都有；本插件订 `approval/asked｜decided` 兜底 |
+| `pendingQuestion` | 紫色问号 | **dash-notify**（`dashPending`） |
+| `failed` | 红色叉 | **dash-notify** |
+| `done` | 空心对勾 | **dash-notify** |
+
+后三样这一侧**推不出来**：`ask_user_question` 在 node 侧既不发 cordis 事件也不落
+session log，唯一的观察位 `userQuestions.registerProvider` 是**独占**的，apiproxy
+已经占着——抢过来等于把 web UI 的问答面板掐了。正路是订
+`ctx.apiProxy.events.mux()`，而 dash-notify 为了发通知**已经养着那条帧流**，
+还维护着一份权威的待办表。真相只该有一份，所以这边订它（`lib/index.js` 的
+`withPending`），不再自己推一遍。
+
+合并规则是**只升不降**：两边看到的都是真事实，取更该管的那一个（`STATUS_RANK`）。
+dash-notify 缺席时整段跳过，退回 `running` / `pendingApproval` / `idle` 三个老取值
+——那条路径必须存在，它是侧边栏的独立性。
+
+「跑完了」和「出错」**看一眼就消失**（点开那个会话即可），因为 dash-notify 那边
+收到 Swift 报的 `focus` 就把它们从待办里删了。
+
+## 已知缺口
 
 **搜索只搜标题与摘要**，不搜正文——正文要么得全量拉历史，要么得上游给检索接口，
 两条都不是"侧边栏"这一层该扛的。

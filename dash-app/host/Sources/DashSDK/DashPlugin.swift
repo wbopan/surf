@@ -28,6 +28,10 @@ import Foundation
 ///   表面加一条"用（工具栏按钮是第一个消费者，在 dash-layout）。
 /// - `DashEventBus.Topic.pagePrefix`：页内桥的未知消息不再被壳白名单挡掉，
 ///   一律以 `dash.page.<type>` 广播。
+/// - `DashHooks`（应答式钩子表）+ `DashHost.hooks` + `DashHost.handle(hook:_:)`。
+///   给"系统要求在 app 启动早期就位、实现方却是运行时装载的插件"那一类接线用
+///   （第一个住户：`UNUserNotificationCenter.delegate`，实测晚设无效）。
+///   与 registry/contributions 同纪律——**表里一个具体 hook 名都没有**。
 ///
 /// 注意：dylib 里的 `contentHash` 指纹含 DashSDK 的 `.swiftinterface` 摘要，
 /// 所以追加声明照样会让全部插件重编一次——这跟 ABI 版本号是两回事。

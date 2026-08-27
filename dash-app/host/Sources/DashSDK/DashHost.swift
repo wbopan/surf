@@ -21,6 +21,8 @@ public final class DashHost {
     public let objects: DashObjects
     /// 进程内事件总线（共享）。
     public let events: DashEventBus
+    /// 应答式钩子表（共享）。给"系统要求启动时就位的 delegate"那一类接线用。
+    public let hooks: DashHooks
     /// 本插件的持久化命名空间。
     public let store: DashStore
     /// 本插件与自己 TS 半身的通道。
@@ -36,6 +38,7 @@ public final class DashHost {
                 contributions: DashContributions = .shared,
                 objects: DashObjects,
                 events: DashEventBus,
+                hooks: DashHooks = .shared,
                 store: DashStore,
                 bridge: DashBridge,
                 log: @escaping (String) -> Void) {
@@ -45,6 +48,7 @@ public final class DashHost {
         self.contributions = contributions
         self.objects = objects
         self.events = events
+        self.hooks = hooks
         self.store = store
         self.bridge = bridge
         self.logger = log
@@ -54,6 +58,17 @@ public final class DashHost {
     /// 自动带插件名与世代号。
     public func log(_ message: String) {
         logger(message)
+    }
+
+    /// 接一个系统钩子的糖：世代号与插件名自动带上。
+    ///
+    /// hook 名是**壳与插件之间的字符串约定**，SDK 一个都不认得
+    /// （与槽名、事件主题同纪律）。现有的那几个写在壳的
+    /// `Native/SystemDelegateRelay.swift` 顶部。
+    @discardableResult
+    public func handle(hook: String,
+                       _ body: @escaping ([String: Any]) -> [String: Any]?) -> DashDisposable {
+        hooks.handle(hook, owner: plugin, version: generation, body)
     }
 
     /// 注册槽的糖：世代号与插件名自动带上。

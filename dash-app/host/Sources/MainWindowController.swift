@@ -711,7 +711,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 nativeHost.events.emit(DashEventBus.Topic.pageReady, ["capabilities": caps])
             case "currentSession":
                 if let id = body["id"] as? String {
-                    nativeHost.events.emit(DashEventBus.Topic.pageCurrentSession, ["id": id])
+                    // **粘性**：插件装载晚于页面，不粘的话它拿不到"现在在哪个会话"
+                    // ——而这恰恰是它最需要的那个输入（见 DashEventBus.emitSticky）。
+                    nativeHost.events.emitSticky(DashEventBus.Topic.pageCurrentSession,
+                                                 ["id": id])
                 }
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
