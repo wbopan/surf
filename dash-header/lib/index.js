@@ -136,7 +136,7 @@ export default createSwiftPlugin({
 					? "无"
 					: `${Object.keys(tree.nodes).length} 个（根 ${tree.root}）`;
 				log.info(`首份投影：${session.id}／面包屑 ${session.crumbs.length} 段`
-					+ `／preset ${preset}／后台任务 ${session.jobs.length}`
+					+ `／preset ${preset}／后台任务 ${session.jobs.count}`
 					+ `／子代理 ${subagents}`);
 			}
 			push("snapshot", { version, session });
