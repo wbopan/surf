@@ -22,6 +22,7 @@
 		"@wenbo/dash-bridge": "^0.1.0",
 		"@wenbo/dash-layout": "^0.1.0",
 		"@wenbo/dash-sidebar": "^0.1.0",
+		"@wenbo/dash-header": "^0.1.0",
 		"@wenbo/dash-nativeify": "^0.1.0"
 	},
 	"dsh": {

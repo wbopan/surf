@@ -1,7 +1,7 @@
 # dash 的编排表——本仓库唯一一处决定"装哪些插件、什么顺序、什么配置"的地方。
 #
 # 结构照 @deepseek-ai/dsh-web-app 的样子：bundle 不是代码容器，是一张表。
-# 真正的代码在下面 name 指向的那五个包里，它们各自**不再**声明 dsh.bundle
+# 真正的代码在下面 name 指向的那六个包里，它们各自**不再**声明 dsh.bundle
 # ——编排权集中在这里，一处真相。
 #
 # 这张表叠在 @deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app 之上，
@@ -37,6 +37,9 @@
 
     - id: dash-sidebar
       name: "@wenbo/dash-sidebar"
+
+    - id: dash-header
+      name: "@wenbo/dash-header"
 
     - id: ui-dash-nativeify
       name: "@wenbo/dash-nativeify"

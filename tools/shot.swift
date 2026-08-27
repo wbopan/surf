@@ -42,7 +42,7 @@ while let arg = argv.first {
         usage: tools/shot.sh [--app <name-substring>] [--scale <n>] [out.png]
                tools/shot.sh --list
 
-          --app    窗口所属 App 名 / bundle id / 标题的子串，默认 "dash Dev"
+          --app    窗口所属 App 名 / bundle id / 标题 / **pid** 的子串，默认 "dash Dev"
                    （匹配到多个时取面积最大的那个，也就是主窗口）
           --scale  相对窗口点尺寸的倍数，默认 1（Retina 原生是 2，给模型看用 1 就够）
           --list   列出当前可截的窗口
@@ -76,7 +76,8 @@ let visible = content.windows
 
 func describe(_ w: SCWindow) -> String {
     let app = w.owningApplication?.applicationName ?? "-"
-    return "  \(Int(w.frame.width))x\(Int(w.frame.height))\t\(app)\t\(w.title ?? "")"
+    let pid = w.owningApplication.map { String($0.processID) } ?? "-"
+    return "  \(Int(w.frame.width))x\(Int(w.frame.height))\tpid \(pid)\t\(app)\t\(w.title ?? "")"
 }
 
 if listOnly {
@@ -87,7 +88,10 @@ if listOnly {
 let lowered = needle.lowercased()
 guard let win = visible.first(where: { w in
     let app = w.owningApplication
-    let hay = [app?.applicationName, app?.bundleIdentifier, w.title]
+    // pid 也算进干草堆：多 worktree 并存时窗口名与尺寸一模一样，
+    // **只有 pid 分得开**（`pgrep -af "dash Dev.app/Contents/MacOS"` 取号）。
+    let hay = [app?.applicationName, app?.bundleIdentifier, w.title,
+               app.map { String($0.processID) }]
         .compactMap { $0 }.joined(separator: " ").lowercased()
     return hay.contains(lowered)
 }) else {
