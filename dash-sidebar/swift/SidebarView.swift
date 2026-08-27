@@ -19,6 +19,10 @@ import SwiftUI
 // `lineLimit(2, reservesSpace: true)` 恒占两行的位置，摘要长短不一时列表不跳。
 // 行内**不显示时间**——时间只作为「按时间」视图的分段头出现。
 //
+// **行与行之间一条细分隔线**（缩进到标题那条竖线上），每段最后一行不画、
+// 紧挨选中行的那条也不画。列表**不留滚动条**：overlay scroller 在浅色下是半透明
+// 纯黑，压在行右缘上是一道扎眼的深色竖条，而这儿的位置感本来就来自分组头。
+//
 // **右键菜单是操作全集，hover 图标是其中两个高频动作的快捷键**：
 // 会话行 hover 出归档、分组头 hover 出加号（在此工作区新建会话）。
 // 分组头右缘的 chevron 不算"操作"，是开合状态本身，同样 hover 才显形。
@@ -49,6 +53,9 @@ struct SessionRow: View {
     let onRename: () -> Void
     let onFork: () -> Void
     let onArchive: () -> Void
+    /// 行间细分隔线画不画，由列表那边定（见 `dividerVisible`）：
+    /// 每段最后一行不画，紧挨选中行的那条也不画。
+    let showsDivider: Bool
 
     @State private var hovering = false
 
@@ -117,6 +124,15 @@ struct SessionRow: View {
         // 三行内容挤成一坨，扫起来像一堵墙。参照 Messages / Mail 的侧边栏
         // ——它们把行高的一半花在留白上，代价是一屏少几行，换来的是能扫。
         .padding(.vertical, 14)
+        // 行与行之间一条系统分隔线，左端缩进到与标题同一条竖线上——
+        // 状态槽那 16pt 是留给"这条会话怎么样了"的，分隔线跨过去会把它切成两半。
+        // **画在 padding 之外**：内缩的话线就浮在行里，不落在两行的交界上。
+        .overlay(alignment: .bottom) {
+            if showsDivider {
+                Divider()
+                    .padding(.leading, StatusIndicator.slot + 6)
+            }
+        }
         // 已归档整行退一层：它是「翻出来看看」的东西，不该和在役会话抢注意力。
         .opacity(session.archived ? 0.6 : 1)
         .contentShape(Rectangle())
@@ -504,8 +520,10 @@ struct SidebarView<Model: SidebarModel>: View {
                 ForEach(filteredGroups) { group in
                     Section {
                         if isExpanded(group.id) {
-                            ForEach(group.sessions) { session in
-                                row(session, workspace: nil)
+                            ForEach(Array(group.sessions.enumerated()), id: \.element.id) { index, session in
+                                row(session,
+                                    workspace: nil,
+                                    showsDivider: dividerVisible(group.sessions, index))
                                     .tag(session.id)
                             }
                         }
@@ -530,6 +548,10 @@ struct SidebarView<Model: SidebarModel>: View {
             }
         }
         .listStyle(.sidebar)
+        // 侧边栏不留滚动条。macOS 的 overlay scroller 在浅色下是半透明纯黑，
+        // 压在会话行右缘上是一道很扎眼的深色竖条——而这里本来就不需要它指位置：
+        // 一屏十来行、有搜索有筛选，位置感来自分组头。
+        .scrollIndicators(.never)
         .accessibilityIdentifier("sidebar.list")
     }
 
@@ -537,8 +559,10 @@ struct SidebarView<Model: SidebarModel>: View {
         List(selection: selection) {
             ForEach(timeSections) { section in
                 Section {
-                    ForEach(section.rows, id: \.session.id) { entry in
-                        row(entry.session, workspace: entry.workspace)
+                    ForEach(Array(section.rows.enumerated()), id: \.element.session.id) { index, entry in
+                        row(entry.session,
+                            workspace: entry.workspace,
+                            showsDivider: dividerVisible(section.rows.map(\.session), index))
                             .tag(entry.session.id)
                     }
                 } header: {
@@ -558,16 +582,32 @@ struct SidebarView<Model: SidebarModel>: View {
             }
         }
         .listStyle(.sidebar)
+        // 侧边栏不留滚动条。macOS 的 overlay scroller 在浅色下是半透明纯黑，
+        // 压在会话行右缘上是一道很扎眼的深色竖条——而这里本来就不需要它指位置：
+        // 一屏十来行、有搜索有筛选，位置感来自分组头。
+        .scrollIndicators(.never)
         .accessibilityIdentifier("sidebar.list")
     }
 
-    private func row(_ session: SidebarSession, workspace: String?) -> some View {
+    /// 分隔线画在**两条会话之间**，所以每段最后一行不画（往下是分组头的留白，
+    /// 再补一条就成了双线）。**任一侧被选中时也不画**：选中高亮是一枚内缩的
+    /// 圆角矩形，分隔线压在它的上下缘上会把圆角切平。
+    private func dividerVisible(_ sessions: [SidebarSession], _ index: Int) -> Bool {
+        guard index + 1 < sessions.count else { return false }
+        let selected = model.selectedSessionId
+        return sessions[index].id != selected && sessions[index + 1].id != selected
+    }
+
+    private func row(_ session: SidebarSession,
+                     workspace: String?,
+                     showsDivider: Bool) -> some View {
         SessionRow(
             session: session,
             workspace: workspace,
             onRename: { beginRename(.session(id: session.id, title: session.displayTitle)) },
             onFork: { model.forkSession(id: session.id) },
-            onArchive: { model.archive(sessionId: session.id) }
+            onArchive: { model.archive(sessionId: session.id) },
+            showsDivider: showsDivider
         )
         // **选中高亮一律交给 List 自己画，别加 `.listRowBackground`。**
         // 自己再画一层就是两层背景：List 那层（内缩 10pt）套在自绘那层里面，
