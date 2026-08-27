@@ -30,12 +30,28 @@ dash-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint �
 dash-bridge/       唯一特权插件：Swift 载荷登记表 + /dash/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂
 dash-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
-                   （工具栏按钮全部来自贡献，本插件自己一颗都不放；三条路线：
-                   symbol=玻璃按钮 / menu=NSMenuToolbarItem / 兜底托管 SwiftUI）；
+                   （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献；
+                   贡献带 region=sidebar|content 决定落在分隔线哪侧、align=leading|trailing
+                   决定夹在 flexibleSpace 哪边、spaced 决定要不要断开玻璃胶囊、
+                   sizing=fixed|dynamic 决定要不要冻死宽度，全部缺省成老行为；
+                   四条渲染路线由 kind 选：button / group / menu / view，另有一条
+                   `menu` block 路线给"内容由贡献方本地状态决定"的菜单）；
                    client 半边（lib/client.js）装 window.__dash 动作桥 + 收起 web 侧边栏
 dash-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待处理三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
+dash-header/       把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
+                   （Mail / Notes 那条裸文字），工具栏只剩四格可操作的原生
+                   `NSToolbarItem` 子类（段控=ItemGroup / 子代理与 mode=MenuToolbarItem
+                   +badge / 导出=按钮），排版、显示模式、溢出全归 AppKit。
+                   **判据是一条设计原则：圆胶囊是"可操作"的承诺**——锁定后的
+                   agent preset、只读的后台任务都退进 subtitle，不做成假按钮。
+                   **两条通道同时用**：
+                   active view 走页内桥（真相在浏览器），会话与 preset 走 node 半边
+                   （真相在 dsh）。web header 由 client 半边折叠，插件退休就自动还原。
+                   面包屑不只是文字：末段带**子代理计数下拉**、子代理段是**兄弟切换器**，
+                   点开是原生重画的 catalog 树——**子代理会话不进侧边栏，这是唯一入口**
+                   （docs/native-subagent-catalog.md）
 dash-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。**数据面在 node 半边**
                    （订 apiProxy.events.mux 的只读广播流，维护一份待办清单；按钮答案
                    经 apiProxy.respond 回去，先到先得）；Swift 只管发通知、判"要不要
@@ -146,7 +162,8 @@ Swift 里名字统一走 `AppInfo.displayName`（读 Info.plist，随 PRODUCT_NA
 
 ```bash
 tools/shot.sh                 # 省略路径就落 .scratch/shot.png
-tools/shot.sh --list          # 看有哪些窗口；--app 换目标，--scale 2 出 Retina
+tools/shot.sh --list          # 看有哪些窗口（带 pid）；--app 换目标，--scale 2 出 Retina
+tools/shot.sh --app 60435     # **多 worktree 并存时只有 pid 分得开**
 ```
 
 首次运行编译 `tools/shot.swift`（约 1s），之后源码没变直接跑缓存二进制
@@ -390,7 +407,22 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   给 root/sidebar 这种独占表面用）；`DashContributions` 是多占用"贡献槽"
   （一槽 N 条，`(owner, id)` 是身份，各家追加互不影响，给工具栏按钮这种
   "谁都可以来一条"的表面用）。贡献槽只收容器不收词汇——载荷就是视图工厂
-  加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里。
+  加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里
+  （`toolbar` 槽的约定写在 `dash-layout/swift/LayoutSplitController.swift`
+  的槽约定注释里——**那份注释是这个槽唯一的文档**，加键要同步改它）。
+  窗口标识另有一条通道：`dash.window.title`（载荷 `title` / `subtitle`），
+  由 dash-layout 消费；空标题 = 交回给壳。它和 `titlebarMetrics` 一样
+  **只在变化时推**，所以配了一条 `dash.window.requestTitle` 给后到的订阅者
+  ——dash-layout 每次装工具栏都喊一嗓子，否则它一换代窗口就没标题了。
+  （**新写这类"状态型"消息一律用 `DashEventBus.emitSticky`**，粘性总线会替新
+  订阅者补一份，不用再配一条 request 通道；上面两条早于它，留着不动。）
+  拓扑键：`label` / `order` / `region` / `align` / `spaced` / `kind` /
+  `symbol` / `items` / `priority` / `sizing`，**一变就重建整条工具栏**。
+  会变的东西（徽标数字、菜单内容、段控选中态、显隐）不走 metadata，走活通道
+  `dash.toolbar.update`，实现在 `dash-layout/swift/ToolbarContribution.swift`。
+  `kind` 决定用哪个 `NSToolbarItem` 子类（`button`/`group`/`menu`），
+  缺省 `view` = 塞一个 `NSHostingView`——**能用前三个就别用它**，
+  自定义视图拿不到显示模式、玻璃分组、徽标和溢出退让。
   另有 `DashHooks`：**应答钩子表**，给"系统要求在启动完成前就注册好、而实现在插件里"
   这类事情用（`handle(hook:owner:version:_:)` 登记，壳侧 `dispatch` 派发，没人应答
   就走系统默认）。表里没有任何具体业务的词汇——第一个用户是通知，但 URL scheme、
@@ -487,10 +519,115 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   推论：**给某个容器整体隐形之前，先查清有没有别人往里面挂 portal 之外的浮层。**
 - dsh Web UI 类名是 hash 化 CSS module（`Md3f7G_flowItem`），语义后缀稳定，
   选择器用 `[class*="_flowItem"]` 防御式命中；升级 dsh 后失效先核对语义名。
+  **但优先找 `[data-slot="<槽名>"]`**：每个槽 outlet 都带这个属性（`display: contents`，
+  不产生盒子），它是槽系统的一等契约而不是样式副产物，比任何类名都稳。
+  主内容区 header 的锚点就是 `[data-slot="conversation.session.header"]`，
+  header 本体是它的 `firstElementChild`。
+- **AppKit 的 contentView 不是翻转坐标系**（原点在左下角，UIKit 才是左上）：
+  `window.contentLayoutGuide.frame.minY` 恒为 ~0，量标题栏高度要写
+  `contentView.bounds.maxY - guide.frame.maxY`。症状是"算出来永远是 0"，
+  很容易误判成 layoutGuide 没生效。顺带：`NSLayoutGuide` 的属性叫 `.frame`，
+  `layoutFrame` 是 UIKit 的名字。
+- **`Label` 放进 `Menu` 的 label 位会被 macOS 折叠成 icon-only**（文字消失）。
+  换成显式 `HStack { Image(systemName:); Text(...) }`。`labelStyle` 救不了——
+  那个改的是渲染样式，这里是 `Menu` 对 `Label` 的特化处理。
+- **`pointer-events: none` 不挡合成事件**：对零尺寸、已禁指针的元素
+  `dispatchEvent(new MouseEvent("click"))` 照样生效。所以"把 web 控件折叠掉"
+  和"仍然用它来驱动"不冲突，不需要临时恢复可见性。
+- **别的 worktree 的壳会串进来**：endpoint 发现是"扫目录取候选"，另一个 worktree
+  里跑着的 `dash Dev` 会连上本 worktree 的 dsh，拿它自己那份 DashSDK 编译本仓库的
+  Swift 源码，刷出一串对不上号的 `编译失败：… @ <陌生 hash>`，而本地 `git diff`
+  干干净净。**判据是 hash**：自己那套的 hash 会留在
+  `~/Library/Application Support/io.wenbo.dash/native-plugins/generations/<Module>/`
+  底下，陌生的不会。`pgrep -af "dash Dev.app/Contents/MacOS"` 数一下实例数即可确认。
+- **工具栏底下那条带子只能由页面画**（原生三条路全试过，都不给"纯模糊无装饰"）：
+  `titlebarAppearsTransparent = false` 给的是**不透明**背景，模糊就没了；
+  `NSVisualEffectView` **采不到** WKWebView 那层 remote layer 的像素（和
+  `NSGlassEffectView` 并排压在 WebView 上实测，只有后者糊得动网页文字）；
+  `NSGlassEffectView` 采得到，但自带一圈边缘高光，那是液态玻璃的造型语言、关不掉。
+  所以带子是 `dash-header/lib/client.js` 的 `backdrop-filter` ——
+  **页面 compositor 是唯一看得见内层滚动的东西**，这不是将就。
+- **macOS 26 的 scroll edge effect 不是"一条带子"，是"浮元素的形状"**：
+  Apple 原话是效果 "applied underneath toolbar items / titlebar accessories"、
+  "varies the size and shape based on the content floating above it"。载体是私有类
+  `NSScrollPocket`，由**滚动内容视图自己画**（`NSScrollView` 与 WKWebView 各自实现
+  pocket 协作方法），标题栏只做外观协调——**盯着标题栏找开关就是找错了地方**。
+  三条实测：① 给一个**真实可见**、6000pt 内容、滚到 2600 的 `NSScrollView`，
+  它确实造出了 pocket、`hasScrolledContentsUnderTitlebar=1`，**条纹照样原样穿过
+  带子**，只有工具栏胶囊底下被糊；② `NSTitlebarAccessoryViewController` 的
+  `preferredScrollEdgeEffectStyle`（26.1）只给**已存在**的效果选软硬，自己不召唤，
+  装上 `.soft` 逐像素零变化；③ `webView.obscuredContentInsets`（公开，26.0）真能
+  造出 pocket，但风格默认 `Hard` = 纯色（`Soft` 是 Safari 专用 SPI），且只认
+  **主 frame** 的 scrollOffset——dsh 滚的是内层 div，主 frame 永远在顶，
+  而且设了 insets 之后 layout viewport 会缩小、内容根本不会渲染进带子区域。
+  **"toolbar 天然有效果"是对的，而且它此刻就在生效**——只是长在工具栏项的胶囊里。
+- **`window.title` 是贪心的，会把 content·leading 的工具栏项顶走**：它要为长标题
+  留截断空间，于是分隔线右边那些 leading 贡献被一路推到 flexibleSpace 那侧。
+  日志打出来的顺序完全正确、界面上却贴着右边一组，极易误判成"align 没生效"。
+  想紧挨标题放东西，正路是 `window.subtitle`，不是 leading 贡献。
+  （Mail / Notes 本来也不在标题右边放按钮——标题一侧只有文字，动作全在另一头。）
+- **`window.subtitle` 里放不了图标**：macOS 的 SF Symbols 是图片资源
+  （`NSImage(systemSymbolName:)`），不是可嵌进字符串的字体——遍历系统字体两段 PUA，
+  `cube` / `gearshape.2` 一个都查不到，整个 Plane 15 只有 1 个码点有 glyph。
+  而 `subtitle` 只吃 `String`，连 `NSAttributedString` 都不收。几何字符替代也试过
+  一排（⬢ ⬡ ◆ ❖ ▣ ⧉ ◈ ⬧），11pt 下六边形糊成圆点、空心的站不住——都只像噪点。
+- **窗口被完全遮挡或不在当前 Space 时，AppKit 暂停绘制**，`tools/shot.sh`（SCK）
+  返回的是**冻结的陈旧帧**——"能截到"不等于"是新的"。验新鲜度：改一个
+  `window.subtitle` 之类的可见值再截一张比对。
+- **装上 `NSToolbar` 会把壳的拖动条压死**，标题栏一下子拖不动、双击也不放大。
+  壳在 contentView 顶部放了块 `WindowDragRegionView`（40pt，见
+  `MainWindowController.swift`）来补 `fullSizeContentView` 的拖动区，可
+  **titlebar 容器排在 contentView 之上**，`NSToolbarTitleView` 铺满整个内容区
+  宽度（实测 764×52）把它整个遮住。而 AppKit 自己也不接手——壳注释里那条
+  实测是对的：这个窗口形态下 `mouseDownCanMoveWindow` **不生效**（复核过，
+  从 `NSThemeFrame` 到 `NSToolbarTitleView` 整条链都是 `true`，照样纹丝不动）。
+  两边同时失效，**不报任何错**。最坑的是它只坏一半：侧边栏那半照常能拖
+  （title view 从 x=260 起，够不着），最顶 4pt 也能拖——"有时能拖"极易
+  误判成偶发。修在 `dash-layout` 的 `installTitlebarDrag()`：用
+  local monitor 只接管 `NSToolbarTitleView` 那块地，路上撞见 `NSControl` 就放行。
+- **CGEvent 合成事件送不进不在当前 Space（或非前台）的窗口**：光标照样会动
+  （`mouseMoved` 生效、`AXIsProcessTrusted()` 也是 `true`），但 `leftMouseDown`
+  根本不进 App，于是每个采样点都"拖不动"——**纯假阴性**，会把人带到完全错误的
+  方向去查。判据是在 App 里装一个 `NSEvent.addLocalMonitorForEvents`：一条都收不到
+  就说明事件没到，先把窗口弄到当前 Space 再测。`osascript` 设 `frontmost` 返回
+  `true` 也**不代表**真的切过去了。同理，任何"改代码前后对比"的结论都必须
+  跑一次关掉修复的对照组，否则分不清是修复生效还是窗口位置变了。
+- **`NSMenu.delegate` 是 weak，而菜单内容一变就会原地重建一份 NSMenu**：挂在
+  toolbar item 上的那份 delegate 不会跟过来。钩子必须挂在**造菜单的地方**
+  （`buildMenu`），并且由控制器强持有——否则第一次活更新之后就静默失效。
+- **`NSToolbar.displayMode` 改不动**：`allowsDisplayModeCustomization` 在 macOS 15+
+  默认 YES，头文件原话是「这时 displayMode 是一个用户可改的属性」——存过配置之后
+  再赋值会被当场弹回（设完立刻读还是旧值，实测）。代码里那句只是**开局值**，
+  要记住用户的右键选择就得开 `autosavesConfiguration`。
+- **`withObservationTracking` 的观察者没人强持有就静默死掉**，而且**只在冷启动
+  露馅**：热替换时 model 从保管箱拿到种子，构造时那一次同步 push 就把该显示的
+  都显示了，看起来完全正常；冷启动没有种子，第一推全是「藏起来」，界面一片空白，
+  日志却写着「上线 5 格」。见 dash-header 的 `HeaderToolbarSync.start()`。
+- **`NSHostingView` 的默认压缩阻力（750）会把别的工具栏项挤进溢出菜单**：
+  这块矩形一步不让，AppKit 只好去收别人。要它先自己截断就把
+  compressionResistance 降到 `.defaultLow`、hugging 拉到 `.defaultHigh`。
+- **SwiftUI 的 `.frame(maxWidth:)` 会让工具栏项凭空消失**：`maxWidth` 是贪心的，
+  NSHostingView 把它当理想宽度顶回工具栏，那一格就真要那么宽；加上同区其它项
+  超出内容区，整项被挤进溢出，界面上一个字都不剩。症状极像"数据没到"
+  （node 半边日志明明写着投影已发）。**先怀疑宽度，再怀疑数据。**
 - **WKWebView 对下载与新窗口的默认行为是静默丢弃**，不是报错：不实现
   `decidePolicyFor navigationResponse` 就没有下载，不设 `uiDelegate` 就没有新窗口，
   两者都不给任何回调、日志或视觉反馈。所以"点了没反应"这类报告先查 delegate 是否齐
   （见 `Native/WebPolicy.swift`），别去怀疑页面。
+- **`openSubagent` 有前置状态，不是纯导航**：它校验目标是不是 "healthy catalog
+  child"，认的是 client runtime 自己那份 `subagentsByParent`。没让 runtime 先拉过
+  `subagents.list`（`setSubagentCatalogOpen` + `refreshSubagents`，后者返回 Promise，
+  await 它才是可靠的"加载完了"信号）就导航，一律被挡。所以上游 `setCatalogOpen`
+  的作用不止是文档里写的"上报可见分支做去抖刷新"。
+- **subagent 的 id 形态是混合的**：`subagents.list` 要的 `parentSessionId` 必须带
+  `session-` 前缀，而它回的 catalog 里 child 是**光 uuid**。两个 id 同步翻转前缀去
+  试，四种组合恰好会跳过唯一正确的那种——症状是"两种都试了、两种都被拒"，
+  极像数据坏了。别猜：`session.list` 行里的原始 `sessionId` 就是上游认的那个，
+  投影时一起带上。
+- **client 半边的 `ctx.inject` 会抛**：裸调一次（不包 try、放在 apply 顶层）就赔掉
+  整个插件——页面上连 `window.__dash*` 都没有，而 node 终端一个字都没有。照
+  dash-layout 的 `installBridge` 办：走作用域 inject、包 try、**装在 effect 内部**
+  （每代重装接线，沿用上一代的服务句柄等于留一个 fiber 已卸载的僵尸桥）。
 - **client 半边 `__ModuleLoader__.load({ id })` 里的 id 必须逐字等于包名**，
   它不会跟着 `package.json` 的 name 自动变。给包加 scope 那次就栽在这里：
   包名成了 `@wenbo/dash-layout`，client.js 里还写着 `id: "dash-layout"`，

@@ -38,9 +38,11 @@
     - id: dash-sidebar
       name: "@wenbo/dash-sidebar"
 
-    # 通知：不占槽（铃铛走 toolbar 贡献槽），缺席时什么都不缺。
-    # 排在 sidebar 之后只是为了诊断树好读——它 inject dash-layout，
-    # 真正的时序由 cordis 的依赖解析保证。
+    - id: dash-header
+      name: "@wenbo/dash-header"
+
+    # 通知：不占槽、不贡献界面，缺席时什么都不缺。排在这里只是为了诊断树好读
+    # ——它 inject dash-layout，真正的时序由 cordis 的依赖解析保证。
     - id: dash-notify
       name: "@wenbo/dash-notify"
 
