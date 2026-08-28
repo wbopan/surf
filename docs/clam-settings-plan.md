@@ -1,6 +1,6 @@
-# dash-settings 计划：一扇真正的原生设置窗口
+# clam-settings 计划：一扇真正的原生设置窗口
 
-> 本文是 dash-settings 的权威计划，独立于 `phase2-dash-plugin-migration-plan.md`。
+> 本文是 clam-settings 的权威计划，独立于 `phase2-clam-plugin-migration-plan.md`。
 > 上游事实对照 harness `0.1.1-rc.2` 实地验证（首轮 2026-08-25 含真实 RPC 调用，
 > 2026-08-26 二轮复核 `.d.ts` 与注册处源码，修正了一条错误结论，见 §2）。
 > 执行时如与源码冲突，以源码为准并更新本文。
@@ -36,7 +36,7 @@
 ### 1.2 已否决：原生窗框 + 内嵌 WebView 渲染官方面板
 
 分支 `feat/dash-settings`（`cb1654c` + `7ddc245`）实现过并跑通：⌘, 开出原生窗口，
-左边 `List(.sidebar)`，右边一块 WebView 加载 `?dash-settings=1`，网页半边把官方面板
+左边 `List(.sidebar)`，右边一块 WebView 加载 `?clam-settings=1`，网页半边把官方面板
 改造成"整页只有设置"并把目录报上来。
 
 否决理由不是它不工作，是**为了 5% 的内容搬进 100% 的运行时**：一整份 React app、
@@ -110,7 +110,7 @@ z.object({ cwd: z.string(), timeoutMs: z.number().default(12e4), … })
 - **默认零注解**。标签 = 字段 key 的机械美化（`maxOutputBytes` → `Max Output Bytes`），
   旁边小字标真 key（用户要对着 `settings.yaml` 手写时需要真名），副标题显示类型、
   默认值与约束。**所有 ns 的所有字段一视同仁地出现**，不做任何隐藏。
-- **注解表是可选的薄薄一层**，我们自己手写，住在 `dash-settings/swift/FieldNotes.swift`：
+- **注解表是可选的薄薄一层**，我们自己手写，住在 `clam-settings/swift/FieldNotes.swift`：
   `ns.path → {中文标题, 一句说明, 是否精选}`。**第一版基本留空**，用起来觉得哪个字段
   值得抬到「通用」页就补一条，写的时候可以参考上游各包的 `README.zh.md`
   （那是文档不是产物，读它不建立任何构建期依赖）。
@@ -120,9 +120,9 @@ z.object({ cwd: z.string(), timeoutMs: z.number().default(12e4), … })
 ## 3. 架构
 
 ```
-dsh 进程                                     dash 壳进程
+dsh 进程                                     surfclam 壳进程
 ┌────────────────────────────┐              ┌──────────────────────────┐
-│ dash-settings/lib/index.js │              │ dash-settings/swift/     │
+│ clam-settings/lib/index.js │              │ clam-settings/swift/     │
 │  ctx.settings ─┐           │   push       │  SettingsBridge          │
 │  ctx.llm ──────┼─→ 快照 ───┼─────────────→│   ↓ 快照                 │
 │  credentials ──┘           │              │  SettingsModel（领域态） │
@@ -146,8 +146,8 @@ dsh 进程                                     dash 壳进程
 
 | 服务 | 声明方式 | 缺席时 |
 |---|---|---|
-| `dashBridge` | 静态 `inject`（硬） | 插件不挂载 = 没有壳，本来也谈不上设置窗口 |
-| `settings` | 静态 `inject`（硬，**有意为之**） | 整个插件缺席 → `settingsOwner` 没被占 → ⌘, 回落 dash-layout 的页内 modal。这是设计好的降级路径 |
+| `clamBridge` | 静态 `inject`（硬） | 插件不挂载 = 没有壳，本来也谈不上设置窗口 |
+| `settings` | 静态 `inject`（硬，**有意为之**） | 整个插件缺席 → `settingsOwner` 没被占 → ⌘, 回落 clam-layout 的页内 modal。这是设计好的降级路径 |
 | `llm` / `credentials` | 运行时 `ctx.inject([...], cb)` 嵌套 | 只是「模型」那一页不出现，通用页与插件页照常可用 |
 
 上一版计划把 `llm` 也算进硬依赖，那会让"LLM 服务没起来"连带整扇窗口消失——不对。
@@ -208,10 +208,10 @@ dsh 进程                                     dash 壳进程
 
 每个里程碑都要能跑起来看，且失败时降级而不是崩。
 
-- **M0 接线**。建 `dash-settings/`，包名 `@wenbo/dash-settings`，**不声明 `dsh.bundle`**
-  （编排权在伞包）；往 `dash/cordis.patch.yml` 加一行 row，往 `dash/package.json` 的
-  dependencies 加一条——`dash/bin/dash.js` 的 link 列表是从 dependencies 推出来的，
-  **零代码改动**。同时补 `DashObjects.Key.settingsOwner` 与 dash-layout 的让位分支。
+- **M0 接线**。建 `clam-settings/`，包名 `@wenbo/clam-settings`，**不声明 `dsh.bundle`**
+  （编排权在伞包）；往 `surfclam/cordis.patch.yml` 加一行 row，往 `surfclam/package.json` 的
+  dependencies 加一条——`surfclam/bin/surfclam.js` 的 link 列表是从 dependencies 推出来的，
+  **零代码改动**。同时补 `ClamObjects.Key.settingsOwner` 与 clam-layout 的让位分支。
   Swift 半边先只是一扇空窗口。
   *判据*：`./dev` 起得来，⌘, 开出空的原生窗口，**主窗口里不再弹网页 modal**；
   把插件从编排表摘掉后 ⌘, 恢复弹 modal。
@@ -260,21 +260,23 @@ dsh 进程                                     dash 壳进程
 
 - `feat/dash-settings` 分支（`cb1654c` + `7ddc245`，WebView 版）**已决定丢弃**，
   不 rebase、不 cherry-pick。删远端分支要单独确认（外向操作）。
-- 工作树里**没有 `dash-settings/` 目录**，一切从 M0 从零建。
-- main 上与本计划相关的现成件：`DashEventBus.Topic.menuCommand` 已在发
-  `{"command": "openSettings"}`（`MainWindowController.swift:630`），dash-layout 已经
+- 工作树里**没有 `clam-settings/` 目录**，一切从 M0 从零建。
+- main 上与本计划相关的现成件：`ClamEventBus.Topic.menuCommand` 已在发
+  `{"command": "openSettings"}`（`MainWindowController.swift:630`），clam-layout 已经
   在接（`LayoutPlugin.swift:27`）——M0 要做的只是给它加一个"有主就让位"的判断。
-- `DashObjects.Key.settingsOwner` **尚不存在**，M0 新增。
+- `ClamObjects.Key.settingsOwner` **尚不存在**，M0 新增。
 - `DashSDK/DashWebKit.swift` 在死分支上，**不带过来**：新方案没有 WebView，
   上一版计划里那个"M5 决定 DashWebKit 去留"的悬案就此自动消解——从不引入。
+  （`feat/dash-settings` 这个分支名、以及它上面的 `Dash*` 文件名，都早于 2026-08
+  的更名，分支没跟着改，所以这里照实写；主线上对应的东西一律叫 `Clam*`。）
 
 ## 10. 执行日志
 
 ### M0 接线 —— 2026-08-26 完成
 
-`dash-settings/` 建起来了（`@wenbo/dash-settings`，无 `dsh.bundle`），伞包表加一行、
-伞包 dependencies 加一条，`dash/bin/dash.js` 一行未改；`DashObjects.Key.settingsOwner`
-落地，dash-layout 加了让位分支。判据两半都实测过：装上时 ⌘, 开原生窗口且主窗口无 modal，
+`clam-settings/` 建起来了（`@wenbo/clam-settings`，无 `dsh.bundle`），伞包表加一行、
+伞包 dependencies 加一条，`surfclam/bin/surfclam.js` 一行未改；`ClamObjects.Key.settingsOwner`
+落地，clam-layout 加了让位分支。判据两半都实测过：装上时 ⌘, 开原生窗口且主窗口无 modal，
 摘掉后重启 dsh，⌘, 弹出 dsh 自己的设置 modal。
 
 途中修掉两个**沉默失败**，都不在原计划里：
@@ -285,9 +287,9 @@ dsh 进程                                     dash 壳进程
    （不成环，且 handle 本就与本世代同生共死），并让它写一行日志，
    "让出"这件事从此可观测。
 
-2. **页内 modal 这条逃生舱本来就是死的**（与本计划无关的既有 bug，在 dash-layout）。
+2. **页内 modal 这条逃生舱本来就是死的**（与本计划无关的既有 bug，在 clam-layout）。
    dsh 把设置 modal 渲染在**侧边栏列内部**（`_sidebarCol > … > _settingsArea >
-   _overlay > _panel`），不是 portal 到 body；而 dash-layout 的原生侧边栏模式给
+   _overlay > _panel`），不是 portal 到 body；而 clam-layout 的原生侧边栏模式给
    `_sidebarCol` 上了 `visibility: hidden`，于是 modal 点得中、挂载成功、就是看不见，
    且不报任何错。§3.1 那张"缺席时塌到什么程度"的表原本是纸上谈兵——现在给 overlay
    补了一条 `visibility: visible` 例外（它是 `position: fixed`，不受 frame 平移影响），
@@ -308,9 +310,9 @@ node 半边 `describe({redactSecrets:true})` → 有序 JSON 往下推，单字�
    就只剩字母序。所以摊平成 `fields: [{key, ref}]` 数组必须在 node 半边做。
    **顺序是语义，别指望在无序容器里找回来。**
 
-2. **桥是单向的**：`invoke` 的返回值被 dash-bridge 丢弃（只在抛错时记一行日志）。
+2. **桥是单向的**：`invoke` 的返回值被 clam-bridge 丢弃（只在抛错时记一行日志）。
    请求/响应只能在本插件这层自己搭——每个 invoke 带 `id`，回执走 `ack` 频道按 id
-   配对。Swift 侧还得自带超时：`DashBridge.send` 在桥断开时是**静默丢弃**，
+   配对。Swift 侧还得自带超时：`ClamBridge.send` 在桥断开时是**静默丢弃**，
    不给回调也不报错，没有超时的话按钮会一直转。
 
 3. **`SchemaNode` 少一个 `indirect` 就编不过**，而且报错报在**持有它的那个 struct**
@@ -344,7 +346,7 @@ node 半边 `describe({redactSecrets:true})` → 有序 JSON 往下推，单字�
 
 ### M5 收尾与验证 —— 2026-08-26
 
-写了 `dash-settings/tools/probe.mjs`：当一个"壳"连上 `/dash/bridge`，不开窗口、
+写了 `clam-settings/tools/probe.mjs`：当一个"壳"连上 `/clam/bridge`，不开窗口、
 不碰屏幕，把数据面从头验一遍。**它是这一轮性价比最高的一件东西**——数据面全跑在
 dsh 进程里，跟 SwiftUI 没有半点关系，用截图验它等于让 21KB 的 JSON 通过一张 PNG
 汇报自己；而且屏幕锁着时截图与 AX 都用不了，数据面的活儿却一点没耽误。
@@ -396,7 +398,7 @@ Web 每个 ns 只露手挑的几个字段（`shell` 六个只露两个），这�
 「更多设置」折叠——**零遗漏（§2.2）优先于一致性**，看不见的字段等于不存在。
 
 **顺手挖出一个壳层的真 bug**（不在本计划范围，已记进 CLAUDE.md）：
-退休世代的 `DashPluginHandle` 常常不 deinit，四十多次换代只析构过三次。
+退休世代的 `ClamPluginHandle` 常常不 deinit，四十多次换代只析构过三次。
 注册撤销之所以一直没出事，是 registry 的 token 校验兜住了；**没有 token 兜底的窗口
 就会积累**——每改一次 Swift 多叠一扇设置窗口。改成把窗口存进 `host.objects`、
 新一代 activate 时主动收拾，不再依赖析构。
@@ -466,4 +468,4 @@ add plugin mutation controls"。那个「已启用/已停用」标签是编排�
    带 ✓ 的陈述，不是默认就是一个真能按的「设为默认」。
 
 四页都截图核过（`tools/shot.sh` + AX 量真实坐标，截图本身别拿来量尺寸）。
-踩到的五个 SwiftUI 坑记在 `dash-settings/README.md` 的「版式」一节。
+踩到的五个 SwiftUI 坑记在 `clam-settings/README.md` 的「版式」一节。

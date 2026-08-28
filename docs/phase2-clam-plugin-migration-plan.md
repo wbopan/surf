@@ -1,5 +1,10 @@
 # 阶段二计划:dash —— 壳最小化,一切皆插件,dsh 为先
 
+> **［已更名］** 本文是历史档案,记录 DSHarness → dash 迁移(阶段二)的计划与执行日志。
+> 正文里的 `dash` / `dash-*` / `Dash*` 一律是当时的名字,未作替换。项目已于 2026-08
+> 整体更名:App/项目 → **surfclam**(伞包 `@wenbo/surfclam`),内部插件 →
+> **`@wenbo/clam-*`**,Swift → **`Clam*`**(DashSDK→ClamSDK)。当前事实以根 CLAUDE.md 为准。
+
 > 本文档面向执行者(人或模型),假设对本仓库无前置了解。所有上游事实均已对照
 > harness `0.1.1-rc.2`(`~/Library/Application Support/io.wenbo.dsharness/harness/current`)
 > 的已安装源码实地验证(2026-08-25 两次调查);执行时如与源码冲突,以源码为准并更新本文档。

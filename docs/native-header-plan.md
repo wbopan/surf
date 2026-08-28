@@ -15,8 +15,8 @@
 
 | 调研里的说法 | 现在的事实 |
 |---|---|
-| §5「工具栏项目前是硬编码在 delegate 里的，没有槽的概念」 | **已有 `toolbar` 贡献槽**，约定写在 `dash-layout/swift/LayoutSplitController.swift` 的扩展注释里。自家"新建会话"已经降级成一条普通贡献 |
-| §6「`handleBridgeMessage` 是写死的类型白名单，因此需要壳改一次」 | **已去白名单**。未知 type 一律广播成 `dash.page.<type>`（`MainWindowController.swift:711` 附近的 `default:` 分支）。**本计划全程不需要改壳** |
+| §5「工具栏项目前是硬编码在 delegate 里的，没有槽的概念」 | **已有 `toolbar` 贡献槽**，约定写在 `clam-layout/swift/LayoutSplitController.swift` 的扩展注释里。自家"新建会话"已经降级成一条普通贡献 |
+| §6「`handleBridgeMessage` 是写死的类型白名单，因此需要壳改一次」 | **已去白名单**。未知 type 一律广播成 `clam.page.<type>`（`MainWindowController.swift:711` 附近的 `default:` 分支）。**本计划全程不需要改壳** |
 | §4「第三方占 `conversation.session.header` 拿不到同一个 chat store —— 推断，未实测，优先级最高」 | **已由源码证实，路线 A 出局**。证据见下一节 |
 
 调研第 1、2、3 节（DOM 锚点、四个子槽的 kind 与注册者、四类内容的 dsh 侧出处）
@@ -82,24 +82,24 @@ tabs.length > 1 && <div className={…tabs} role="tablist">
 
 ## 2. 架构决定
 
-### 2.1 新插件 `@wenbo/dash-header`，不塞进 dash-layout
+### 2.1 新插件 `@wenbo/clam-header`，不塞进 clam-layout
 
 三个半边都在一个包里：
 
 ```
-dash-header/
+clam-header/
   lib/index.js     node 半边（createSwiftPlugin；H1~H4 只是个空壳，留给 H5 的数据面）
-  lib/client.js    浏览器半边：tabs 投影（读）+ window.__dashHeader（写）+ 折叠 CSS
+  lib/client.js    浏览器半边：tabs 投影（读）+ window.__clamHeader（写）+ 折叠 CSS
   swift/           Swift 半身：@Observable model + NSSegmentedControl，贡献进 toolbar 槽
 ```
 
-理由和 dash-sidebar 一样：dash-layout 管的是"排版和开槽"，header 是**一位贡献者**。
-把它写进 dash-layout 等于把刚建立的贡献槽规矩自己破了一次。
+理由和 clam-sidebar 一样：clam-layout 管的是"排版和开槽"，header 是**一位贡献者**。
+把它写进 clam-layout 等于把刚建立的贡献槽规矩自己破了一次。
 
-**协议两端同包**：client 半边装 `window.__dashHeader`，Swift 半身自己
-`evaluateJavaScript` 调它。**不扩 `DashConversationSurface`**——那是 dash-layout 的
-协议，加一个 `setConversationView` 会让 dash-layout 认识 header，白白多一条跨包耦合。
-WKWebView 从保管箱取（`DashObjects.Key.webView`，public，LayoutPlugin 就是这么拿的）。
+**协议两端同包**：client 半边装 `window.__clamHeader`，Swift 半身自己
+`evaluateJavaScript` 调它。**不扩 `ClamConversationSurface`**——那是 clam-layout 的
+协议，加一个 `setConversationView` 会让 clam-layout 认识 header，白白多一条跨包耦合。
+WKWebView 从保管箱取（`ClamObjects.Key.webView`，public，LayoutPlugin 就是这么拿的）。
 
 ### 2.2 `toolbar` 贡献槽要开两维
 
@@ -135,7 +135,7 @@ Chat + Trajectory 两个）。
 
 ### H1 · `toolbar` 槽开出 `region` / `sizing` 两维
 
-只改 `dash-layout/swift/LayoutSplitController.swift`：
+只改 `clam-layout/swift/LayoutSplitController.swift`：
 
 - `toolbarDefaultItemIdentifiers` 按 region 分两段拼：
   `[.flexibleSpace] + sidebar段 + [.toggleSidebar, .sidebarTrackingSeparator] + content段`。
@@ -146,11 +146,11 @@ Chat + Trajectory 两个）。
 验收：拿现有的"新建会话"贡献临时改成 `region: "content"`，截图确认它跳到了分隔线
 右边，再改回来。纯 Swift 改动，存盘 1~3s 热替换，不重启任何东西。
 
-### H2 · dash-header 骨架 + tabs 投影（只读，web header 原样留着）
+### H2 · clam-header 骨架 + tabs 投影（只读，web header 原样留着）
 
-新包落地，编排表 `dash/cordis.patch.yml` 加一行（**改编排要重启 dsh**）。
+新包落地，编排表 `surfclam/cordis.patch.yml` 加一行（**改编排要重启 dsh**）。
 
-client 半边：门控沿用 dash-layout 那套（UA 含 `Dash/` + `?dash-native-sidebar=1`），
+client 半边：门控沿用 clam-layout 那套（UA 含 `Clam/` + `?clam-native-sidebar=1`），
 常驻巡检 + MutationObserver 盯 `[data-slot="conversation.session.header"]`
 （**实施时更正**：不是调研文档说的 `[data-phase] > header`，见 §6.1），投影
 
@@ -158,22 +158,22 @@ client 半边：门控沿用 dash-layout 那套（UA 含 `Dash/` + `?dash-native
 { type: "headerTabs", tabs: ["Chat", "Trajectory"], active: 1, present: true, canExport: true }
 ```
 
-经 `window.webkit.messageHandlers.dash.postMessage` 上去，壳按去白名单后的通道广播成
-`dash.page.headerTabs`。**observer 必须常驻并每轮比对节点身份**——理由与
-dash-layout 的 `forceSidebarCollapsed` 一模一样：React 会把 header 整个换成新节点，
+经 `window.webkit.messageHandlers.clam.postMessage` 上去，壳按去白名单后的通道广播成
+`clam.page.headerTabs`。**observer 必须常驻并每轮比对节点身份**——理由与
+clam-layout 的 `forceSidebarCollapsed` 一模一样：React 会把 header 整个换成新节点，
 绑死旧节点的 observer 会永久失效（CLAUDE.md「踩坑记录」有这条）。
 
 Swift 半身：`@Observable` 的 model 收事件，`NSSegmentedControl`（或 SwiftUI
 `Picker(.segmented)`）贡献进 `toolbar` 槽的 `content` 区、`sizing: "dynamic"`。
 **选中态必须由 model 驱动，不能靠 metadata 变化**——metadata 一变就重建整条工具栏，
-切个 tab 不该有那么大动静。这与 dash-sidebar 的 `AppSidebarModel` 是同一个模式。
+切个 tab 不该有那么大动静。这与 clam-sidebar 的 `AppSidebarModel` 是同一个模式。
 
 验收：web header 和原生段控并排出现，切 tab / 切会话 / 开子代理，两边始终一致。
 **这是全计划的关键验证点**，两边并存正是为了能直接对照。
 
 ### H3 · tabs 驱动（写）
 
-client 半边加 `window.__dashHeader.setView(index)`：按下标取
+client 半边加 `window.__clamHeader.setView(index)`：按下标取
 `document.querySelectorAll('[role="tab"]')[index]`，`el.click()`。
 Swift 段控的 action → `evaluateJavaScript`。
 
@@ -185,13 +185,13 @@ Swift 段控的 action → `evaluateJavaScript`。
 ### H4 · 只折叠 tabs 那一行
 
 ```css
-html[data-dash-header-scope="tabs"] [data-slot="conversation.session.header"] [role="tablist"] {
+html[data-clam-header-scope="tabs"] [data-slot="conversation.session.header"] [role="tablist"] {
   height: 0; overflow: hidden; opacity: 0; pointer-events: none;
 }
 ```
 
 **实施时的两处偏差**：锚点换成了 `[data-slot=...]`（§6.1）；开关从一个布尔属性变成了
-`data-dash-header-scope` 这个**两级**枚举（`"tabs"` 只折 tabs 行 / `"full"` 连 titleRow
+`data-clam-header-scope` 这个**两级**枚举（`"tabs"` 只折 tabs 行 / `"full"` 连 titleRow
 一起折），因为 H5 落地后面包屑与 mode 也搬进了工具栏，`"tabs"` 这一级就只剩降级形态了。
 两级共用同一套自愈与 token 逻辑。
 
@@ -199,7 +199,7 @@ html[data-dash-header-scope="tabs"] [data-slot="conversation.session.header"] [r
 页面里，于是 lineage / actions / utilities 三个子槽的内容一条都不丢，jobs 那种带浮层的
 控件也不受影响（调研 §7 明确列了"带浮层的控件不要走 DOM 驱动"）。省下的 ~28px 是纯赚。
 
-**自愈**：`data-dash-native-header` 属性只在 client 半边真的找到了 tablist、
+**自愈**：`data-clam-native-header` 属性只在 client 半边真的找到了 tablist、
 **并且**收到过原生侧的确认之后才加。dsh 升级改了 DOM 就退回今天的样子，
 而不是标题栏和页面各画一半。属性值写实例 token，cleanup 只收 token 对得上的
 （HMR 的「新实例先启、旧实例后清」，CLAUDE.md 有这条）。
@@ -214,11 +214,11 @@ html[data-dash-header-scope="tabs"] [data-slot="conversation.session.header"] [r
 
 四项在 dsh 侧都有一等契约（调研 §3 记了出处：`agentPreset.list/.select` 是 RPC，
 jobs 在 mux 事件帧里，导出是 `/api/session.export`，面包屑在会话摘要里），
-**但"经由哪一层拿"取决于那条正在评估的线**。dash-sidebar 的 node 半边
-（`lib/dsh-source.js` 订 `ctx.apiProxy`）已经是现成样板，dash-header 的
+**但"经由哪一层拿"取决于那条正在评估的线**。clam-sidebar 的 node 半边
+（`lib/dsh-source.js` 订 `ctx.apiProxy`）已经是现成样板，clam-header 的
 `lib/index.js` 照抄即可。
 
-做这一步才需要折叠整条 header（`data-dash-header-scope="full"`）。
+做这一步才需要折叠整条 header（`data-clam-header-scope="full"`）。
 **jobs 原生重画、不要去点隐藏按钮**——它是 popover，锚到零尺寸元素上位置会错。
 
 ~~WebView 顶部接 `window.contentLayoutGuide`~~ —— **不做，见 §6.5**。内容从工具栏
@@ -234,16 +234,16 @@ jobs 在 mux 事件帧里，导出是 `/api/session.export`，面包屑在会话
 | dsh 升级改了 `[role="tab"]` 结构 | 找不到就不加属性，退回 web header（H4 的自愈） |
 | 工具栏一行塞不下（有侧边栏时内容侧很窄） | H4 先只放段控，H5 再评估；窗口 `minSize` 已经是 432 |
 | 段控宽度随 tab 文本跳动 | H1 的 `sizing: "dynamic"`；如仍跳，退回固定宽度 |
-| 热替换后段控丢选中态 | model 在 activate 时主动向 client 要一次投影（dash-sidebar 的 `snapshot` 动作同款：**不给新世代补发，由请求方自己要**） |
+| 热替换后段控丢选中态 | model 在 activate 时主动向 client 要一次投影（clam-sidebar 的 `snapshot` 动作同款：**不给新世代补发，由请求方自己要**） |
 | 两个 worktree 的 App 并存 | 与本计划无关，`NSUserDefaults` 那点共享是已知无害项 |
 
 ## 5. 明确不做
 
-- **不改壳。** 页内桥已经通用转发，工具栏归 dash-layout，没有一处需要动
-  `dash-app/host/`。
+- **不改壳。** 页内桥已经通用转发，工具栏归 clam-layout，没有一处需要动
+  `clam-app/host/`。
 - **不占 `conversation.session.header` 槽**（路线 A，§1 已出局）。
 - **不动 `conversation.view` 槽**：往里加 view 是"多一个 tab"，不是"接管 tabs"。
-- **不碰 dash-nativeify**：它零服务依赖、要抢首帧，header 折叠是有条件的，
+- **不碰 clam-nativeify**：它零服务依赖、要抢首帧，header 折叠是有条件的，
   两件事不该混。
 
 ---
@@ -290,23 +290,23 @@ mode 那格一开始只显示图标不显示文字。原因是 macOS 把 `Menu {
 
 ### 6.5 不给内容加 top inset —— 内容就该从工具栏底下穿过
 
-曾经做了一版 `dash.layout.contentTopInset` 事件 + 可调的 `webTopConstraint`，
+曾经做了一版 `clam.layout.contentTopInset` 事件 + 可调的 `webTopConstraint`，
 让 WebView 内容避开标题栏。**已整体回退。** 从工具栏底下穿过（配合 Liquid Glass
 的模糊）正是 macOS 26 想要的样子，避让反而显得笨。
 
 顶端第一行被切的问题由 client 半边一条 CSS 解决：
 
 ```css
-[data-conversation-scroll] { padding-top: var(--dash-header-inset); }
+[data-conversation-scroll] { padding-top: var(--clam-header-inset); }
 ```
 
 只影响滚到最顶时的起始位置，滚动中照样穿过（Safari、Xcode 都是这个行为）。
-**壳与 dash-layout 因此一行都不用为 header 改**——H1 那两维是通用能力，不是
+**壳与 clam-layout 因此一行都不用为 header 改**——H1 那两维是通用能力，不是
 为 header 开的后门。
 
-### 6.6 与 dash-sidebar 的重复 I/O：靠 `isWatched()` 收窄
+### 6.6 与 clam-sidebar 的重复 I/O：靠 `isWatched()` 收窄
 
-两家都得调 `session.list`（上游没有单会话 RPC）。dash-header 的
+两家都得调 `session.list`（上游没有单会话 RPC）。clam-header 的
 `lib/dsh-source.js` 把 `session/event` 过滤到**焦点会话及其祖先**——面包屑只需要
 这条链，别的会话变动一律不触发重取。600ms 去抖再兜一层。
 
@@ -317,13 +317,13 @@ mode 那格一开始只显示图标不显示文字。原因是 macOS 把 `Menu {
 
 ### 6.8 别的 worktree 的壳会串进来
 
-发现文件是"扫目录取候选"，所以另一个 worktree 里跑着的 `dash Dev` 会连上本
-worktree 的 dsh，然后拿它自己那份 DashSDK 去编译本仓库的 Swift 源码。
-症状是终端刷出一串对不上号的 `编译失败：dash-layout @ <陌生 hash>`，而本地
+发现文件是"扫目录取候选"，所以另一个 worktree 里跑着的 `Surfclam Dev` 会连上本
+worktree 的 dsh，然后拿它自己那份 ClamSDK 去编译本仓库的 Swift 源码。
+症状是终端刷出一串对不上号的 `编译失败：clam-layout @ <陌生 hash>`，而本地
 `git diff` 干干净净。**判据是 hash**：自己那套的 hash 会同时出现在
-`~/Library/Application Support/io.wenbo.dash/native-plugins/generations/<Module>/`
+`~/Library/Application Support/io.wenbo.surfclam/native-plugins/generations/<Module>/`
 底下，陌生 hash 不会（那次编译的临时目录失败后就清了）。
-`pgrep -af "dash Dev.app/Contents/MacOS"` 数一下有几个实例即可确认。
+`pgrep -af "Surfclam Dev.app/Contents/MacOS"` 数一下有几个实例即可确认。
 
 ### 6.9 漏掉的那一条：`lineage` 槽（已补，见单独文档）
 
@@ -343,7 +343,7 @@ everything"**，node 半边一次就能拿到整棵树，所以原生这版不�
 
 ### 6.10 落地清单
 
-新包 `@wenbo/dash-header`（第六个插件），三个半边：
+新包 `@wenbo/clam-header`（第六个插件），三个半边：
 
 | 文件 | 职责 |
 |---|---|
@@ -361,9 +361,9 @@ everything"**，node 半边一次就能拿到整棵树，所以原生这版不�
 dsh 不知道），session / preset / jobs 的真相在 dsh 进程里。判据永远是"这个事实的
 真相住在哪个进程"，不是"哪条通道更方便"。
 
-**退场自愈**：插件退休时 `DashDisposable { model.dismissNative() }` 撤掉折叠属性，
+**退场自愈**：插件退休时 `ClamDisposable { model.dismissNative() }` 撤掉折叠属性，
 web header 原样回来。带世代闸（`generation` 单调递增），防止旧世代的清理砍掉
-新世代刚装好的那一份——与 dash-layout 的 `makeToken` 是同一个坑。
+新世代刚装好的那一份——与 clam-layout 的 `makeToken` 是同一个坑。
 
 ---
 
@@ -375,7 +375,7 @@ web header 原样回来。带世代闸（`generation` 单调递增），防止�
 ### 7.1 槽约定新增两个键
 
 `toolbar` 贡献槽的 metadata 加了 `align` 与 `spaced`（约定文档在
-`dash-layout/swift/LayoutSplitController.swift` 的槽约定注释里，那份注释是
+`clam-layout/swift/LayoutSplitController.swift` 的槽约定注释里，那份注释是
 这个槽唯一的文档）：
 
 | 键 | 值 | 作用 |
@@ -383,7 +383,7 @@ web header 原样回来。带世代闸（`generation` 单调递增），防止�
 | `align` | `"leading"`（缺省）/ `"trailing"` | 内容区里靠哪一边。两组之间夹一个 `.flexibleSpace` |
 | `spaced` | `Bool`（缺省 false） | 该项之前插一个 `.space`。**空隙就是 AppKit 的分组语法**——macOS 26 把相邻的工具栏项合成一枚玻璃胶囊，断开才另起一枚 |
 
-dash-header 五格因此排成 `[标识] ······ [Chat|Trajectory] [模式] [任务 导出]`：
+clam-header 五格因此排成 `[标识] ······ [Chat|Trajectory] [模式] [任务 导出]`：
 任务与导出相邻不断，合成一枚（Mail 对 archive/trash/flag 就是这么做的）。
 
 `toolbar.autosavesConfiguration = true` 一并补上——`allowsDisplayModeCustomization`
@@ -409,11 +409,11 @@ AppKit 无从观察，那条带子于是什么都不画。
 - 反过来，**工具栏项自己那枚胶囊是真玻璃**——条纹在它背后糊成一片红蓝。
   所以"原生控件有玻璃"和"底板有玻璃"是两件事，前者白送，后者没有。
 
-结论：底板补在**页面这一侧**（`dash-header/lib/client.js` 的 `installStyle`，
+结论：底板补在**页面这一侧**（`clam-header/lib/client.js` 的 `installStyle`，
 `[data-conversation-scroll]::before`，`position: fixed` + `backdrop-filter`
 + 底边 `mask-image` 软收）。这不是将就——`backdrop-filter` 与正文同处一个渲染
 上下文，糊的就是真内容，比任何跨进程材质都准。底色走 `--dsw-alias-bg-base`，
-深浅色自动切换。高度复用已有的 `--dash-header-inset`，与那条 `padding-top`
+深浅色自动切换。高度复用已有的 `--clam-header-inset`，与那条 `padding-top`
 同生同灭。
 
 ### 7.3 一个会让整项凭空消失的坑
@@ -454,17 +454,17 @@ Chat 用 `text.bubble`，Trajectory 用 `list.bullet.indent`——后者不是�
 选中态、显隐是**流量**，一秒能变好几次。混在一起的后果是每次投影到来都把工具栏
 拆了重装（按钮闪、popover 掉）。
 
-所以加了一条活通道 `dash.toolbar.update`：`{owner, id, ...patch}`，消费方把 patch
+所以加了一条活通道 `clam.toolbar.update`：`{owner, id, ...patch}`，消费方把 patch
 记进 `ToolbarItemState` **并**就地改活着的那一项。记账不能省——项会因换代 / 溢出
 进出而重造，那时得把状态补回去。只有 `items`（段控分段）会触发那一项重建，
 因为 images/labels 是构造时给的。
 
-回来的动作同样走总线：`dash.toolbar.activate`（`group` 额外带 `index`/`itemId`）、
-`dash.toolbar.menuSelect`。原生项拿不到闭包（target/action 必须 `@objc`，
+回来的动作同样走总线：`clam.toolbar.activate`（`group` 额外带 `index`/`itemId`）、
+`clam.toolbar.menuSelect`。原生项拿不到闭包（target/action 必须 `@objc`，
 闭包跨不了世代），字符串主题名反而天然扛热替换。
 
 **实测过的一条完整链路**（`NSMenu.performActionForItem(at:)` 让 AppKit 自己派发）：
-菜单第 2 项 → `selectToolbarMenuItem` → `dash.toolbar.menuSelect(itemId: "code")`
+菜单第 2 项 → `selectToolbarMenuItem` → `clam.toolbar.menuSelect(itemId: "code")`
 → header 的订阅 → `model.selectPreset` → 桥 → node → dsh 回
 `has already started; its agent preset is fixed`。**被拒是对的**——那个会话跑过
 turn 了，能看见这句就说明写通道整条都通。
@@ -472,16 +472,16 @@ turn 了，能看见这句就说明写通道整条都通。
 ### 7.6 顶部留白跟着显示模式走
 
 Icon and Text 会把工具栏撑高（52pt → 66pt），正文的顶部留白得跟着变。所以
-`titlebarInset` 不再是装配时量一次的常量：dash-layout 在 `viewDidLayout`
+`titlebarInset` 不再是装配时量一次的常量：clam-layout 在 `viewDidLayout`
 （以及 `displayMode` 的 KVO）里量 `contentLayoutGuide`，变了就广播
-`dash.layout.titlebarMetrics`。
+`clam.layout.titlebarMetrics`。
 
 **盯 `viewDidLayout` 而不是只盯 KVO**：厚度真正变的时刻是布局落定之后，
 KVO 响时窗口还没重排、量到的是旧值；而显示模式、窗口缩放、全屏切换、工具栏
 显隐——凡是会改厚度的最终都会走到 `viewDidLayout`。两条一起兜。
 
-配套加了 `dash.layout.requestTitlebarMetrics`：厚度只在**变化**时才广播，而
-dash-header 多半是在 layout 广播完之后才上线的，不问就永远等不到
+配套加了 `clam.layout.requestTitlebarMetrics`：厚度只在**变化**时才广播，而
+clam-header 多半是在 layout 广播完之后才上线的，不问就永远等不到
 （与"node 半边不给新世代补发投影"是同一条纪律——补发归请求方）。
 
 ### 7.7 三条新的硬事实

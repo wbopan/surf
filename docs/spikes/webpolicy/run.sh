@@ -3,13 +3,13 @@
 # （example.com，无害）——这正是被验证的行为本身。
 set -euo pipefail
 cd "$(dirname "$0")"
-HOST=../../../dash-app/host
+HOST=../../../clam-app/host
 OUT=$(mktemp -d)/webpolicy-harness
 swiftc -o "$OUT" \
   "$HOST/Sources/Native/WebPolicy.swift" \
   "$HOST/Sources/ShellToast.swift" \
-  "$HOST/Sources/DashEndpoint.swift" \
-  "$HOST/Sources/DashPaths.swift" \
+  "$HOST/Sources/ClamEndpoint.swift" \
+  "$HOST/Sources/ClamPaths.swift" \
   "$HOST/Sources/Support/Log.swift" \
   "$HOST/Sources/AppInfo.swift" \
   main.swift

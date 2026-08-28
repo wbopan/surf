@@ -1,6 +1,6 @@
 import SwiftUI
 import WebKit
-import DashSDK
+import ClamSDK
 
 // 世代号由编译期 -D 给：同一份源码编出 g1/g2 两代（计划 §6.1 的 module-alias 方案，
 // 这里用不同 module-name + 同一源码来模拟"改了源码重编一代"）。
@@ -10,7 +10,7 @@ let generation = 2
 let generation = 1
 #endif
 
-/// 插件自定义协议——**不进 SDK**（模拟 dash-layout 的 DashSidebarProvider）。
+/// 插件自定义协议——**不进 SDK**（模拟 clam-layout 的 ClamSidebarProvider）。
 /// 每一代 module 各有一份同名类型，用来验证断言 4：两代类型隔离的失败形态。
 public protocol AlphaFeature: AnyObject {
     func featureName() -> String
@@ -56,11 +56,11 @@ struct AlphaView: View {
 
 /// activate 返回的 handle：壳持有 = 该世代在役，壳释放 = 退休。
 /// deinit 经 host.note 报回宿主，验证 ARC 真的回收（断言 3）。
-final class AlphaHandle: DashOpaqueHandle, AlphaFeature {
+final class AlphaHandle: ClamOpaqueHandle, AlphaFeature {
     let gen: Int
-    weak var host: DashHost?
+    weak var host: ClamHost?
     let model = AlphaModel()
-    init(gen: Int, host: DashHost) { self.gen = gen; self.host = host }
+    init(gen: Int, host: ClamHost) { self.gen = gen; self.host = host }
     func poke() { model.tick += 1 }
     var identity: String { "alpha-handle-g\(gen)" }
     func ping() -> String { "pong from alpha g\(gen)" }
@@ -68,8 +68,8 @@ final class AlphaHandle: DashOpaqueHandle, AlphaFeature {
     deinit { host?.note("DEINIT alpha handle g\(gen)") }
 }
 
-final class AlphaPlugin: DashPlugin {
-    func activate(host: DashHost) -> AnyObject? {
+final class AlphaPlugin: ClamPlugin {
+    func activate(host: ClamHost) -> AnyObject? {
         let handle = AlphaHandle(gen: generation, host: host)
         let webView = host.object("shell.webview") as? WKWebView
         host.register(slot: "main", version: generation) { [model = handle.model] in
@@ -79,10 +79,10 @@ final class AlphaPlugin: DashPlugin {
 
         if generation != 1, let prevAny = host.object("alpha.handle.g1") {
             // 断言 5：经 SDK existential（世代无关词汇）跨代调用上一代的对象。
-            if let prev = prevAny as? DashOpaqueHandle {
+            if let prev = prevAny as? ClamOpaqueHandle {
                 host.note("A5 sdk-existential-cross-gen: \(prev.ping())")
             } else {
-                host.note("A5 FAIL: 上一代对象 as? DashOpaqueHandle 失败")
+                host.note("A5 FAIL: 上一代对象 as? ClamOpaqueHandle 失败")
             }
             // 断言 4：拿上一代对象 as? **本代**的 AlphaFeature（同名、不同 module）。
             // 期望 nil（干净失败），而不是崩溃或错误命中。
@@ -95,8 +95,8 @@ final class AlphaPlugin: DashPlugin {
     deinit { /* 世代退休 */ }
 }
 
-/// ABI 入口（计划 §4.1）：返回 DashPlugin 实现的不透明指针。
-@_cdecl("dash_plugin_entry")
-public func dash_plugin_entry() -> UnsafeMutableRawPointer {
+/// ABI 入口（计划 §4.1）：返回 ClamPlugin 实现的不透明指针。
+@_cdecl("clam_plugin_entry")
+public func clam_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(AlphaPlugin()).toOpaque()
 }

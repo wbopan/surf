@@ -1,23 +1,23 @@
-# dash-notify —— 可交互桌面通知（权威计划）
+# clam-notify —— 可交互桌面通知（权威计划）
 
 > 状态：**规划中**，一行代码都还没写。动手前先读 §1（上游机制事实）与 §9（探针）。
 > 探针 P1/P2 任一不过，整条线的形态要改，别先写业务。
 
 ## 0. 一句话
 
-一个新插件 `dash-notify`：把 dsh 里「需要人」的四件事（待批准、待回答、回合结束、
+一个新插件 `clam-notify`：把 dsh 里「需要人」的四件事（待批准、待回答、回合结束、
 出错）变成 **macOS 原生通知**——点一下跳到那个会话，通知上的按钮**直接把它办了**，
 人在 app 里看到之后通知自己消失，Dock 图标上有角标。
 
 **（v2 修订）铃铛砍了。** 「app 内通知中心」这个角色由侧边栏那枚胶囊接管：
 「待批准」扩成「待处理」，列的是所有需要人看一眼的会话——待批准、待回答、出错、
 跑完了。工具栏上因此少一颗按钮，而这些事本来就长在会话上，回到会话列表里才对。
-待办表照旧只有一份（在 dash-notify 的 node 半边），经 `dashPending` 服务供出去。
+待办表照旧只有一份（在 clam-notify 的 node 半边），经 `clamPending` 服务供出去。
 
 ## 0.1 与被放弃的那条线是什么关系
 
 M7（`EventsBridge.swift`，235 行）2026-08-25 整件删除，理由三条
-（`phase2-dash-plugin-migration-plan.md` §7.3）。**本计划逐条正面消掉它们，
+（`phase2-clam-plugin-migration-plan.md` §7.3）。**本计划逐条正面消掉它们，
 而不是把同一份东西换个地方存**：
 
 | 当年的病 | 这次怎么治 |
@@ -29,7 +29,7 @@ M7（`EventsBridge.swift`，235 行）2026-08-25 整件删除，理由三条
 
 ## 0.5 不变量
 
-1. **壳里零通知代码。** `dash-app/host/` 一行都不加，`DashSDK` 一个声明都不加
+1. **壳里零通知代码。** `clam-app/host/` 一行都不加，`ClamSDK` 一个声明都不加
    （前提是 §9 的 P2 过；不过的话看 §9 的 Plan B——那时加的也必须是**通用机制**，
    不是通知 API）。
 2. **node 管「发生了什么」，Swift 管「要不要打扰」。** 分界线是：需要 dsh 的
@@ -37,7 +37,7 @@ M7（`EventsBridge.swift`，235 行）2026-08-25 整件删除，理由三条
 3. **不新开 WebSocket。** 事件源是进程内的 `ctx.apiProxy.events.mux()`，
    零网络（当年 `EventsBridge` 自己连了两条 WS，那是壳还没有 node 半边的年代）。
 4. **不抢 web UI 的答。** 我们只是「多开的一个客户端」，先到先得由上游仲裁（§1.2）。
-5. 桥上只有全量 snapshot，没有增量帧（与 dash-sidebar 同纪律）。
+5. 桥上只有全量 snapshot，没有增量帧（与 clam-sidebar 同纪律）。
 
 ---
 
@@ -70,7 +70,7 @@ pending 的 `question/requested` 与 `approval/requested`，rpcId 逐字复用**
 
 host 流（`events.host()`）另给 `host/session-status(running)` 与
 `host/agent-error(message)`。**但我们不订它**——node 侧有等价的 cordis 事件
-`agent/status`（在 `dsh-agent`，不在 `dsh-session`；dash-sidebar 已在用），
+`agent/status`（在 `dsh-agent`，不在 `dsh-session`；clam-sidebar 已在用），
 更省一条流。`host/agent-error` 没有 cordis 等价物，这一条**需要订 host 流**
 （或者退而求其次只报 `turn/end` 后的失败态，第一版先订 host 流，简单）。
 
@@ -108,12 +108,12 @@ multiSelect?, intent? }`。`intent` 目前只有一种：
 
 ### 1.4 顺带能收的一笔账
 
-`dash-sidebar/lib/dsh-source.js:259` 写着：侧边栏的 `pendingQuestion`（紫点）没做，
+`clam-sidebar/lib/dsh-source.js:259` 写着：侧边栏的 `pendingQuestion`（紫点）没做，
 因为 `ask_user_question` 在 node 侧既不发 cordis 事件也不落 session log，唯一的观察位
 `userQuestions.registerProvider` 是**独占**的（apiproxy 占着），抢过来等于把 web UI 的
 问答面板掐了；正路是订 mux，代价是要养一条帧流。
 
-**dash-notify 正好养了这条流。** 所以它可以顺手把 pendingQuestion 供出去
+**clam-notify 正好养了这条流。** 所以它可以顺手把 pendingQuestion 供出去
 （§8.3），侧边栏那颗紫点是白捡的。
 
 ---
@@ -123,7 +123,7 @@ multiSelect?, intent? }`。`intent` 目前只有一种：
 ```
 dsh 进程                                     app 进程（壳）
 ┌─────────────────────────────────────┐      ┌────────────────────────────────┐
-│ dash-notify/lib/                    │      │ dash-notify/swift/             │
+│ clam-notify/lib/                    │      │ clam-notify/swift/             │
 │  mux-source.js  订 mux + host 流    │ push │  NotifyPlugin   通知的发与撤    │
 │  inbox.js       待办模型（进程内）   │─────▶│  Presenter      前台策略        │
 │  index.js       桥协议 + 设置 ns     │◀─────│  BellButton     工具栏铃铛      │
@@ -131,7 +131,7 @@ dsh 进程                                     app 进程（壳）
 └─────────────────────────────────────┘      └────────────────────────────────┘
 ```
 
-**为什么数据面在 node**：与 dash-sidebar 同一条理由——壳与共享 module 随 app bundle
+**为什么数据面在 node**：与 clam-sidebar 同一条理由——壳与共享 module 随 app bundle
 冻结、用户改不了，而 wire 模型是随 dsh 版本演进最快的那层。而且 `respond()` 只有
 node 侧摸得到。
 
@@ -183,7 +183,7 @@ node 侧摸得到。
 | `act` | `{id, actionId, text?}` | 翻译成 `respond()`；失败推 `error` |
 | `dismiss` | `{id}` | 从待办里划掉（只影响铃铛的未读，不回答 dsh） |
 | `dismissAll` | `{}` | 同上，批量 |
-| `reveal` | `{id}` | 只是打点/标记已读；跳转由 Swift 自己走 `DashConversationSurface` |
+| `reveal` | `{id}` | 只是打点/标记已读；跳转由 Swift 自己走 `ClamConversationSurface` |
 
 **`act` 的翻译表（node 侧，唯一知道 wire 的地方）：**
 
@@ -213,11 +213,11 @@ node 侧摸得到。
 
 **上一进程留下的通知**：app 被 ⌘Q 之后系统通知中心里那些卡片还在，而它们指向的
 待办多半已经过期。插件 activate 时**先把自己名下所有已投递通知撤干净**
-（`getDeliveredNotifications` → 按 `dash.<instanceTag>.` 前缀过滤 → `remove`），
+（`getDeliveredNotifications` → 按 `surfclam.<instanceTag>.` 前缀过滤 → `remove`），
 再按当前 inbox 重新发。这样「点开一条上辈子的通知」最差也只是把 app 打开，
 不会跳到一个已经不存在的地方。
 
-**instanceTag**：identifier 一律带 `DashPaths.instanceTag`（多 worktree 那一套已有的
+**instanceTag**：identifier 一律带 `ClamPaths.instanceTag`（多 worktree 那一套已有的
 分片键）。Dev 与 Release 的 bundle id 不同、天然分开；但同 bundle id 的两个 Dev 实例
 会互相覆盖同名通知，前缀解决它。
 
@@ -252,7 +252,7 @@ node 侧摸得到。
 ### 5.3 点击（不是按钮）
 
 `didReceive response` 里 `actionIdentifier == UNNotificationDefaultActionIdentifier`：
-激活 app、前置窗口、`DashConversationSurface.selectSession(id:)` 跳到那个会话。
+激活 app、前置窗口、`ClamConversationSurface.selectSession(id:)` 跳到那个会话。
 `userInfo` 里带 `sessionId`（**只带 JSON 能表达的值**）。
 
 ### 5.4 授权与「专注模式」
@@ -281,8 +281,8 @@ Swift 侧对每条 inbox item 求一次值。输入只有四个，全部是 app 
 
 - `A` = `NSApp.isActive`
 - `K` = 主窗口是 key 且 `occlusionState.contains(.visible)`
-- `S` = 最后已知的当前会话 id（`DashEventBus.Topic.pageCurrentSession`，
-  每代把最新值存进 `DashObjects`，跨世代不丢）
+- `S` = 最后已知的当前会话 id（`ClamEventBus.Topic.pageCurrentSession`，
+  每代把最新值存进 `ClamObjects`，跨世代不丢）
 - `T` = 该条待办的 sessionId
 
 | 情况 | approval / question | done / error |
@@ -315,7 +315,7 @@ Swift 侧对每条 inbox item 求一次值。输入只有四个，全部是 app 
 > 下面这一节留着记录当时的判断与那条 `NSMenuToolbarItem` 的结论（对将来往工具栏
 > 投贡献的人仍然有用），**但代码已经删干净了**。接替它的是侧边栏的「待处理」胶囊。
 
-照 dash-sidebar 那颗「筛选」的写法贡献一格：
+照 clam-sidebar 那颗「筛选」的写法贡献一格：
 
 ```swift
 host.contribute(to: LayoutToolbar.slot, id: "bell", order: -50, metadata: [
@@ -328,7 +328,7 @@ host.contribute(to: LayoutToolbar.slot, id: "bell", order: -50, metadata: [
 但点是灰的）；(b) 走兜底的托管 SwiftUI 路线自绘，代价是丢掉玻璃按钮的质感与按压态。
 **先用 (a)**，数目靠 Dock 角标表达。
 
-**popover**：贡献槽递不出锚点视图（dash-sidebar 那次就是因此把 popover 改成菜单）。
+**popover**：贡献槽递不出锚点视图（clam-sidebar 那次就是因此把 popover 改成菜单）。
 
 **实做的结论：不要 popover，走 `menu` 路线**（`NSMenuToolbarItem`，与「筛选」同一条
 路子）。理由是"菜单表达不了带按钮的列表"这个前提**不成立**：一行一个子菜单，
@@ -348,11 +348,11 @@ host.contribute(to: LayoutToolbar.slot, id: "bell", order: -50, metadata: [
 
 ## 8. 设置
 
-### 8.1 命名空间 `dash-notify`
+### 8.1 命名空间 `clam-notify`
 
-照 `dash-nativeify/lib/index.js` 的做法：**运行时嵌套 `ctx.inject(["settings"])`**，
+照 `clam-nativeify/lib/index.js` 的做法：**运行时嵌套 `ctx.inject(["settings"])`**，
 不是静态 inject——settings 缺席时插件照常工作（退到默认值），而不是整个通知线消失。
-注册一次就同时点亮两个界面（dash-settings 的原生窗口 + dsh 页内设置对话框）。
+注册一次就同时点亮两个界面（clam-settings 的原生窗口 + dsh 页内设置对话框）。
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -375,8 +375,8 @@ host.contribute(to: LayoutToolbar.slot, id: "bell", order: -50, metadata: [
 
 ### 8.3 供出去的一笔（可选，M4）
 
-`ctx.provide("dashNotify", { onPending(listener) })`，把 pendingApproval /
-pendingQuestion 的会话集合供出去；dash-sidebar 用**运行时嵌套 inject** 接（缺席就
+`ctx.provide("clamNotify", { onPending(listener) })`，把 pendingApproval /
+pendingQuestion 的会话集合供出去；clam-sidebar 用**运行时嵌套 inject** 接（缺席就
 维持现状），那颗紫点就有了（§1.4）。**依赖方向是 sidebar → notify 的可选依赖，
 不能反过来**，也不能写进 sidebar 的静态 inject。
 
@@ -388,7 +388,7 @@ pendingQuestion 的会话集合供出去；dash-sidebar 用**运行时嵌套 inj
 
 | # | 问题 | 怎么验 | 不过怎么办 |
 |---|---|---|---|
-| **P1** | ad-hoc 签名的 `dash Dev.app` 能不能拿到通知授权 | 临时在壳里加 5 行 `requestAuthorization` + 发一条，看系统弹窗与横幅 | 需要 Developer ID 签名才能做下去；先只做铃铛（app 内通知中心），系统通知推到有签名之后 |
+| **P1** | ad-hoc 签名的 `Surfclam Dev.app` 能不能拿到通知授权 | 临时在壳里加 5 行 `requestAuthorization` + 发一条，看系统弹窗与横幅 | 需要 Developer ID 签名才能做下去；先只做铃铛（app 内通知中心），系统通知推到有签名之后 |
 | **P2** | 插件 dylib 里的 `NSObject` 子类当 `UNUserNotificationCenterDelegate`，**跨世代会不会打架** | 写一个最小插件，改一行触发热替换，看控制台有没有 `Class … is implemented in both` 警告，以及新代 delegate 是否真的收到回调 | 见下面 Plan B |
 | P3 | 从插件里设 `NSApp.dockTile.badgeLabel` 是否正常、换代后是否要手动清 | 直接试 | 无（几乎不可能不行） |
 | P4 | `setNotificationCategories` 全量替换，对**已投递**卡片的按钮有什么影响 | 发两条 → 替换 categories → 看第一条的按钮还在不在 | 影响撤 category 的时机，不影响形态 |
@@ -396,7 +396,7 @@ pendingQuestion 的会话集合供出去；dash-sidebar 用**运行时嵌套 inj
 
 ### 探针结论（2026-08-27 实测）
 
-**P1 过。** ad-hoc 签名的 `dash Dev.app` 正常拿到授权，系统设置里读回
+**P1 过。** ad-hoc 签名的 `Surfclam Dev.app` 正常拿到授权，系统设置里读回
 「已授权｜横幅 开｜通知中心 开｜声音 开」。不需要 Developer ID。
 
 **P2 的预判对了一半，但真正拦路的是另一件事。** objc 类名确实不打架——module 名
@@ -407,12 +407,12 @@ pendingQuestion 的会话集合供出去；dash-sidebar 用**运行时嵌套 inj
 finishes launching" 是硬约束。
 
 这一条对**整类 API** 成立，而运行时编译装载的插件天然在启动之后才存在：
-**插件永远不可能自己占这种位子。** 与 objc 类名无关，Plan B 那个 `DashObjCBox`
+**插件永远不可能自己占这种位子。** 与 objc 类名无关，Plan B 那个 `ClamObjCBox`
 垫片解决不了它（垫片住在 SDK 里，但赋值动作仍然发生在插件 activate 的时刻）。
 
 **落地的是 Plan C**，判据仍然是那条"未来同类情况不再需要改 SDK"：
 
-- `DashSDK/DashHooks.swift`——一张**应答钩子表**：
+- `ClamSDK/ClamHooks.swift`——一张**应答钩子表**：
   `handle(hook:owner:version:_:)` 登记，`dispatch(hook:payload:) -> [String: Any]?`
   派发，`(owner, version)` 决定谁是当代。**整个文件里没有一个通知相关的词。**
 - `Native/SystemDelegateRelay.swift`——壳在 `applicationDidFinishLaunching` 的
@@ -433,15 +433,15 @@ finishes launching" 是硬约束。
 | # | 交付 | 判据 |
 |---|---|---|
 | **M0** | 五条探针 + 结论写回 CLAUDE.md | P1/P2 有定论 |
-| **M1** | 骨架：`dash-notify` 包 + 编排表加一行 + node 订 mux + 最朴素的通知（无按钮）+ 点击跳会话 | 待批准时弹通知，点一下跳到那个会话 |
+| **M1** | 骨架：`clam-notify` 包 + 编排表加一行 + node 订 mux + 最朴素的通知（无按钮）+ 点击跳会话 | 待批准时弹通知，点一下跳到那个会话 |
 | **M2** | 可交互：动态 category + approval 两个按钮 + `respond()` 回答 + `resolved` 撤下 | 在通知上点「允许一次」，dsh 那边真的往下走了；web UI 的面板同时消失 |
 | **M3** | 提问：选项按钮 + 文本输入 + plan-review intent | 通知上答一道单选题 |
 | **M4** | 前台策略（§6 那张表）+ done/error 两类 + Dock 角标 + 设置 ns | 你盯着 A 会话时 B 会话的审批会响，A 会话的不会 |
 | **M5** | 铃铛 + popover 列表（同一份 actions） | 通知消失之后还能在铃铛里把它办了 |
 | M6 | 可选：把 pendingQuestion 供给 sidebar（§8.3） | 侧边栏紫点 |
 
-M1 之前先在 `dash/cordis.patch.yml` 加一行 `dash-notify`（在 `dash-sidebar` 之后，
-它 inject `dash-layout`）。
+M1 之前先在 `surfclam/cordis.patch.yml` 加一行 `clam-notify`（在 `clam-sidebar` 之后，
+它 inject `clam-layout`）。
 
 ---
 
@@ -453,7 +453,7 @@ M1 之前先在 `dash/cordis.patch.yml` 加一行 `dash-notify`（在 `dash-side
    pending，已完成的历史清零。要持久化的话得给 node 侧加存储，第一版不做。
 3. **多选提问、超过 4 个选项的提问，在通知上办不了**，只能「打开查看」。
 4. **专注模式挡得住我们**（拿不到 time-sensitive entitlement，§5.4）。
-5. **同一台机器上两套 dash 并存时**，两边各自发各自的通知；identifier 带 instanceTag
+5. **同一台机器上两套 surfclam 并存时**，两边各自发各自的通知；identifier 带 instanceTag
    所以不互相覆盖，但你会看到两份——这与两个 app 实例并存本来就是同一件事。
 6. 通知正文里可能出现模型生成的文本（reason、提问正文）。**当成不可信输入**：
    截断到合理长度、不做任何 markdown/HTML 解释、不把里面的 URL 变成可点的东西。
@@ -472,6 +472,6 @@ M1 之前先在 `dash/cordis.patch.yml` 加一行 `dash-notify`（在 `dash-side
 
 | 日期 | 里程碑 | 提交 | 摘要 |
 |---|---|---|---|
-| 2026-08-27 | v2 修订 | （本次） | 三处改动：**① 砍掉工具栏铃铛**，「app 内通知中心」这个角色交给侧边栏那枚胶囊——「待批准」扩成「待处理」，筛的是 `needsAttention`（待批准 / 待回答 / 出错 / 跑完了）。**② 待办表经新的 `dashPending` 服务供给 dash-sidebar**（运行时嵌套 inject，缺席则退回 approval-only）；侧边栏因此白拿了它自己推不出来的 `pendingQuestion`。**③ 收录与打扰分层**：四个分类开关从 node 侧（决定进不进待办）搬到 Swift 侧（决定发不发通知）——关掉「跑完了」的通知不该把侧边栏也弄瞎。顺带两条基础设施：`DashEventBus.emitSticky`（粘性事件，插件装载晚于页面时才拿得到"当前在哪个会话"）、`FieldNotes` 给 `dash-notify` 补中文文案（设置窗口里那一页）。 |
-| 2026-08-27 | M0～M5 | （本次） | 一次做完。探针结论见 §9：P1/P3/P4 过，**P2 的真正拦路点不是 objc 类名而是「delegate 设晚了被静默忽略」**，于是落成 `DashHooks` + `SystemDelegateRelay`（通用应答钩子，SDK 里不含通知词汇）。端到端实测：真实提问经通知按钮文本回答 → dsh 记 `1/1 answered`、模型继续；真实批准点「允许一次」→ 工具真的执行、通知自动撤下；别处先答 → 通知自己撤下。另修三个只在这类插件上出现的 bug：不占槽插件的生命周期锚（`activate` 返回 presenter）、`sweepStaleDeliveries` 挂在 activate 上会扫掉当前值班的通知（改用 `host.objects` 里的进程级标记）、授权回调与 inbox 首推竞态导致重复发送（`ready` 门 + sweep completion）。 |
+| 2026-08-27 | v2 修订 | （本次） | 三处改动：**① 砍掉工具栏铃铛**，「app 内通知中心」这个角色交给侧边栏那枚胶囊——「待批准」扩成「待处理」，筛的是 `needsAttention`（待批准 / 待回答 / 出错 / 跑完了）。**② 待办表经新的 `clamPending` 服务供给 clam-sidebar**（运行时嵌套 inject，缺席则退回 approval-only）；侧边栏因此白拿了它自己推不出来的 `pendingQuestion`。**③ 收录与打扰分层**：四个分类开关从 node 侧（决定进不进待办）搬到 Swift 侧（决定发不发通知）——关掉「跑完了」的通知不该把侧边栏也弄瞎。顺带两条基础设施：`ClamEventBus.emitSticky`（粘性事件，插件装载晚于页面时才拿得到"当前在哪个会话"）、`FieldNotes` 给 `clam-notify` 补中文文案（设置窗口里那一页）。 |
+| 2026-08-27 | M0～M5 | （本次） | 一次做完。探针结论见 §9：P1/P3/P4 过，**P2 的真正拦路点不是 objc 类名而是「delegate 设晚了被静默忽略」**，于是落成 `ClamHooks` + `SystemDelegateRelay`（通用应答钩子，SDK 里不含通知词汇）。端到端实测：真实提问经通知按钮文本回答 → dsh 记 `1/1 answered`、模型继续；真实批准点「允许一次」→ 工具真的执行、通知自动撤下；别处先答 → 通知自己撤下。另修三个只在这类插件上出现的 bug：不占槽插件的生命周期锚（`activate` 返回 presenter）、`sweepStaleDeliveries` 挂在 activate 上会扫掉当前值班的通知（改用 `host.objects` 里的进程级标记）、授权回调与 inbox 首推竞态导致重复发送（`ready` 门 + sweep completion）。 |
 | 2026-08-27 | 规划 | （本次） | 计划成文。上游机制对着 0.1.1-rc.2 源码核过（mux 广播 + 重放、respond 先到先得、intent 按 label 认）。四个产品决策定案：能力全在插件、app 未运行丢弃、直接批准默认开、铃铛第一版就做。 |

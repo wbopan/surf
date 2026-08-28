@@ -1,6 +1,6 @@
 # 子代理 catalog 原生化：目标追踪
 
-> 起因：`dash-header` 在数据面就绪时以 `scope: "full"` 折叠整条 web header，
+> 起因：`clam-header` 在数据面就绪时以 `scope: "full"` 折叠整条 web header，
 > 连带折掉了 `conversation.session.header.lineage` 槽。而
 > **子代理会话不进侧边栏**（`dsh-client-ui-subagent/README.md` 原话：
 > "Subagent-origin Session rows are omitted from the ordinary sidebar, so the
@@ -98,7 +98,7 @@ const catalogActions = (_parentSessionId) => ({
 });
 ```
 
-所以 dash-header 的 client 半边加一条 `window.__dashHeader.openSubagent(...)`，
+所以 clam-header 的 client 半边加一条 `window.__clamHeader.openSubagent(...)`，
 内部 `ctx.inject(["sessions"], ...)`。**与既有的两通道判据一致**：
 树数据的真相在 dsh（node 半边），导航的真相在浏览器（页内桥）。
 
@@ -182,21 +182,21 @@ uuid。而当时的候选生成是"两个 id 同步翻转"，四种组合里恰�
 #### 3. `ctx.inject` 会抛，裸调一次赔掉整个插件
 
 client 半边加 `ctx.inject(["sessions"], …)` 时放在 `apply` 顶层且没包 try。
-它抛了，于是**整个 apply 挂掉**，页面上连 `window.__dashHeader` 都没有。
+它抛了，于是**整个 apply 挂掉**，页面上连 `window.__clamHeader` 都没有。
 症状是原生这边每一次页面调用都回执 `no-bridge`，而折叠、段控看着还"正常"
 （那是上一次页面加载留下的）。
 
-dash-layout 的 `installBridge` 早就是对的写法，三条都要照抄：
+clam-layout 的 `installBridge` 早就是对的写法，三条都要照抄：
 **走作用域 inject / 包 try / 装在 effect 内部（每代重装接线）**。
 
 ### 另一个自己制造的坑：切片替换吃掉了函数
 
 用"从 A 找到 B、整段换掉"的方式改 `client.js` 时，把夹在中间的
-`confirmNative` 定义一起吃了。语法检查照过（它仍被 `window.__dashHeader`
+`confirmNative` 定义一起吃了。语法检查照过（它仍被 `window.__clamHeader`
 引用，只是没定义），**只有页面会报**：
 
 ```
-Failed to load plugins @wenbo/dash-header
+Failed to load plugins @wenbo/clam-header
 failed to apply loader entry …: Can't find variable: confirmNative
 ```
 

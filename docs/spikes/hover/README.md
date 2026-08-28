@@ -1,7 +1,7 @@
 # 按钮 hover / 按下实测台（可复跑）
 
 问「macOS 27 的按钮悬停和按下到底改了什么」时用的一套。结论写在
-`dash-nativeify/README.md` 的「hover / 按下：整片着色」一节，这里只留复跑步骤。
+`clam-nativeify/README.md` 的「hover / 按下：整片着色」一节，这里只留复跑步骤。
 
 ```bash
 swiftc -O HoverProbe.swift -o HoverProbe   # 4 行 × 2 列的按钮阵

@@ -26,7 +26,7 @@ build_alpha() { # build_alpha <gen> <module> [额外 flag...]
     -module-name "$mod" \
     -emit-library -o "$dir/lib$mod.dylib" \
     -emit-module -emit-module-path "$dir/$mod.swiftmodule" \
-    -I "$OUT/sdk" -L "$OUT/sdk" -lDashSDK \
+    -I "$OUT/sdk" -L "$OUT/sdk" -lClamSDK \
     -Xlinker -rpath -Xlinker "@loader_path/../sdk" \
     -Xlinker -install_name -Xlinker "@rpath/lib$mod.dylib" \
     -target "$TARGET" -language-mode 5 -Onone -g "$@"
@@ -40,7 +40,7 @@ timed "beta (35 行, import Alpha_g1)" xcrun swiftc plugins/beta/BetaPlugin.swif
   -module-name Beta \
   -emit-library -o "$OUT/beta/libBeta.dylib" \
   -emit-module -emit-module-path "$OUT/beta/Beta.swiftmodule" \
-  -I "$OUT/sdk" -L "$OUT/sdk" -lDashSDK \
+  -I "$OUT/sdk" -L "$OUT/sdk" -lClamSDK \
   -I "$OUT/alpha_g1" -L "$OUT/alpha_g1" -lAlpha_g1 \
   -module-alias Alpha=Alpha_g1 \
   -Xlinker -rpath -Xlinker "@loader_path/../sdk" \
@@ -50,18 +50,18 @@ timed "beta (35 行, import Alpha_g1)" xcrun swiftc plugins/beta/BetaPlugin.swif
 
 # 4) 断言 8：模拟 app bundle 内分发——SDK 只给 .swiftinterface + dylib，故意不给 .swiftmodule
 rm -rf "$OUT/bundle"; mkdir -p "$OUT/bundle"
-cp "$OUT/sdk/DashSDK.swiftinterface" "$OUT/sdk/libDashSDK.dylib" "$OUT/bundle/"
+cp "$OUT/sdk/ClamSDK.swiftinterface" "$OUT/sdk/libClamSDK.dylib" "$OUT/bundle/"
 timed "alpha (interface-only SDK 路径)" xcrun swiftc plugins/alpha/AlphaPlugin.swift \
   -module-name Alpha_iface \
   -emit-library -o "$OUT/bundle/libAlpha_iface.dylib" \
-  -I "$OUT/bundle" -L "$OUT/bundle" -lDashSDK \
+  -I "$OUT/bundle" -L "$OUT/bundle" -lClamSDK \
   -Xlinker -rpath -Xlinker "@loader_path" \
   -target "$TARGET" -language-mode 5 -Onone -g
 
 # 5) 宿主
 timed "host (197 行)" xcrun swiftc host/main.swift \
   -o "$OUT/spike-host" \
-  -I "$OUT/sdk" -L "$OUT/sdk" -lDashSDK \
+  -I "$OUT/sdk" -L "$OUT/sdk" -lClamSDK \
   -Xlinker -rpath -Xlinker "@loader_path/sdk" \
   -target "$TARGET" -language-mode 5 -Onone -g
 
