@@ -92,6 +92,10 @@ extension View {
 /// 禁用时的灰度全得自己维护，而且**永远差一点**——macOS 每代都在改这些材质。
 /// 这是整扇窗里"看着像自己画的"最明显的一处，换成系统控件就没有这个问题了。
 struct SourceListFooter: NSViewRepresentable {
+    /// 两段的 AX 描述。**没有默认值**：AX 描述也是用户"看得见"的字
+    /// （旁白会念出来），漏给一个就是漏翻一处，让编译器提醒。
+    let addLabel: String
+    let removeLabel: String
     var add: (() -> Void)?
     var addHelp = ""
     var remove: (() -> Void)?
@@ -104,10 +108,6 @@ struct SourceListFooter: NSViewRepresentable {
         control.segmentStyle = .smallSquare
         // momentary = 按下就弹回，不留选中态。源列表页脚是动作，不是模式开关。
         control.trackingMode = .momentary
-        control.setImage(NSImage(systemSymbolName: "plus", accessibilityDescription: "添加"),
-                         forSegment: 0)
-        control.setImage(NSImage(systemSymbolName: "minus", accessibilityDescription: "移除"),
-                         forSegment: 1)
         control.setWidth(26, forSegment: 0)
         control.setWidth(26, forSegment: 1)
         control.target = context.coordinator
@@ -119,6 +119,13 @@ struct SourceListFooter: NSViewRepresentable {
     func updateNSView(_ control: NSSegmentedControl, context: Context) {
         context.coordinator.add = add
         context.coordinator.remove = remove
+        // **图标在 update 里装，不在 make 里**：AX 描述跟着语言变，而
+        // `makeNSView` 一个视图只跑一次——搁在那儿的话换语言之后旁白还念旧词，
+        // 而且不报错（这类"设了没反应"的失败在本仓库有一串先例）。
+        control.setImage(NSImage(systemSymbolName: "plus", accessibilityDescription: addLabel),
+                         forSegment: 0)
+        control.setImage(NSImage(systemSymbolName: "minus", accessibilityDescription: removeLabel),
+                         forSegment: 1)
         control.setEnabled(add != nil, forSegment: 0)
         control.setEnabled(remove != nil && canRemove, forSegment: 1)
         control.setToolTip(addHelp.isEmpty ? nil : addHelp, forSegment: 0)

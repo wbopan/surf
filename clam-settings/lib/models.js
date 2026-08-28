@@ -132,7 +132,7 @@ export function installModels(api) {
  */
 export async function setCredential(api, ref, value) {
 	const credentials = api.ctx.get?.("credentials");
-	if (credentials === undefined) throw new Error("凭据服务不在场");
+	if (credentials === undefined) throw missingCredentials();
 	await credentials.set(ref, value);
 	await api.pushProviders?.();
 }
@@ -140,7 +140,21 @@ export async function setCredential(api, ref, value) {
 /** 清掉一个凭据。清一个本来就没有的是 no-op（上游语义）。 */
 export async function unsetCredential(api, ref) {
 	const credentials = api.ctx.get?.("credentials");
-	if (credentials === undefined) throw new Error("凭据服务不在场");
+	if (credentials === undefined) throw missingCredentials();
 	await credentials.unset(ref);
 	await api.pushProviders?.();
+}
+
+/**
+ * "凭据服务不在场"——**我们自己认领的失败，带稳定 `code`**。
+ *
+ * 上游抛的错原样往上走（那是 dsh 说的话，按它自己的 locale 出）；自己合成的这一条
+ * 没有原话，就只能给一个机器码，让 Swift 用自家文案表出字
+ * （`L.failureMessage`，计划 §8-4 的断根办法，与 clam-sidebar / clam-header 同一套）。
+ * `message` 留着只为进日志，**界面不显示它**。
+ */
+function missingCredentials() {
+	const error = new Error("credentials service unavailable");
+	error.code = "CREDENTIALS_UNAVAILABLE";
+	return error;
 }

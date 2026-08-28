@@ -117,26 +117,10 @@ struct InventoryEntry: Identifiable {
         return name.isEmpty ? moduleName : name
     }
 
-    /// 状态列显示什么——**同时就是这一列的排序键**。
-    ///
-    /// 排序键取显示文案而不是 `enabled` 这个 Bool，两个理由：用户看到什么就按什么排；
-    /// 而且 `TableColumn(_:value:)` 的 Bool 重载在这儿会解析到 `SortDescriptor`
-    /// 那一族，跟 `Table(sortOrder:)` 要的 `KeyPathComparator` 对不上——
-    /// String 的键路径有专用重载，没有这个歧义。
-    var statusText: String { enabled ? phaseLabel : "已停用" }
-
-    /// Cordis 状态的中文说法。**照抄上游 zh 词典**（`dsh-client-ui-settings-plugin-inventory`
-    /// 的 locales），两边说的是同一件事就该用同一个词。
-    var phaseLabel: String {
-        switch fiberPhase {
-        case "pending": return "等待依赖"
-        case "loading": return "加载中"
-        case "active": return "已挂载"
-        case "failed": return "挂载失败"
-        case "unloading": return "卸载中"
-        default: return "未挂载"
-        }
-    }
+    // 状态与相位的**文案**不在这儿——它们跟着界面语言变，而这个 struct 是
+    // 桥上那份只读数据的原样投影，造出来的时候没有语言这回事。
+    // 显示与排序都在 `PluginInventoryList` 里就地算（见那边 `InventoryRow` 的注释：
+    // 排序键必须是 `KeyPath` 拿得到的**存储**属性，所以文案得先落成一行数据）。
 }
 
 /// 一个字段当前的写入状态。失败时**保留用户输入**并显示原因，不清空重来
@@ -190,8 +174,21 @@ final class SettingsModel: ObservableObject {
     private let bridge: SettingsBridge
     private let log: (String) -> Void
 
-    init(bridge: SettingsBridge, log: @escaping (String) -> Void) {
+    /// 界面语言。**真相在 dsh 的 `locale` 设置**，壳把它当粘性事件广播；
+    /// 这里只是持有者，视图读它就建立了观察依赖（`docs/clam-i18n-plan.md` §3/§5）。
+    private let localeStore: ClamLocaleStore
+
+    /// 当前语言。`FieldNotes` / `JSONValue.summary` 这类查表点要它。
+    var locale: ClamLocale { localeStore.current }
+
+    /// **现算一份 `L`，不存快照**：存下来就得有人负责在语言变时替换它，
+    /// 而现算天然正确——视图 body 里读它 = 读了 `localeStore.current` =
+    /// 建立观察依赖，语言一变整扇窗自动重渲。
+    var strings: L { L(localeStore.current) }
+
+    init(bridge: SettingsBridge, locale: ClamLocaleStore, log: @escaping (String) -> Void) {
         self.bridge = bridge
+        self.localeStore = locale
         self.log = log
     }
 
@@ -343,7 +340,7 @@ final class SettingsModel: ObservableObject {
 
     private func write(ns: String, path: [String], action: String, extra: [String: Any]) {
         guard writable else {
-            notice = "配置文档只读，改不动"
+            notice = strings.readOnlyNotice
             return
         }
         let key = FieldKey(ns: ns, path: path)
@@ -367,9 +364,10 @@ final class SettingsModel: ObservableObject {
                 // 成功了才丢掉 draft：让回读的值接管显示。
                 next.draft = nil
             } else {
-                next.error = ack.error ?? "写入失败"
+                next.error = self.strings.failureMessage(error: ack.error, code: ack.code,
+                                                         fallback: self.strings.writeFailed)
                 if ack.code == "SETTINGS_CONFLICT" {
-                    self.notice = "设置在别处被改过，已重新读取——请确认后再改一次"
+                    self.notice = self.strings.conflictNotice
                 }
             }
             self.status[key] = next
@@ -379,14 +377,21 @@ final class SettingsModel: ObservableObject {
     // MARK: - 凭据
 
     func setCredential(ref: String, value: String, completion: @escaping (String?) -> Void) {
+        // 文案表**在发出去的时候就取好**：回调里 `self` 是弱引用，拿不到就只能给
+        // nil，而 nil 在这条回调的约定里是"成功"——那会把一次失败报成成功。
+        // 语言在这一趟往返里变了也无所谓（毫秒级）。
+        let strings = self.strings
         bridge.invoke("setCredential", ["ref": ref, "value": value]) { ack in
-            completion(ack.ok ? nil : (ack.error ?? "写入失败"))
+            completion(ack.ok ? nil : strings.failureMessage(error: ack.error, code: ack.code,
+                                                             fallback: strings.writeFailed))
         }
     }
 
     func unsetCredential(ref: String, completion: @escaping (String?) -> Void) {
+        let strings = self.strings
         bridge.invoke("unsetCredential", ["ref": ref]) { ack in
-            completion(ack.ok ? nil : (ack.error ?? "清除失败"))
+            completion(ack.ok ? nil : strings.failureMessage(error: ack.error, code: ack.code,
+                                                             fallback: strings.clearFailed))
         }
     }
 
@@ -401,7 +406,9 @@ final class SettingsModel: ObservableObject {
     func openDocument(_ open: @escaping (String) -> Void) {
         bridge.invoke("documentPath") { [weak self] ack in
             guard let path = ack.value?.stringValue, !path.isEmpty else {
-                self?.notice = ack.error ?? "这个配置源没有可打开的文件"
+                guard let self else { return }
+                self.notice = self.strings.failureMessage(error: ack.error, code: ack.code,
+                                                          fallback: self.strings.noDocument)
                 return
             }
             open(path)

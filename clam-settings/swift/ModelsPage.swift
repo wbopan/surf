@@ -33,11 +33,13 @@ struct ModelsPage: View {
         configured.first { $0.provider == selection } ?? configured.first
     }
 
+    private var strings: L { model.strings }
+
     var body: some View {
         if !model.modelsAvailable {
             VStack(alignment: .leading, spacing: 6) {
-                Text("llm 服务不在场，这一页填不了。").font(.callout)
-                Text("默认模型仍可在配置文件里改。").font(.caption).foregroundStyle(.secondary)
+                Text(strings.modelsUnavailable).font(.callout)
+                Text(strings.modelsUnavailableHint).font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
         } else {
@@ -72,13 +74,15 @@ struct ModelsPage: View {
         }
         .sourceListChrome(width: 196) {
             SourceListFooter(
+                addLabel: strings.add,
+                removeLabel: strings.remove,
                 add: { adding = true },
-                addHelp: "添加 provider",
+                addHelp: strings.addProvider,
                 // **`−` 是清 key，不是删 provider**。provider 是不是在场由配置决定，
                 // 这里能安全撤销的只有凭据——写一个会真的删配置的 `−`，得先想清楚
                 // 内建适配器和用户自己加的那种删起来根本不是一回事。
                 remove: { clearKey() },
-                removeHelp: "清除这个 provider 的 API key",
+                removeHelp: strings.clearProviderKey,
                 canRemove: current.map { $0.credentialWritable && $0.credentialConfigured == true } ?? false)
         }
         // 选中项写回 binding——详情栏"回落到第一个"不该让左列一行都不高亮。
@@ -96,7 +100,7 @@ struct ModelsPage: View {
         } else {
             VStack {
                 Spacer()
-                Text("还没有配好的 provider。点 + 添加一个。")
+                Text(strings.noProviders)
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
             }
@@ -137,13 +141,7 @@ struct ModelsPage: View {
     }
 
     private func dotHelp(_ row: ProviderRow) -> String {
-        let credential: String
-        switch row.credentialConfigured {
-        case true: credential = "凭据已配置"
-        case false: credential = "没有 key"
-        default: credential = "凭据状态未知"
-        }
-        return credential + " · " + (row.live ? "路由已注册" : "路由未注册")
+        strings.providerStatus(configured: row.credentialConfigured, live: row.live)
     }
 }
 
@@ -153,11 +151,16 @@ struct ProviderDetail: View {
     @ObservedObject var model: SettingsModel
     let row: ProviderRow
 
+    /// **`rawValue` 是身份，标题另取**（`L.facet*`）：身份不随语言变。
     private enum Facet: String, CaseIterable, Identifiable {
         case credential, settings
         var id: String { rawValue }
-        var title: String { self == .credential ? "凭据" : "自定义设置" }
+        func title(_ strings: L) -> String {
+            self == .credential ? strings.facetCredential : strings.facetSettings
+        }
     }
+
+    private var strings: L { model.strings }
 
     @State private var facet: Facet = .credential
     @State private var entry = ""
@@ -205,7 +208,7 @@ struct ProviderDetail: View {
     /// （「路由未注册」）淹在同样的位置、同样的字号里。
     private var header: some View {
         DetailHeader(title: row.displayName,
-                     subtitle: row.live ? nil : "路由未注册",
+                     subtitle: row.live ? nil : strings.routeUnregistered,
                      identifier: row.provider)
     }
 
@@ -218,30 +221,30 @@ struct ProviderDetail: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .tabItem { Text(facet.title) }
+        .tabItem { Text(facet.title(strings)) }
         .tag(facet)
     }
 
     private var credentialForm: some View {
         Form {
             if row.credentialWritable {
-                LabeledContent("API key：") {
+                LabeledContent(strings.labeled(strings.apiKey)) {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             // 占位符走 prompt——第一个参数是标签，会漏成控件旁的文字。
                             SecureField("", text: $entry,
-                                        prompt: Text(configured ? "留空 = 保留现有的" : "填入 API key"))
+                                        prompt: Text(configured ? strings.apiKeyKeep
+                                                                : strings.apiKeyPrompt))
                                 .labelsHidden()
                                 .textFieldStyle(.roundedBorder)
                                 // **别钉死宽度**：详情栏只有三百来点宽，236 + 「保存」
                                 // 挤不下，按钮会被切掉半个（实测）。让输入框吃剩下的。
                                 .frame(minWidth: 110)
                                 .onSubmit(save)
-                            Button("保存", action: save)
+                            Button(strings.save, action: save)
                                 .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                         }
-                        Text("引用名 \(row.keyRef)"
-                             + (row.keyRefStored ? "" : "（按约定推出来的）"))
+                        Text(strings.keyReference(row.keyRef, derived: !row.keyRefStored))
                             .font(.caption).foregroundStyle(.secondary)
                         if let error {
                             Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
@@ -249,8 +252,8 @@ struct ProviderDetail: View {
                     }
                 }
             } else {
-                LabeledContent("API key：") {
-                    Text("由只读来源提供（环境变量或 .env），这里改不了。")
+                LabeledContent(strings.labeled(strings.apiKey)) {
+                    Text(strings.credentialReadOnly)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -307,26 +310,28 @@ struct AddProviderSheet: View {
         catalog.first { $0.provider == picked } ?? catalog.first
     }
 
+    private var strings: L { model.strings }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("添加 provider").font(.headline)
+            Text(strings.addProvider).font(.headline)
 
             if let target {
                 Form {
-                    Picker("Provider：", selection: Binding(
+                    Picker(strings.labeled(strings.providerPicker), selection: Binding(
                         get: { target.provider },
                         set: { picked = $0; entry = "" })) {
                         ForEach(catalog) { row in Text(row.displayName).tag(row.provider) }
                     }
                     .pickerStyle(.menu)
 
-                    LabeledContent("API key：") {
+                    LabeledContent(strings.labeled(strings.apiKey)) {
                         VStack(alignment: .leading, spacing: 3) {
-                            SecureField("", text: $entry, prompt: Text("填入 API key"))
+                            SecureField("", text: $entry, prompt: Text(strings.apiKeyPrompt))
                                 .labelsHidden()
                                 .textFieldStyle(.roundedBorder)
                                 .onSubmit { save(target) }
-                            Text("会写到引用名 \(target.keyRef)")
+                            Text(strings.willWriteKeyReference(target.keyRef))
                                 .font(.caption).foregroundStyle(.secondary)
                             if let error {
                                 Text(error).font(.caption).foregroundStyle(.red)
@@ -338,14 +343,14 @@ struct AddProviderSheet: View {
 
                 HStack {
                     Spacer()
-                    Button("取消", action: done).keyboardShortcut(.cancelAction)
-                    Button("添加") { save(target) }
+                    Button(strings.cancel, action: done).keyboardShortcut(.cancelAction)
+                    Button(strings.add) { save(target) }
                         .keyboardShortcut(.defaultAction)
                         .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                 }
             } else {
-                Text("目录里的 provider 都已经配过了。").foregroundStyle(.secondary)
-                HStack { Spacer(); Button("好", action: done).keyboardShortcut(.defaultAction) }
+                Text(strings.catalogExhausted).foregroundStyle(.secondary)
+                HStack { Spacer(); Button(strings.ok, action: done).keyboardShortcut(.defaultAction) }
             }
         }
         .padding(20)

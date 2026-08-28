@@ -1,3 +1,4 @@
+import ClamSDK
 import Foundation
 
 /// 桥上那些 `Any` 的一个有类型的家。
@@ -64,26 +65,31 @@ enum JSONValue: Hashable {
         return node
     }
 
-    /// 单行摘要，给只读展示与折叠标题用。
-    var summary: String {
+    /// 单行摘要，给只读展示与折叠标题用。**「重置为 X」也复用它**。
+    ///
+    /// 是函数而不是属性，因为它要出文案（`开` / `On`）：值本身没有语言，
+    /// 描述它的那几个词有。数字与非空字符串照原样，那两种是数据。
+    func summary(_ locale: ClamLocale) -> String {
+        let strings = L(locale)
         switch self {
+        // 「没有值」。破折号不是文案，两种语言同一个字形。
         case .null: return "—"
-        case .bool(let value): return value ? "开" : "关"
+        case .bool(let value): return value ? strings.on : strings.off
         case .number(let value): return SettingsFormat.number(value)
-        case .string(let value): return value.isEmpty ? "（空）" : value
-        case .array(let items): return "\(items.count) 项"
-        case .object(let fields): return "\(fields.count) 个字段"
+        case .string(let value): return value.isEmpty ? strings.emptyString : value
+        case .array(let items): return strings.itemCount(items.count)
+        case .object(let fields): return strings.fieldCount(fields.count)
         }
     }
 
     /// 多行 JSON，给 `.unknown` 节点的只读显示用。
-    var prettyJSON: String {
+    func prettyJSON(_ locale: ClamLocale) -> String {
         let object = anyValue
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object,
                                                      options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else {
-            return summary
+            return summary(locale)
         }
         return text
     }

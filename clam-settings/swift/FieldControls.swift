@@ -20,7 +20,7 @@ struct TextEntryField: View {
         case .string(let text): return text
         case .number(let number): return SettingsFormat.number(number)
         case .null: return ""
-        default: return value.summary
+        default: return value.summary(model.locale)
         }
     }
 
@@ -51,7 +51,7 @@ struct TextEntryField: View {
             let trimmed = draft.trimmingCharacters(in: .whitespaces)
             guard let number = Double(trimmed) else {
                 // 本地就能判的错在本地说，不必往返一趟。输入照样留着。
-                model.setLocalError(snapshot.ns, path, "要一个数字")
+                model.setLocalError(snapshot.ns, path, model.strings.mustBeNumber)
                 return
             }
             model.set(ns: snapshot.ns, path: path, value: .number(number))
@@ -78,10 +78,11 @@ struct ChoiceField: View {
             // 非必填的才给"未设置"这一项：必填字段没有"空"这个合法态，
             // 给了只会让用户写出一个 host 会拒绝的值。
             if !required {
-                Text("（未设置）").tag(JSONValue.null)
+                Text(model.strings.unsetOption).tag(JSONValue.null)
             }
             ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path, value: option)).tag(option)
+                Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path,
+                                            value: option, locale: model.locale)).tag(option)
             }
         }
         .labelsHidden()
@@ -147,13 +148,14 @@ struct SecretField: View {
             // 在 Form 里它会被渲染成控件旁边一坨额外的文字（实测："Api Key： 未配置 [框]"）。
             // 占位符要走 `prompt:`，标签另行藏掉。
             SecureField("", text: $entry,
-                        prompt: Text(isSet ? "已配置（留空 = 不变）" : "未配置"))
+                        prompt: Text(isSet ? model.strings.secretConfigured
+                                           : model.strings.secretUnset))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 240)
                 .onSubmit(commit)
             if isSet {
-                Button("清除") { model.unset(ns: snapshot.ns, path: path) }
+                Button(model.strings.clear) { model.unset(ns: snapshot.ns, path: path) }
                     .controlSize(.small)
             }
         }
@@ -194,7 +196,7 @@ struct ListField: View {
             ScalarListEditor(model: model, snapshot: snapshot, path: path,
                              value: value, isDict: isDict)
         } else {
-            ReadOnlyValue(value: value)
+            ReadOnlyValue(value: value, locale: model.locale)
         }
     }
 }

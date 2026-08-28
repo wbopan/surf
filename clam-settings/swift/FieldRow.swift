@@ -1,3 +1,4 @@
+import ClamSDK
 import SwiftUI
 
 /// 一个字段 = `Form` 里的一行。
@@ -25,7 +26,8 @@ struct FieldRow: View {
     private var overridden: Bool { snapshot.isOverridden(path: path) }
     private var value: JSONValue? { snapshot.value.value(at: path) }
     private var note: FieldNotes.Note? { FieldNotes.note(ns: snapshot.ns, path: path) }
-    private var title: String { FieldNotes.title(ns: snapshot.ns, path: path) }
+    private var strings: L { model.strings }
+    private var title: String { FieldNotes.title(ns: snapshot.ns, path: path, locale: model.locale) }
 
     var body: some View {
         if case .boolean = node, !node.meta.isSecret {
@@ -46,7 +48,7 @@ struct FieldRow: View {
             LabeledContent {
                 trailing { control }
             } label: {
-                Text(title + "：")
+                Text(strings.labeled(title))
             }
             .modifier(RowChrome(id: identifier, help: tooltip))
         }
@@ -59,12 +61,12 @@ struct FieldRow: View {
             HStack(spacing: 6) {
                 control()
                     .disabled(!model.writable || status.saving)
-                if let unit = note?.unit {
+                if let unit = note?.unit?[model.locale] {
                     Text(unit).font(.callout).foregroundStyle(.secondary)
                 }
                 resetButton
             }
-            if let hint = note?.hint {
+            if let hint = note?.hint?[model.locale] {
                 Text(hint).font(.caption).foregroundStyle(.secondary)
                 // **限宽**：不限的话这行小字的"理想宽度"就是它的全长，
                 // `Form(.columns)` 按各行理想宽度算控件列，一句长注解能把整页
@@ -80,8 +82,8 @@ struct FieldRow: View {
     /// 手写配置文件的人需要真 key，而机械美化过的名字反推不回去。
     private var tooltip: String {
         var parts = [path.joined(separator: ".")]
-        if let constraint = node.meta.constraintText { parts.append(constraint) }
-        if overridden { parts.append("已覆盖默认值") }
+        if let constraint = node.meta.constraintText(model.locale) { parts.append(constraint) }
+        if overridden { parts.append(strings.overridden) }
         return parts.joined(separator: " · ")
     }
 
@@ -100,7 +102,7 @@ struct FieldRow: View {
             switch node {
             case .boolean:
                 // secret role 压在 boolean 上时会走到这儿（上面那条分支只接非 secret）。
-                ReadOnlyValue(value: value)
+                ReadOnlyValue(value: value, locale: model.locale)
             case .number:
                 if node.meta.role == "slider", let min = node.meta.min, let max = node.meta.max {
                     SliderField(model: model, snapshot: snapshot, path: path,
@@ -116,7 +118,7 @@ struct FieldRow: View {
                     .frame(maxWidth: .infinity)
             case .const(let constant, _):
                 // 单个 const 没什么可改的——显示它，别给一个假装能改的控件。
-                Text(constant.summary).foregroundStyle(.secondary)
+                Text(constant.summary(model.locale)).foregroundStyle(.secondary)
             case .array(let inner, _):
                 ListField(model: model, snapshot: snapshot, path: path, inner: inner, isDict: false)
             case .dict(let inner, _):
@@ -125,7 +127,7 @@ struct FieldRow: View {
                 // object 由 FieldOrGroup 展开成小节，不会走到这儿；
                 // union（非全 const）与 unknown 是真的没法安全编辑——显示值，
                 // 让「打开配置文件」接手。这是计划 §8 认下的那部分。
-                ReadOnlyValue(value: value)
+                ReadOnlyValue(value: value, locale: model.locale)
             }
         }
     }
@@ -149,15 +151,15 @@ struct FieldRow: View {
 
     private var resetHelp: String {
         guard let inherited = snapshot.inheritedValue(path: path, node: node) else {
-            return "重置（退回继承）"
+            return strings.resetToInherited
         }
-        return "重置为 \(inherited.summary)"
+        return strings.resetTo(inherited.summary(model.locale))
     }
 
     @ViewBuilder
     private var statusLine: some View {
         if status.saving {
-            Text("保存中…").font(.caption).foregroundStyle(.secondary)
+            Text(strings.saving).font(.caption).foregroundStyle(.secondary)
         } else if let error = status.error {
             // 失败不清空输入，只在这儿说原因。
             Text(error)
@@ -183,13 +185,15 @@ private struct RowChrome: ViewModifier {
 /// 只读地显示一个值（union / unknown / 复杂容器的兜底）。
 struct ReadOnlyValue: View {
     let value: JSONValue?
+    /// 摘要里那几个词（`开` / `On`、`3 项` / `3 items`）跟着语言走。
+    let locale: ClamLocale
 
     var body: some View {
-        Text(value?.summary ?? "—")
+        Text(value?.summary(locale) ?? "—")
             .font(.callout)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
-            .help(value?.prettyJSON ?? "")
+            .help(value?.prettyJSON(locale) ?? "")
     }
 }

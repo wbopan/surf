@@ -39,7 +39,8 @@ struct ScalarListEditor: View {
                 expanded.toggle()
             } label: {
                 HStack(spacing: 4) {
-                    Text(items.isEmpty ? "空" : "\(items.count) 项")
+                    Text(items.isEmpty ? model.strings.emptyList
+                                       : model.strings.itemCount(items.count))
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.caption2)
                 }
@@ -54,7 +55,7 @@ struct ScalarListEditor: View {
                             Text(isDict ? item.key : "\(item.key).")
                                 .font(.caption.monospaced())
                                 .foregroundStyle(.tertiary)
-                            Text(item.value.summary)
+                            Text(item.value.summary(model.locale))
                                 .font(.caption)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
@@ -69,14 +70,14 @@ struct ScalarListEditor: View {
                     }
                     HStack(spacing: 6) {
                         if isDict {
-                            TextField("键", text: $newKey)
+                            TextField(model.strings.newItemKey, text: $newKey)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 88)
                         }
-                        TextField("值", text: $newValue)
+                        TextField(model.strings.newItemValue, text: $newValue)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit(append)
-                        Button("加", action: append)
+                        Button(model.strings.appendItem, action: append)
                             .controlSize(.small)
                             .disabled(newValue.isEmpty || (isDict && newKey.isEmpty))
                     }
@@ -96,7 +97,7 @@ struct ScalarListEditor: View {
         case .none, .null:
             write(isDict ? .object([newKey: entry]) : .array([entry]))
         default:
-            model.setLocalError(snapshot.ns, path, "当前值的形状不是\(isDict ? "字典" : "数组")，改不了")
+            model.setLocalError(snapshot.ns, path, model.strings.shapeMismatch(isDict: isDict))
             return
         }
         newKey = ""

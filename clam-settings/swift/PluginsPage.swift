@@ -12,25 +12,29 @@ import SwiftUI
 struct PluginsPage: View {
     @ObservedObject var model: SettingsModel
 
+    /// **`rawValue` 是身份，标题另取**（`L.section*`）：身份不随语言变。
     private enum Section: String, CaseIterable, Identifiable {
         case configuration, inventory
         var id: String { rawValue }
-        var title: String { self == .configuration ? "插件配置" : "插件列表" }
+        func title(_ strings: L) -> String {
+            self == .configuration ? strings.sectionConfiguration : strings.sectionInventory
+        }
     }
 
     /// 默认停在配置栏——那是唯一能改东西的一栏。
     @State private var section: Section = .configuration
 
     var body: some View {
+        let strings = model.strings
         TabView(selection: $section) {
             PluginConfigurationList(model: model)
                 .padding(12)
-                .tabItem { Text(Section.configuration.title) }
+                .tabItem { Text(Section.configuration.title(strings)) }
                 .tag(Section.configuration)
 
             PluginInventoryList(model: model)
                 .padding(12)
-                .tabItem { Text(Section.inventory.title) }
+                .tabItem { Text(Section.inventory.title(strings)) }
                 .tag(Section.inventory)
         }
         .accessibilityIdentifier("settings.plugins.section")
@@ -71,14 +75,14 @@ struct PluginConfigurationList: View {
 
     var body: some View {
         if namespaces.isEmpty {
-            VStack { Spacer(); Text("没有可配置的插件。").foregroundStyle(.secondary); Spacer() }
+            VStack { Spacer(); Text(model.strings.noConfigurablePlugins).foregroundStyle(.secondary); Spacer() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             HStack(alignment: .top, spacing: 16) {
                 List(selection: $selection) {
                     ForEach(featured, id: \.ns) { row($0) }
                     if !rest.isEmpty {
-                        SwiftUI.Section(header: SourceListSectionHeader(title: "其余")) {
+                        SwiftUI.Section(header: SourceListSectionHeader(title: model.strings.otherNamespaces)) {
                             ForEach(rest, id: \.ns) { row($0) }
                         }
                     }
@@ -101,7 +105,7 @@ struct PluginConfigurationList: View {
     }
 
     private func row(_ snapshot: NamespaceSnapshot) -> some View {
-        Text(NamespaceNotes.title(ns: snapshot.ns))
+        Text(NamespaceNotes.title(ns: snapshot.ns, locale: model.locale))
             .lineLimit(1)
             .tag(snapshot.ns)
             .listRowSeparator(.hidden)
@@ -122,8 +126,8 @@ struct PluginDetail: View {
     var body: some View {
         let split = NamespaceNotes.split(ns: snapshot.ns, fields: fields)
         VStack(alignment: .leading, spacing: 12) {
-            DetailHeader(title: NamespaceNotes.title(ns: snapshot.ns),
-                         subtitle: NamespaceNotes.summary(ns: snapshot.ns),
+            DetailHeader(title: NamespaceNotes.title(ns: snapshot.ns, locale: model.locale),
+                         subtitle: NamespaceNotes.summary(ns: snapshot.ns, locale: model.locale),
                          identifier: snapshot.ns)
 
             ScrollView {
@@ -145,7 +149,7 @@ struct PluginDetail: View {
             }
 
             if snapshot.applies == "restart" {
-                Text("改完需要重启 dsh 才生效。")
+                Text(model.strings.restartRequired)
                     .font(.caption).foregroundStyle(.orange)
             }
         }

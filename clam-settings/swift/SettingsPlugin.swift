@@ -23,7 +23,11 @@ final class SettingsPlugin: ClamPlugin {
     func activate(host: ClamHost) -> AnyObject? {
         let handle = ClamPluginHandle()
         let bridge = SettingsBridge(bridge: host.bridge, log: { host.log($0) })
-        let model = SettingsModel(bridge: bridge, log: { host.log($0) })
+        // 界面语言。真相是 dsh 的 `locale` 设置，壳把它当粘性事件广播
+        // （`clam.locale`），所以这一句订上的瞬间就已经是当前值——初值只兜住
+        // "壳还没发过"那一刻（决议链见 docs/clam-i18n-plan.md §3）。
+        let locale = ClamLocaleStore(bus: host.events)
+        let model = SettingsModel(bridge: bridge, locale: locale, log: { host.log($0) })
         var controller: SettingsWindowController?
 
         // **先收拾上一代留下的窗口**。
@@ -87,6 +91,20 @@ final class SettingsPlugin: ClamPlugin {
                 }
             }
             controller?.present()
+        }.kept(by: handle)
+
+        // 换语言时把**窗框**重贴一遍。页面内容是 SwiftUI，读 `model.strings` 就自己
+        // 重渲了；`.preference` 工具栏那四个标签与窗口标题归 AppKit 拿着，够不着
+        // SwiftUI 的观察，只能这么推一下（`withObservationTracking` 那条路有静默
+        // 死亡坑，CLAUDE.md 记过案）。
+        //
+        // 窗口还没建出来时什么都不用做：`setupWindow` 本来就按当前语言贴标签。
+        // 闭包只捕获 `controller` 那个盒子，**没捕获 `handle`**，所以不成环
+        // （clam-header 那条"订阅与 handle 互相按住"的坑，在这里天然不存在）。
+        host.events.subscribe(ClamEventBus.Topic.locale) { payload in
+            guard let raw = payload["locale"] as? String,
+                  let next = ClamLocale(rawValue: raw) else { return }
+            MainActor.assumeIsolated { controller?.relocalize(next) }
         }.kept(by: handle)
 
         ClamDisposable {

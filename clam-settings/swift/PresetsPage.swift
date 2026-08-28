@@ -26,20 +26,22 @@ struct PresetsPage: View {
         model.presets.first { $0.id == selection } ?? model.presets.first
     }
 
+    private var strings: L { model.strings }
+
     var body: some View {
         if !model.presetsAvailable {
-            VStack { Spacer(); Text("agentPresets 服务不在场，这一页填不了。")
+            VStack { Spacer(); Text(strings.presetsUnavailable)
                 .font(.callout).foregroundStyle(.secondary); Spacer() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             HStack(alignment: .top, spacing: 16) {
                 List(selection: $selection) {
-                    SwiftUI.Section(header: SourceListSectionHeader(title: "内建")) {
+                    SwiftUI.Section(header: SourceListSectionHeader(title: strings.presetsBuiltIn)) {
                         ForEach(builtIn) { row($0) }
                     }
-                    SwiftUI.Section(header: SourceListSectionHeader(title: "自定义")) {
+                    SwiftUI.Section(header: SourceListSectionHeader(title: strings.presetsCustom)) {
                         if custom.isEmpty {
-                            Text("还没有").foregroundStyle(.tertiary).selectionDisabled()
+                            Text(strings.presetsNone).foregroundStyle(.tertiary).selectionDisabled()
                         } else {
                             ForEach(custom) { row($0) }
                         }
@@ -81,6 +83,7 @@ struct PresetDetail: View {
     let openPath: (String) -> Void
 
     private var isDefault: Bool { model.defaultPresetId == row.id }
+    private var strings: L { model.strings }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -96,10 +99,10 @@ struct PresetDetail: View {
                 // 一个真能按的按钮。
                 LabeledContent {
                     if isDefault {
-                        Label("新会话默认用这个预设", systemImage: "checkmark")
+                        Label(strings.isDefaultPreset, systemImage: "checkmark")
                             .font(.callout).foregroundStyle(.secondary)
                     } else {
-                        Button("设为默认") {
+                        Button(strings.setAsDefault) {
                             model.set(ns: "agent-presets", path: ["default"], value: .string(row.id))
                         }
                         .disabled(!model.writable || row.broken != nil)
@@ -121,13 +124,13 @@ struct PresetDetail: View {
 
                 FormRule()
 
-                LabeledContent("位置：") {
+                LabeledContent(strings.labeled(strings.presetLocation)) {
                     HStack(spacing: 8) {
                         Text(row.path)
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.head)
                             .help(row.path)
-                        Button("在 Finder 中显示") { openPath(row.path) }
+                        Button(strings.revealInFinder) { openPath(row.path) }
                             .controlSize(.small)
                     }
                 }

@@ -35,10 +35,10 @@ struct GeneralPage: View {
                 FormRule()
                 // Web 把这个按钮放在对话框头部。`.preference` 工具栏没有那条头部，
                 // 所以落在通用页末尾——它是全局动作，通用页是最不意外的去处。
-                LabeledContent("配置文件：") {
+                LabeledContent(model.strings.labeled(model.strings.configFile)) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Button("在编辑器中打开…") { model.openDocument(openPath) }
-                        Text("schema 表达不了的字段在这里改。")
+                        Button(model.strings.openInEditor) { model.openDocument(openPath) }
+                        Text(model.strings.configFileHint)
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -88,7 +88,8 @@ struct AppearanceRow: View {
                     get: { current },
                     set: { model.set(ns: snapshot.ns, path: path, value: .string($0)) })) {
                     ForEach(options, id: \.self) { raw in
-                        Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path, value: .string(raw)))
+                        Text(FieldNotes.optionLabel(ns: snapshot.ns, path: path,
+                                                    value: .string(raw), locale: model.locale))
                             .tag(raw)
                     }
                 }
@@ -106,11 +107,12 @@ struct AppearanceRow: View {
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
-                    .help("重置（退回继承）")
+                    .help(model.strings.resetToInherited)
                 }
             }
         } label: {
-            Text(FieldNotes.title(ns: snapshot.ns, path: path) + "：")
+            Text(model.strings.labeled(
+                FieldNotes.title(ns: snapshot.ns, path: path, locale: model.locale)))
         }
     }
 }
@@ -136,7 +138,8 @@ struct PresetPickerRow: View {
 
     var body: some View {
         let status = model.status(snapshot.ns, path)
-        LabeledContent(FieldNotes.title(ns: snapshot.ns, path: path) + "：") {
+        LabeledContent(model.strings.labeled(
+            FieldNotes.title(ns: snapshot.ns, path: path, locale: model.locale))) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Picker("", selection: Binding(
@@ -146,7 +149,7 @@ struct PresetPickerRow: View {
                             Text(preset.displayName).tag(preset.id)
                         }
                         if missing {
-                            Text("\(current)（清单里没有）").tag(current)
+                            Text(model.strings.presetNotInList(current)).tag(current)
                         }
                     }
                     .labelsHidden()
@@ -161,10 +164,10 @@ struct PresetPickerRow: View {
                             Image(systemName: "arrow.uturn.backward")
                         }
                         .buttonStyle(.borderless)
-                        .help("退回默认")
+                        .help(model.strings.resetToDefault)
                     }
                 }
-                if let hint = FieldNotes.note(ns: snapshot.ns, path: path)?.hint {
+                if let hint = FieldNotes.note(ns: snapshot.ns, path: path)?.hint?[model.locale] {
                     Text(hint).font(.caption).foregroundStyle(.secondary)
                     // **限宽**：不限的话这行小字的"理想宽度"就是它的全长，
                     // `Form(.columns)` 按各行理想宽度算控件列，一句长注解能把整页

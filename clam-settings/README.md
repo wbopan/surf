@@ -20,7 +20,8 @@ swift/           SettingsSchema/JSONValue（解码）· SettingsModel（状态�
                  SettingsChrome（版式公用件：FormRule / 源列表外框 / NSSearchField）·
                  FieldRow/FieldControls/ScalarListEditor（七种编辑器语义）·
                  GeneralPage/ModelsPage/PluginsPage/PresetsPage（四栏）·
-                 PluginInventoryList（插件列表）· FieldNotes（注解表）
+                 PluginInventoryList（插件列表）· FieldNotes（注解表，双语）·
+                 Strings（`struct L`：页面散落文案，zh/en 并排）
 tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
 ```
 
@@ -70,8 +71,12 @@ tools/probe.mjs  不开窗口、不碰屏幕，直接当"壳"连桥验数据面
   `value:` 是非 String `Comparable` 时会在 `LocalizedStringKey` 与
   `LocalizedStringResource` 两个重载间歧义；换成 `Text` 标签又会解析到
   `SortDescriptor` 那一族，和 `Table(sortOrder:)` 的 `KeyPathComparator` 不兼容。
-  办法是给 model 加一个 `String` 计算属性（`statusText`）按它排——顺带保证
-  **排的和显示的是同一个东西**。
+  办法是让那一列有一个 `String` 的**存储**属性（`InventoryRow.statusText`）按它排
+  ——顺带保证**排的和显示的是同一个东西**。文案双语化之后这条更硬了：状态文案
+  跟着语言走，就不能再是 `InventoryEntry` 上的计算属性（那个 struct 不知道语言），
+  于是 `PluginInventoryList` 里多了一层显示投影 `InventoryRow`。
+  另：表头改从 `L` 取之后传的是 `String` 变量，**那个重载歧义本身消失了**
+  ——但别顺手把中文字面量写回去，它会立刻回来。
 
 ### 窗口宽度是常量
 
@@ -187,6 +192,32 @@ does not add plugin mutation controls"。那个「已启用/已停用」是编�
 
 **不刮上游 web 产物**（计划 §1.3）：那是把别人的构建输出当 API 用，
 升一次 dsh 就可能碎，而且碎得很安静。
+
+## 文案是双语的，语言跟着 dsh 走
+
+两张表，分工是「现算 vs 数据」（权威计划 [`docs/clam-i18n-plan.md`](../docs/clam-i18n-plan.md)）：
+
+| | 收什么 | 形态 |
+|---|---|---|
+| [`swift/Strings.swift`](swift/Strings.swift) 的 `struct L` | 页面上散落的那些字（空态、按钮、提示条、表头、相位词典…） | `t("中文", "English")` 现算，读 `ClamLocaleStore.current` |
+| `FieldNotes` / `NamespaceNotes` | 字段与命名空间的标题、说明、单位、枚举值 | `LocalizedText("中文", "English")`，两种语言都存在表里 |
+
+后者必须两种都存下来，因为它是 `static let`——被读到之前就已经存在，那时还不知道语言。
+两处都**漏写 en 编译不过**（构造器要两个参数 / `struct L` 的每条都得给两个串）。
+
+- 取值一律经 `model.strings` 与 `model.locale`：SwiftUI 在 body 里读它 = 对
+  `@Observable` 的 `ClamLocaleStore` 建立观察依赖，换语言整扇窗自动重渲。
+  **不用 `withObservationTracking`**（静默死亡坑，CLAUDE.md）。
+- **窗框那半边不在 SwiftUI 里**：`.preference` 工具栏那四个标签和窗口标题由 AppKit
+  拿着，`SettingsPlugin` 另订一次 `clam.locale`，回调里
+  `SettingsWindowController.relocalize(_:)` 重贴。那个方法**从事件载荷取 locale**，
+  不读 model——总线订阅者存在字典里，回调顺序未定义，读 model 会慢一次切换。
+- **数据不翻**：provider 显示名、preset 名与描述、模块名、条目 id、dsh 回来的错误
+  原话都原样显示。node 半边自己认领的失败只回 `code`（`CREDENTIALS_UNAVAILABLE`），
+  文案由 `L.failureMessage` 出——**node 不往界面推任何显示文案**（计划 §8-4）。
+- 「语言」那一行的选项**不翻**（`中文` / `English`），照 dsh 的 `LOCALES`：
+  语言选择器里列出别人的语言时用那门语言自己的名字。
+- 日志（`host.log` / `ctx.logger`）一律留中文：读它的是蹲在终端前的人。
 
 ## 怎么验它
 

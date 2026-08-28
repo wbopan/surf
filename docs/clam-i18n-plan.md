@@ -377,3 +377,59 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   首字母大写。打磨改动较大的 3 条在表里以 `// 原：…` 标出——其中
   「未命名会话 → 新会话」是**与 clam-sidebar 对齐**（同一个会话既是侧边栏一行、
   又是窗口标题，两处叫法不同就是明摆着的自相矛盾）。
+- **2026-08-28 · i4（clam-settings 文案双语化）· 完成。** 新增
+  `clam-settings/swift/Strings.swift`：`struct L` **85 条**（68 个属性 + 17 个方法，
+  其中 `tabTitle` / `pluginPhase` / `providerStatus` / `failureMessage` 各自收着一小张表），
+  外加一个 `struct LocalizedText`（zh/en 一对，构造器必须给两个参数）。
+  四栏标签 / 窗口标题 / 四个页面的空态与提示条 / 模型页整套（凭据栏、添加 sheet、
+  状态点 tooltip、引用名）/ 插件列表（表头、搜索框、计数行、相位词典）/ 预设页 /
+  七种字段编辑器 / 值摘要 / 约束提示全部改从它取；`host.log` 与 `ctx.logger`
+  的中文一条没动。
+  **`FieldNotes` 是改造不是推倒**：`Note` 的 title/hint/unit/options 从 `String`
+  换成 `LocalizedText`，表体照原样保留，28 条字段注解 + 7 条 ns 注解 + 全部枚举值
+  一共 65 对 zh/en。**为什么这里是"两种都存"而不是像 `L` 那样现算**：这张表是
+  `static let`，被读到之前就已经存在，那时还不知道语言。写法上用隐式
+  `.init("中文", "English")`（参数类型已知），漏写 en 编译不过；两种语言写法真的
+  相同的（`中文` / `English` / `API key` / `px`）用显式的 `.same(_:)` 声明"不该翻"，
+  而不是把同一个串抄两遍。`SettingsFormat.humanize` 兜底路径**两种语言共用一份**，
+  就地加注说明：它出的本来就不是"中文文案的英文版"，而是真 key 拆出来的机械美化，
+  zh 界面下露出它反而比编一个中文名更好查（README「字段文案从哪来」的原话）。
+  **locale 接线**：`SettingsModel` 持 `ClamLocaleStore`，`strings` / `locale` 两个
+  **现算不存快照**的计算属性；视图 body 里读它就建立观察依赖，换语言整扇窗自动重渲
+  ——**没有新增任何观察者**。`SettingsPlugin` 在 `activate` 里建那个 store 交给 model
+  （model 被窗口按着 = 生命周期锚），跨世代收口那套 `host.objects` 一个字没动。
+  验证：`swiftc` 按壳 `CompilerService` 的参数形状**全量编出 dylib**
+  （`-emit-library`，只接 ClamSDK——clam-settings 不声明 swiftDeps/sharedModules）
+  **成功、无警告**（改动前跑过同一条命令做对照，基线也是零警告）；
+  `node --check` 两个改动 JS 通过；`node --test clam-sidebar/test/*.test.js` 18/18 绿；
+  `clam-settings/` 除注释、日志、`Strings.swift`、`FieldNotes.swift` 外已无中文
+  字符串字面量（grep 核过）。
+  **偏离计划四处**：
+  ① **窗框那半边另走一条**：`.preference` 工具栏那四个标签与窗口标题由 AppKit 拿着，
+  SwiftUI 观察不到，所以 `SettingsPlugin` 另订一次 `clam.locale`，回调里
+  `SettingsWindowController.relocalize(_:)` 重贴标签、controller title、符号 AX 描述
+  与窗口标题。那个方法**从事件载荷取 locale 而不是读 model**：总线的订阅者存在
+  `[UUID: handler]` 字典里、回调顺序未定义，`ClamLocaleStore` 也是个订阅者，
+  它可能排在后面——读 model 会让窗框永远慢一次切换，而且不报错。
+  ② **插件列表多了一层显示投影 `InventoryRow`**（`PluginInventoryList` 内）。
+  状态那一列的排序键就是它的显示文案（README 记过的 `TableColumn` 重载坑），
+  而 `KeyPathComparator` 只能指到**存储**属性上；文案一旦跟着语言走，就不能再是
+  `InventoryEntry` 上的计算属性。于是把 `statusText` / `phaseLabel` 从那个 struct
+  搬进 `L`，在视图里就地算一次落成一行数据。顺带：表头改从 `L` 取（`String` 变量）
+  之后，那个 `LocalizedStringKey` 重载歧义本身就消失了。
+  ③ **node 半边其实有三处用户文案**（任务书说没有，实测有）：`index.js` 的
+  `errorText` 兜底「未知错误」、`models.js` 两处 `throw new Error("凭据服务不在场")`
+  ——它们经 ack 的 `error` 直接显示在字段行上。按 i2 的断根办法处理：`errorText`
+  只转上游原话、说不出就给 `null`；自己认领的那条改抛带 `code`
+  （`CREDENTIALS_UNAVAILABLE`）的错，`setCredential` / `unsetCredential` /
+  `documentPath` 三处 ack 一并回执 `code`。Swift 侧新增 `L.failureMessage`
+  （**先查 code、再用上游原话、最后兜底**）。`SettingsBridge` 的超时回执同样改成
+  只报 `code: "TIMEOUT"`、不带文案。
+  ④ `SourceListFooter` 的两段 AX 描述（`添加` / `移除`）**改成必填参数、并挪进
+  `updateNSView`**：AX 描述也是用户"看得见"的字，而 `makeNSView` 一个视图只跑一次
+  ——留在那儿的话换语言之后旁白还念旧词，且不报错。
+  打磨改动较大的 **18 条**以 `// 原：…` 标出（17 条在 `Strings.swift` 里，
+  另一条是 `Banner` 那个"关掉提示"的按钮，标在调用点上）（`知道了 → 好`、
+  `改不动/填不了 → 无法修改/暂时不可用`、`在 Finder 中显示 → 在访达中显示` 等），
+  供 i6 汇总审校表。**「语言」那一行的选项不翻**（`中文` / `English`），
+  就地留注说明：照 dsh 的 `LOCALES`，语言选择器列别人的语言时用那门语言的自述名。

@@ -1,3 +1,4 @@
+import ClamSDK
 import Foundation
 
 /// schemastery 的序列化壳子解成一棵 Swift 树。
@@ -167,12 +168,14 @@ extension SchemaMeta {
         self.step = raw["step"] as? Double ?? (raw["step"] as? Int).map(Double.init)
     }
 
-    /// 约束的人话，显示在字段副标题里。没有约束就返回 nil（别显示一行空的）。
-    var constraintText: String? {
+    /// 约束的人话，进字段那一行的悬停提示。没有约束就返回 nil（别显示一行空的）。
+    ///
+    /// `≥` / `≤` 是符号不是文案，两种语言同一个写法；只有「步长」需要翻。
+    func constraintText(_ locale: ClamLocale) -> String? {
         var parts: [String] = []
         if let min { parts.append("≥ \(SettingsFormat.number(min))") }
         if let max { parts.append("≤ \(SettingsFormat.number(max))") }
-        if let step, step != 1 { parts.append("步长 \(SettingsFormat.number(step))") }
+        if let step, step != 1 { parts.append(L(locale).step(SettingsFormat.number(step))) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

@@ -31,7 +31,7 @@ struct SettingsPage: View {
             // **不显示"没有设置"**：首帧没到跟真的没有是两回事，说错了用户会去查配置。
             VStack(spacing: 8) {
                 ProgressView()
-                Text("正在连接 dsh…").font(.callout).foregroundStyle(.secondary)
+                Text(model.strings.connecting).font(.callout).foregroundStyle(.secondary)
             }
             .frame(height: 180)
         } else if let height = tab.height {
@@ -71,10 +71,11 @@ struct SettingsPage: View {
     private var banners: some View {
         VStack(spacing: 0) {
             if model.loaded && !model.writable {
-                Banner(text: "配置文档是只读的，这里改不了。", tint: .orange, action: nil)
+                Banner(text: model.strings.readOnlyBanner, tint: .orange,
+                       dismiss: model.strings.ok, action: nil)
             }
             if let notice = model.notice {
-                Banner(text: notice, tint: .red) { model.notice = nil }
+                Banner(text: notice, tint: .red, dismiss: model.strings.ok) { model.notice = nil }
             }
         }
     }
@@ -109,6 +110,9 @@ struct SelfSizingScroll<Content: View>: View {
 struct Banner: View {
     let text: String
     let tint: Color
+    /// 关掉这条提示的按钮文案。**由调用方递入**：这个 view 不认识 `L`，
+    /// 而它显示的 `text` 本来也是别人算好的（有时是 dsh 的原话）。
+    let dismiss: String
     let action: (() -> Void)?
 
     var body: some View {
@@ -117,7 +121,7 @@ struct Banner: View {
             Text(text).font(.callout).textSelection(.enabled)
             Spacer(minLength: 4)
             if let action {
-                Button("知道了", action: action).controlSize(.small)
+                Button(dismiss, action: action).controlSize(.small)  // 原：知道了
             }
         }
         .padding(.horizontal, 16)
@@ -138,7 +142,7 @@ struct FieldOrGroup: View {
 
     var body: some View {
         if case .object(let fields, _) = node {
-            Text(FieldNotes.title(ns: snapshot.ns, path: path))
+            Text(FieldNotes.title(ns: snapshot.ns, path: path, locale: model.locale))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             ForEach(fields, id: \.key) { field in

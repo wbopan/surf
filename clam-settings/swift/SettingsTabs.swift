@@ -34,14 +34,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .general: return "通用"
-        case .models: return "模型"
-        case .plugins: return "插件"
-        case .presets: return "智能体预设"
-        }
-    }
+    // 四栏的**名字在 `L.tabTitle(_:)`**（跟着界面语言走），不在这儿。
+    // 留在这儿的 `rawValue` 是稳定标识：`NSTabViewItem.identifier` 与
+    // `settings.page.<id>` 那些 accessibilityIdentifier 都取它，一个字不随语言变。
 
     var symbol: String {
         switch self {

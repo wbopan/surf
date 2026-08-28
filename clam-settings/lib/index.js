@@ -164,7 +164,7 @@ export default createSwiftPlugin({
 				await setCredential(api, String(payload.ref ?? ""), String(payload.value ?? ""));
 				ack(api, payload, { ok: true });
 			} catch (error) {
-				ack(api, payload, { ok: false, error: errorText(error) });
+				ack(api, payload, { ok: false, error: errorText(error), code: error?.code ?? null });
 			}
 		},
 
@@ -174,7 +174,7 @@ export default createSwiftPlugin({
 				await unsetCredential(api, String(payload.ref ?? ""));
 				ack(api, payload, { ok: true });
 			} catch (error) {
-				ack(api, payload, { ok: false, error: errorText(error) });
+				ack(api, payload, { ok: false, error: errorText(error), code: error?.code ?? null });
 			}
 		},
 
@@ -187,7 +187,7 @@ export default createSwiftPlugin({
 				const path = await api.ctx.settings.prepareDocument();
 				ack(api, payload, { ok: true, value: path ?? null });
 			} catch (error) {
-				ack(api, payload, { ok: false, error: errorText(error) });
+				ack(api, payload, { ok: false, error: errorText(error), code: error?.code ?? null });
 			}
 		},
 	},
@@ -228,7 +228,14 @@ function ack(api, payload, result) {
 	api.push("ack", { id, ...result });
 }
 
-/** 错误文案：优先 message，兜底 String()。 */
+/**
+ * 错误文案：**只转上游原话**，没有就给 null。
+ *
+ * 兜底文案不在这儿造（原来是一句中文「未知错误」）：node 这半边不认识界面语言，
+ * 造一句就是把一条中文钉死在界面上（计划 §8-4）。说不出原因时让 Swift 用自家
+ * 文案表兜底——它知道现在该说哪种语言。`code` 由调用点一并回执。
+ */
 function errorText(error) {
-	return String(error?.message ?? error ?? "未知错误");
+	const text = String(error?.message ?? error ?? "").trim();
+	return text === "" ? null : text;
 }
