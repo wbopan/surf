@@ -127,7 +127,7 @@ export function createHeaderSource(ctx, log) {
 		 */
 		async selectPreset(sessionId, agentPreset) {
 			await call("agentPresets", "select",
-				{ sessionId: normalizeSessionId(sessionId), agentPreset }, "切换 agent preset");
+				{ sessionId: normalizeSessionId(sessionId), agentPreset });
 			scheduleRefetch(true);
 		},
 
@@ -437,9 +437,9 @@ export function createHeaderSource(ctx, log) {
 		inFlight = (async () => {
 			try {
 				const [sessions, presets] = await Promise.all([
-					call("sessions", "list", {}, "拉取会话列表"),
+					call("sessions", "list", {}),
 					// 花名册几乎不变，但它便宜（读几个目录），跟着一起取省一条时序。
-					call("agentPresets", "list", {}, "拉取 agent preset 名单")
+					call("agentPresets", "list", {})
 						.catch((error) => {
 							// 部署没有 preset 根本不是错——但真出错时也不该让整个
 							// header 消失，退化成"没有 mode 这一格"。
@@ -474,17 +474,44 @@ export function createHeaderSource(ctx, log) {
 		}
 	}
 
-	/** 一次 apiProxy 调用：拼信封、拆 `{ok, value|error}`、失败翻成中文 Error。 */
-	async function call(domain, method, payload, what) {
+	/**
+	 * 一次 apiProxy 调用：拼信封、拆 `{ok, value|error}`、失败抛 Error。
+	 *
+	 * **抛出来的 message 就是上游那句原话，不加任何中文前缀**（i18n 断根，
+	 * 计划 §8-4，与 clam-sidebar 同一份协议）：这条 message 会经 `error` 频道
+	 * 原样送到 Swift，界面语言由那边决定，node 不知道也不该知道。
+	 * 以前这里拼的是 `${what}：${原话}`，于是一句中文文案从 node 泄漏了出去。
+	 *
+	 * 我们自己认领得了的失败（不是上游给的原话）挂一个 `clamCode`，
+	 * 由 Swift 查表翻成人话——见 `SourceError`。
+	 * 调用点想在日志里写中文，自己写（日志不跟界面语言走）。
+	 */
+	async function call(domain, method, payload) {
 		const api = ctx.apiProxy?.[domain];
 		if (api?.[method] === undefined) {
-			throw new Error(`${what}：apiProxy.${domain}.${method} 不存在（dsh 版本变了？）`);
+			throw new SourceError("apiMissing",
+				`apiProxy.${domain}.${method} is unavailable`);
 		}
 		const response = await api[method]({ rpcId: randomUUID(), payload });
 		const result = response?.result;
 		if (result?.ok === true) return result.value;
 		const error = result?.error;
-		throw new Error(`${what}：${error?.message ?? error?.code ?? "上游没有说明原因"}`);
+		throw new Error(error?.message ?? error?.code ?? "");
+	}
+}
+
+/**
+ * 带机器可读原因码的失败。**文案不在这儿**：`clamCode` 经桥的 `error` 频道
+ * 送到 Swift，那边查自己的表。`message` 只是给日志看的技术串，不是给用户看的
+ * 句子。形状与 clam-sidebar 的同名类逐字一致（两个插件共用一份 error 帧协议，
+ * 各自复制一份好过为它造一个共享包）。
+ */
+export class SourceError extends Error {
+	constructor(code, message) {
+		super(message);
+		this.name = "SourceError";
+		/** @type {string} */
+		this.clamCode = code;
 	}
 }
 

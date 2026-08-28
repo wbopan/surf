@@ -80,12 +80,31 @@ final class HeaderModel {
     /// 本插件这一代的世代号。页面据此分辨"谁在喊"（见 `confirmNative` / `dismissNative`）。
     @ObservationIgnored private let generation: Int
 
+    // MARK: - 界面语言
+
+    /// 界面语言的可观察持有者。真相是 dsh 的 `locale` 设置，壳把它当粘性事件
+    /// 广播（`clam.locale`）——决议链见 `docs/clam-i18n-plan.md` §3。
+    ///
+    /// **`@ObservationIgnored` 是对的**：这个引用一辈子不换，会变的是它里面的
+    /// `current`，而那一层自己就是 `@Observable`。
+    @ObservationIgnored let locale: ClamLocaleStore
+
+    /// 当前语言下的文案表。**现算，不存快照。**
+    ///
+    /// 读它就是读 `locale.current`，于是 `HeaderToolbarSync` 那圈
+    /// `withObservationTracking` 天然把语言纳入了依赖——换语言 = 一次普通的
+    /// model 变化 = 活通道自己重推一遍。**这就是本插件为 i18n 加的全部观察**
+    /// （没有新的观察者，也就没有那条"观察者没人持有就静默死"的坑）。
+    var strings: L { L(locale.current) }
+
     init(webView: WKWebView?, surface: ClamConversationSurface,
-         bridge: ClamBridge, generation: Int, log: @escaping (String) -> Void) {
+         bridge: ClamBridge, generation: Int, locale: ClamLocaleStore,
+         log: @escaping (String) -> Void) {
         self.webView = webView
         self.surface = surface
         self.bridge = bridge
         self.generation = generation
+        self.locale = locale
         self.log = log
     }
 

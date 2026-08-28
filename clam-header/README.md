@@ -50,6 +50,27 @@ node 半边订宿主服务与事件，投影经桥推 JSON；Swift 只管画和�
 **拓扑与流量分家**：`metadata` 一变就重建整条工具栏，所以徽标数字、菜单内容、
 段控选中态、显隐都走活通道 `clam.toolbar.update`，不走 metadata。
 
+## 文案：`swift/Strings.swift`，语言跟 dsh 走
+
+用户可见的字全在 `struct L` 里（zh / en 并排一行），语言的唯一权威是 dsh 的
+`locale` 设置（决议链见 `docs/clam-i18n-plan.md` §3）。日志一律留中文——读它的是
+蹲在终端前的人，跟着界面语言变只会让排错时对不上账。
+
+换语言时两条路各走各的，**这正是上面那条"拓扑与流量分家"的直接推论**：
+
+| 什么 | 怎么跟上 |
+|---|---|
+| 四格的 `label`（拓扑键） | `HeaderPlugin` 订 `clam.locale`，**重新贡献**同一组 `(owner, id)`：就地覆盖、位置不变，`ToolbarItemState` 按 key 记账所以活状态不丢 |
+| 菜单内容、tooltip、`window.subtitle`（流量） | `HeaderToolbarSync.push()` 第一句读 `model.strings`，于是语言对那圈 `withObservationTracking` 就是一次普通的 model 变化 |
+
+两件事**不翻**：段控开局那两个名字（`Chat` / `Trajectory` 只是页面报来之前的占位，
+真名单是 dsh 按它自己的 locale 给的），以及会话标题、preset 名这些数据——只有
+"它没有标题时叫什么"这类兜底词归我们。「子代理」「后台任务」「一次性 / 可继续」
+这些词是**照抄 dsh 词典**的：同一个会话在两半界面上出现时用词必须是一个。
+
+`error` 帧里也一个显示文案都没有：node 推 `{action, code?, message}`
+（`code` 是我们自己认领得了的原因码，`message` 是上游原话），文案归 Swift。
+
 ## 子代理 catalog 是唯一入口
 
 **子代理会话不进侧边栏**（上游 README：parent header catalog 是它们唯一的导航入口），

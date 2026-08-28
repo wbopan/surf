@@ -23,6 +23,12 @@
  * | 频道 | 载荷 | 什么时候 |
  * |---|---|---|
  * | `snapshot` | `{version, session}` | 焦点会话的 header 事实变了；`session` 为 null = 无焦点 |
+ * | `error` | `{action, code?, message}` | 写动作抛错（Swift 记一行日志） |
+ *
+ * **`error` 帧里一个显示文案都没有**（计划 §8-4，与 clam-sidebar 同一份协议）：
+ * `action` 是动作 id、`code` 是我们自己认领得了的失败原因码（`notReady` /
+ * `apiMissing`，见 `dsh-source.js` 的 `SourceError`），`message` 是上游那句原话。
+ * node 不知道界面是哪种语言，也不该知道。
  *
  * `session` 的字段：`{id, crumbs:[{id,title,subagent}], preset, presets, jobs}`。
  *
@@ -48,8 +54,9 @@ import { SOURCE_SERVICES, createHeaderSource } from "./dsh-source.js";
  * 本插件与 Swift 半身之间数据形状的版本。**改了投影字段就 +1**——它折进
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  * v1 = 只有 tabs（走页内桥，不经这里）。v2 = 加上面包屑 / mode / jobs。
+ * v3 = `error` 帧结构化（`message` 不再带中文前缀，改配 `code`；i3 文案双语化）。
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * 桥这一侧的合并窗口。很短：数据源已经替我们把 I/O 那层的洪流合并掉了
@@ -151,7 +158,10 @@ export default createSwiftPlugin({
 			// snapshot / focus 在数据面就绪前到达是正常的（Swift 每代都会问一次），
 			// 不值得报错——就绪那一刻会自己推一份。只有写动作才需要告诉用户。
 			if (action === "selectPreset") {
-				api.push("error", { action, message: "header 数据面尚未就绪" });
+				// 这一条没有上游原话可转，只有我们自己的原因码；`message` 是给
+				// 日志与"万一 Swift 不认得这个码"兜底用的技术串，不是给用户看的句子。
+				api.push("error", { action, code: "notReady",
+					message: "header data plane is not ready" });
 			}
 			return;
 		}
@@ -159,9 +169,13 @@ export default createSwiftPlugin({
 			await handler(payload ?? {});
 		} catch (error) {
 			const message = errorText(error);
+			// 日志照旧中文（读它的是蹲在终端前的人，不跟界面语言走）。
 			api.ctx.logger("clam-header").warn(`${action} 失败：${message}`);
 			process.stderr.write(`clam-header: ${action} 失败：${message}\n`);
-			api.push("error", { action, message });
+			const code = typeof error?.clamCode === "string" ? error.clamCode : undefined;
+			api.push("error", code === undefined
+				? { action, message }
+				: { action, code, message });
 		}
 	}])),
 });

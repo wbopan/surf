@@ -330,3 +330,50 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   `Identifiable.id`，中文串会随语言变。AX identifier 一个都没动（`sidebar.group.*`
   取的是 workspaceId，与分段无关），但**本 worktree 没有在跑的实例，没能 dump 一次
   AX 复核分组头的 `.accessibilityElement(children: .ignore)` 收口，留待 i6 截图验收**。
+- **2026-08-28 · i3（clam-header 文案双语化）· 完成。** 新增
+  `clam-header/swift/Strings.swift`（`struct L`，20 条：9 个属性 + 11 个方法，
+  其中 4 个是时长拼装、2 个各带一小张二选一表，实际串数约 24）。四格工具栏 label /
+  窗口标识（标题兜底词 + 后台任务副标题）/ 会话谱系菜单（祖先段、子代理项、
+  次要行、空态、tooltip）/ 模式菜单（当前 preset、不可用标注、「默认」）全部改从
+  它取；`host.log` 与 node 日志的中文一条没动。
+  **两条路各走各的，正是「拓扑与流量分家」的直接推论**：四格的 `label` 是拓扑键，
+  由 `HeaderPlugin` 订 `clam.locale` 后**重新贡献**同一组 `(owner, id)`（照 i2 的
+  写法，四个撤销句柄存在闭包捕获的 `var contributions` 里而不是 `kept(by: handle)`，
+  避开那条"订阅与 handle 互相按住、旧世代退不了休"的环；`contribute` 顺带改成
+  `static` 并返回句柄）；菜单内容 / tooltip / 副标题是流量，走既有的
+  `clam.toolbar.update`——`HeaderToolbarSync.push()` 第一句改读 `model.strings`
+  （`HeaderModel` 新增 `locale: ClamLocaleStore` 与**现算不存快照**的 `strings`），
+  于是语言变更对那圈**既有的** `withObservationTracking` 就是一次普通的 model 变化，
+  **本里程碑没有新增任何观察者**。
+  **`HeaderFormatting.duration` 整段重写**：分档算术留在原地（上游阈值一条没改），
+  带单位的措辞全部交给 `L`——zh「约 2 年 3 个月」「5 天 4 小时」「30 秒」，
+  en "about 2 years 3 months" / "5 days 4 hours" / "30 seconds"，单复数由一个
+  `count(_:zh:one:many:)` helper 统一处理。中间两档是纯数字钟面（`3:04:05`），
+  不过 `L`。
+  **node 错误路径**按 i2 的协议同步：`dsh-source.js` 的 `call()` 去掉 `what` 参数、
+  只抛上游原话，新增同形状的 `SourceError(code)`（`apiMissing`）；`index.js` 的
+  两处 `push("error")` 统一成 `{action, code?, message}`，桥 `SCHEMA_VERSION` 2 → 3。
+  header 的 Swift 侧**只把错误写进日志、不弹界面**（换 preset 失败时下一份投影会把
+  选中态纠回去），所以那一侧不查表，只把 `code` 一并记上。
+  验证：`swiftc` 按壳 `CompilerService` 的参数形状**全量编出 dylib**
+  （`-emit-library`，ClamSDK + 现编的 ClamLayout module 都接上）**成功、无警告**
+  （改动前跑过同一条命令做对照）；`node --check` 三个 JS 通过；
+  `node --test clam-sidebar/test/*.test.js` 18/18 绿；`clam-header/` 除注释、
+  日志与 `Strings.swift` 外已无中文字符串字面量（grep 核过）。
+  **偏离计划三处**：
+  ① **段控开局那两个名字（`Chat` / `Trajectory`）不进表**，原样留在贡献 metadata 里
+  并加注说明：它们只是"页面还没报过"那一瞬的占位，真名单是 `model.tabs`——dsh 的
+  ui-conversation 按它自己的 locale 给的字（zh 下 `view.chat` = 「对话」）。
+  翻了反而会造出"原生写「对话」、页面写 Chat"的分叉。
+  ② **从 `subagentsPatch` 里删掉了 `"label"`**。那一格的 label 是常量，却一直经活通道
+  推——而 `ToolbarItemState.label` 是**永久覆盖**，一旦被推过一次，metadata 那份就
+  再也说了不算，重新贡献会静默哑火。分界混着的时候看不出问题，i3 要用重新贡献才
+  暴露。`mode` 那格的 label 留着（它真的是当前 preset 名，属于流量）。
+  ③ **`HeaderFormatting` 的英文措辞不再逐字复刻上游**：上游词典给的是密排指标里的
+  缩写（`~2y 3mo` / `5d 4h` / `30s`），而我们这几个数字长在 AppKit 菜单项的次要行上，
+  读的是句子。**数字与分档仍然逐字一致**，只是措辞按计划 §5 的要求展开成完整词。
+  （zh 那侧本来就已经与上游有空格差异。）另：`一次性` / `可继续` / `子代理` /
+  `个后台任务` 这些词与 dsh 词典逐字对齐，en 侧则把上游的小写改成菜单该有的
+  首字母大写。打磨改动较大的 3 条在表里以 `// 原：…` 标出——其中
+  「未命名会话 → 新会话」是**与 clam-sidebar 对齐**（同一个会话既是侧边栏一行、
+  又是窗口标题，两处叫法不同就是明摆着的自相矛盾）。

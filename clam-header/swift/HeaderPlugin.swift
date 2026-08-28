@@ -63,8 +63,13 @@ final class HeaderPlugin: ClamPlugin {
         }
 
         let handle = ClamPluginHandle()
+        // 界面语言。真相是 dsh 的 `locale` 设置，壳把它当粘性事件广播
+        // （`clam.locale`），所以这一句订上的瞬间就已经是当前值——初值只兜住
+        // "壳还没发过"那一刻（决议链见 docs/clam-i18n-plan.md §3）。
+        let locale = ClamLocaleStore(bus: host.events)
         let model = HeaderModel(webView: webView, surface: surface, bridge: host.bridge,
-                                generation: host.generation, log: { host.log($0) })
+                                generation: host.generation, locale: locale,
+                                log: { host.log($0) })
         // full 模式下正文要让开标题栏那条带子。实测窗口的 contentLayoutGuide，
         // 硬编码会在工具栏样式或系统版本变化时错位。
         // 开局自己量一次：clam-layout 的首帧广播可能早于本插件装配，
@@ -125,8 +130,16 @@ final class HeaderPlugin: ClamPlugin {
 
             case "error":
                 // 写动作失败（目前只有换 preset）。读失败 node 那边自己咽了。
-                host.log("header 动作失败：\(payload["action"] ?? "?") "
-                         + "\(payload["message"] ?? "未知原因")")
+                //
+                // 载荷是结构化的 `{action, code?, message}`（与 clam-sidebar 同一份
+                // 协议，计划 §8-4）：**node 不再往里塞任何显示文案**。
+                // 这边**只写日志、不弹界面**——工具栏那格换失败时，下一份投影会把
+                // 选中态纠回去，用户看得见结果；为一次 preset 没换成弹个模态框
+                // 是过度反应。所以这里不查 `L`：日志一律中文（读它的是蹲在终端
+                // 前的人，不跟界面语言走）。**哪天要把它做成 alert，文案去 `L` 取。**
+                host.log("header 动作失败：\(payload["action"] ?? "?")"
+                         + "／\(payload["code"] ?? "-")"
+                         + "／\(payload["message"] ?? "未知原因")")
 
             default:
                 break // 未知频道忽略（协议向前兼容，同桥的纪律）
@@ -152,40 +165,83 @@ final class HeaderPlugin: ClamPlugin {
         // 徽标数字、菜单内容、显隐）走 `clam.toolbar.update` 活通道，
         // 由 HeaderToolbarSync 推——改 metadata 会重建整条工具栏。
 
-        // 会话谱系：祖先导航 + 兄弟切换 + 子代理进入，三种交互一个菜单。
-        // **子代理会话不进侧边栏，这是它们唯一的入口。**
+        // **四格一起贡献，换语言时整组重来。**
         //
-        // 放右组而不是紧挨标题：`window.title` 是贪心的，会把 content·leading
-        // 的项顶走（见 clam-layout 那条注释）。而且 Mail / Notes 本来就不在
-        // 标题右边放按钮——标题一侧只有文字，动作全在另一头。
-        contribute(host, handle, id: "subagents", order: 0, label: "子代理",
-                   align: "trailing", kind: "menu", symbol: "arrow.triangle.branch",
-                   priority: "low")
-        // 四格靠右钉死。中间那段留白是设计的一部分：会话正文列的正中
-        // 不放东西，视线从标题落下去一路无遮挡。
+        // `label` 是拓扑键（一变就重建整条工具栏），所以它跟不了活通道
+        // ——`clam.toolbar.update` 那条路是给徽标数字、菜单内容、选中态这类流量
+        // 走的（CLAUDE.md 的分界，两者不许混）。换语言的正路就是**重新贡献同一组
+        // `(owner, id)`**：就地覆盖、位置不变，`ToolbarItemState` 里那份活状态
+        // 按 key 记账，重建后自己补回去（段控的分段名单、mode 的当前 preset 名
+        // 都不会因此丢）。
         //
-        // `spaced` 把它们断成三枚玻璃胶囊：[段控] [模式] [任务 导出]。
-        // 任务与导出相邻不断，合成一枚（Mail 对 archive/trash/flag 就是这么做的）。
-        // 窗口收窄时的让位顺序由 priority 定，AppKit 自己把让掉的项收进 `»`
-        // 溢出菜单。**实测过缺省全给 standard 的结果**：520pt 宽时右边四格
-        // 整组进了溢出，而占 220pt 的标题纹丝不动——正好反了。
-        // 现在是：任务(low) → 标识/模式(standard) → 段控/导出(high)。
-        contribute(host, handle, id: "viewTabs", order: 10, label: "会话视图",
-                   align: "trailing", spaced: true, kind: "group",
-                   // 开局的分段。真名单由页面报上来，随后经活通道换掉。
-                   items: [
-                       ["id": "chat", "label": "Chat", "symbol": "text.bubble"],
-                       ["id": "trajectory", "label": "Trajectory",
-                        "symbol": "list.bullet.indent"],
-                   ],
-                   priority: "high")
-        contribute(host, handle, id: "mode", order: 20, label: "模式",
-                   align: "trailing", spaced: true, kind: "menu", symbol: "cube")
-        // 后台任务那一格**没了**：上游 ui-jobs 自己也只给看不给停，做成按钮
-        // 是在承诺一件按下去不会发生的事。计数改进 `window.subtitle`。
-        contribute(host, handle, id: "export", order: 40, label: "导出",
-                   align: "trailing", kind: "button", symbol: "square.and.arrow.down",
-                   priority: "high")
+        // **撤销句柄存在闭包捕获的这个 var 里，不 `.kept(by: handle)`**：那样会让
+        // 订阅闭包捕获 `handle`，而订阅本身又由 handle 按住——一个谁也放不掉谁的环，
+        // 旧世代永远退不了休（clam-sidebar 的同一处记过这条）。
+        // 现在的链是：handle → 订阅 disposable；总线 → 订阅闭包 → 这个 var。
+        var contributions: [ClamDisposable] = []
+        let contributeAll: (L) -> Void = { strings in
+            // 先注册新的（就地覆盖同 `(owner, id)`）再撤旧句柄：反过来会先把
+            // 自己那几条摘掉，工具栏闪一下少四格。旧句柄此刻 token 已对不上，
+            // `dispose()` 是空操作——写出来只为让"谁负责撤销"一眼可见。
+            let previous = contributions
+            contributions = [
+                // 会话谱系：祖先导航 + 兄弟切换 + 子代理进入，三种交互一个菜单。
+                // **子代理会话不进侧边栏，这是它们唯一的入口。**
+                //
+                // 放右组而不是紧挨标题：`window.title` 是贪心的，会把 content·leading
+                // 的项顶走（见 clam-layout 那条注释）。而且 Mail / Notes 本来就不在
+                // 标题右边放按钮——标题一侧只有文字，动作全在另一头。
+                Self.contribute(host, id: "subagents", order: 0,
+                                label: strings.subagentsLabel,
+                                align: "trailing", kind: "menu",
+                                symbol: "arrow.triangle.branch", priority: "low"),
+                // 四格靠右钉死。中间那段留白是设计的一部分：会话正文列的正中
+                // 不放东西，视线从标题落下去一路无遮挡。
+                //
+                // `spaced` 把它们断成三枚玻璃胶囊：[段控] [模式] [任务 导出]。
+                // 任务与导出相邻不断，合成一枚（Mail 对 archive/trash/flag 就是这么做的）。
+                // 窗口收窄时的让位顺序由 priority 定，AppKit 自己把让掉的项收进 `»`
+                // 溢出菜单。**实测过缺省全给 standard 的结果**：520pt 宽时右边四格
+                // 整组进了溢出，而占 220pt 的标题纹丝不动——正好反了。
+                // 现在是：任务(low) → 标识/模式(standard) → 段控/导出(high)。
+                Self.contribute(host, id: "viewTabs", order: 10,
+                                label: strings.viewTabsLabel,
+                                align: "trailing", spaced: true, kind: "group",
+                                // 开局的分段。真名单由页面报上来，随后经活通道换掉。
+                                //
+                                // **这两个名字不进 `L`，也不该翻**：它们只是
+                                // 「页面还没报过」那一瞬的占位，真名单是
+                                // `model.tabs`（dsh 的 ui-conversation 自己按它的
+                                // locale 给的字，我们照搬）。翻了反而会出现
+                                // 「原生写“对话”、页面写“Chat”」的分叉。
+                                items: [
+                                    ["id": "chat", "label": "Chat", "symbol": "text.bubble"],
+                                    ["id": "trajectory", "label": "Trajectory",
+                                     "symbol": "list.bullet.indent"],
+                                ],
+                                priority: "high"),
+                Self.contribute(host, id: "mode", order: 20, label: strings.modeLabel,
+                                align: "trailing", spaced: true, kind: "menu",
+                                symbol: "cube"),
+                // 后台任务那一格**没了**：上游 ui-jobs 自己也只给看不给停，做成按钮
+                // 是在承诺一件按下去不会发生的事。计数改进 `window.subtitle`。
+                Self.contribute(host, id: "export", order: 40, label: strings.exportLabel,
+                                align: "trailing", kind: "button",
+                                symbol: "square.and.arrow.down", priority: "high"),
+            ]
+            previous.forEach { $0.dispose() }
+        }
+        // 先按当前值贡献一次（壳万一没发过那条粘性事件，这四格也得在）。
+        contributeAll(L(locale.current))
+
+        // 换语言就重新贡献。这里不读 `ClamLocaleStore`——工具栏不在 SwiftUI 里，
+        // 直接订总线那条粘性主题最省事；`locale` 那份留给 model（活通道那半边
+        // 靠 `HeaderToolbarSync` 的 `withObservationTracking` 自己跟上）。
+        host.events.subscribe(ClamEventBus.Topic.locale) { payload in
+            guard let raw = payload["locale"] as? String,
+                  let next = ClamLocale(rawValue: raw) else { return }
+            MainActor.assumeIsolated { contributeAll(L(next)) }
+        }.kept(by: handle)
 
         // ---- 工具栏回来的动作 ----
 
@@ -272,18 +328,23 @@ final class HeaderPlugin: ClamPlugin {
         return handle
     }
 
-    /// 一格贡献。五格的参数只差那么几样，收成一个辅助函数。
+    /// 一格贡献。四格的参数只差那么几样，收成一个辅助函数。
     ///
     /// `make` 缺省给一个空视图：原生路线（group / menu / button）根本不看它，
     /// 但槽的签名要求有一个视图工厂——那是给 `view` 路线用的。
-    private func contribute(_ host: ClamHost, _ handle: ClamPluginHandle,
-                            id: String, order: Double, label: String,
-                            align: String = "leading", spaced: Bool = false,
-                            kind: String = "view", symbol: String? = nil,
-                            sizing: String? = nil,
-                            items: [[String: Any]] = [],
-                            priority: String? = nil,
-                            make: @escaping () -> AnyView = { AnyView(EmptyView()) }) {
+    ///
+    /// **返回撤销句柄而不是自己 `.kept(by:)`**：换语言要重新贡献，谁按住这些句柄
+    /// 是调用点的事（见 `activate` 里 `contributeAll` 上面那段注释）。
+    /// 也因此是 `static`——闭包捕获 `self` 只会多一条谁也放不掉谁的引用。
+    private static func contribute(_ host: ClamHost,
+                                   id: String, order: Double, label: String,
+                                   align: String = "leading", spaced: Bool = false,
+                                   kind: String = "view", symbol: String? = nil,
+                                   sizing: String? = nil,
+                                   items: [[String: Any]] = [],
+                                   priority: String? = nil,
+                                   make: @escaping () -> AnyView = { AnyView(EmptyView()) })
+        -> ClamDisposable {
         var metadata: [String: Any] = [
             "label": label,
             "region": "content", // 与主内容区对齐，在分栏分隔线右边
@@ -295,8 +356,8 @@ final class HeaderPlugin: ClamPlugin {
         if let sizing { metadata["sizing"] = sizing }
         if let priority { metadata["priority"] = priority }
         if !items.isEmpty { metadata["items"] = items }
-        host.contribute(to: Self.toolbarSlot, id: id, order: order,
-                        metadata: metadata, make: make).kept(by: handle)
+        return host.contribute(to: Self.toolbarSlot, id: id, order: order,
+                               metadata: metadata, make: make)
     }
 
     /// 标题栏那条带子有多高。`contentLayoutGuide` 是窗口自己算的，

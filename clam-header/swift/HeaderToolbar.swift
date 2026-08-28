@@ -25,6 +25,15 @@ import Observation
 /// 每条 patch 存一份摘要，一样就不发。工具栏的活更新虽然便宜（就地改属性，
 /// 不重建），但 `items` 变化会触发那一项重造——把"没变也发"和"变了才重造"
 /// 叠在一起，段控就会在每次投影到来时闪一下。
+///
+/// ## 换语言走的也是这条路
+///
+/// `push()` 第一句就读 `model.strings`（现算，读的是 `ClamLocaleStore.current`），
+/// 所以语言变更对上面那圈 `withObservationTracking` 而言就是一次普通的 model 变化
+/// ——菜单内容、tooltip、副标题自己会重推一遍，**不需要为 i18n 新加任何观察者**。
+///
+/// 四格的 `label` 不在这条路上：那是**拓扑键**，由 `HeaderPlugin` 订 `clam.locale`
+/// 后重新贡献（CLAUDE.md 的分界，两者不许混）。
 @MainActor
 final class HeaderToolbarSync {
     private let host: ClamHost
@@ -57,7 +66,7 @@ final class HeaderToolbarSync {
             MainActor.assumeIsolated {
                 guard let self, !self.stopped else { return }
                 self.sent["__window"] = nil
-                self.pushWindowIdentity()
+                self.pushWindowIdentity(self.model.strings)
             }
         }
         return ClamDisposable {
@@ -82,10 +91,13 @@ final class HeaderToolbarSync {
     // MARK: - 算 patch
 
     private func push() {
-        pushWindowIdentity()
-        emit("subagents", subagentsPatch())
+        // **现取一份**：这一句同时是"读语言"的动作，语言变更由此变成一次普通的
+        // model 变化（见类型注释）。
+        let strings = model.strings
+        pushWindowIdentity(strings)
+        emit("subagents", subagentsPatch(strings))
         emit("viewTabs", tabsPatch())
-        emit("mode", modePatch())
+        emit("mode", modePatch(strings))
         emit("export", ["hidden": !model.canExport])
     }
 
@@ -99,26 +111,27 @@ final class HeaderToolbarSync {
     /// 同理，标识本身也不该是工具栏项：`NSToolbarItem` 会给自定义视图套一枚
     /// 玻璃胶囊，那是按钮的长相。`window.title` 才是 Mail / Notes 那条裸文字，
     /// 位置正好在分隔线右边、内容区左缘。
-    private func pushWindowIdentity() {
+    private func pushWindowIdentity(_ strings: L) {
         guard model.present, let session = model.session, !session.crumbs.isEmpty else {
             emitWindow(title: "", subtitle: "")
             return
         }
-        // 末段就是当前会话（面包屑根在前）。
-        let title = session.crumbs.last?.title ?? "未命名会话"
+        // 末段就是当前会话（面包屑根在前）。**标题本身是数据，不翻**——
+        // 只有"它没有标题"这个兜底词归我们。
+        let title = session.crumbs.last?.title ?? strings.untitledSession
 
         var facts: [String] = []
         // preset：**锁上的才进副标题**。还能改的时候它是工具栏上的一格菜单，
         // 两处同时出现就成了重复。
         if let preset = session.preset, preset.locked {
-            facts.append(Self.presetLabel(preset))
+            facts.append(Self.presetLabel(preset, strings))
         }
         // 后台任务：上游 ui-jobs 自己也只是展示，没有停止动作——只读，进副标题。
         // 子代理计数不进来：那一格的原生徽标已经在报了。
         let jobs = session.jobs
         if jobs.count > 0 {
-            facts.append(jobs.running > 0 ? "\(jobs.running)/\(jobs.count) 个任务运行中"
-                                          : "\(jobs.count) 个后台任务")
+            facts.append(jobs.running > 0 ? strings.jobsRunning(jobs.running, of: jobs.count)
+                                          : strings.backgroundJobs(jobs.count))
         }
         emitWindow(title: title, subtitle: facts.joined(separator: " · "))
     }
@@ -127,7 +140,7 @@ final class HeaderToolbarSync {
     ///
     /// **子代理会话不进侧边栏，这是它们唯一的入口**，所以既没有子代理、
     /// 自己也不在子代理链上的普通会话才整格藏起来。
-    private func subagentsPatch() -> [String: Any] {
+    private func subagentsPatch(_ strings: L) -> [String: Any] {
         guard model.present, let session = model.session else {
             return ["hidden": true, "badge": 0]
         }
@@ -142,7 +155,7 @@ final class HeaderToolbarSync {
             for (index, crumb) in ancestors.enumerated() {
                 menu.append([
                     "id": "goto:\(crumb.id)",
-                    "label": crumb.title ?? "未命名会话",
+                    "label": crumb.title ?? strings.untitledSession,
                     "symbol": index == 0 ? "house" : "arrow.turn.up.left",
                 ] as [String: Any])
             }
@@ -153,17 +166,23 @@ final class HeaderToolbarSync {
         if let tree {
             let children = tree.children(of: session.id)
             if children.isEmpty {
-                menu.append(["id": "", "label": "没有子代理", "enabled": false])
+                menu.append(["id": "", "label": strings.noSubagents, "enabled": false])
             } else {
-                menu.append(contentsOf: children.map { Self.menuNode($0, tree: tree) })
+                menu.append(contentsOf: children.map {
+                    Self.menuNode($0, tree: tree, strings)
+                })
             }
         }
         let count = tally?.count ?? 0
+        // **`label` 不在这条 patch 里**：这一格的 label 是个常量（「子代理」），
+        // 属于拓扑，由 `HeaderPlugin` 的贡献 metadata 给、换语言时重新贡献。
+        // 从活通道推一份同样的值会在 `ToolbarItemState.label` 里留下一个永久覆盖，
+        // 从此 metadata 那一份再也说了不算——分界一旦混掉，重新贡献就哑火了。
+        // （`mode` 那格不同：它的 label 是当前 preset 名，真的会变，见 `modePatch`。）
         return [
             "hidden": false,
             "badge": count,
-            "label": "子代理",
-            "tooltip": count > 0 ? "\(count) 个子代理" : "会话谱系",
+            "tooltip": count > 0 ? strings.subagentCount(count) : strings.sessionLineage,
             "menu": menu,
         ]
     }
@@ -174,34 +193,38 @@ final class HeaderToolbarSync {
     /// 不发 action），所以子菜单第一条得是"打开它自己"——否则中间层的子代理
     /// 就成了只能路过、进不去的死节点。
     private static func menuNode(_ node: HeaderSnapshot.SubagentNode,
-                                 tree: HeaderSnapshot.SubagentTree) -> [String: Any] {
+                                 tree: HeaderSnapshot.SubagentTree,
+                                 _ strings: L) -> [String: Any] {
         var spec: [String: Any] = [
             "id": "open:\(node.id)",
             // label 覆盖 session 标题（上游："a catalog label overrides the
-            // session-summary title"）；都没有就退回 id。
+            // session-summary title"）；都没有就退回 id。**三者都是数据，不翻。**
             "label": node.label ?? node.title ?? node.id,
-            "detail": nodeDetail(node),
+            "detail": nodeDetail(node, strings),
             "symbol": node.running ? "circle.fill" : "circle",
         ]
         let children = tree.children(of: node.id)
         if !children.isEmpty {
             var sub: [[String: Any]] = [
-                ["id": "open:\(node.id)", "label": "打开这个子代理",
+                ["id": "open:\(node.id)", "label": strings.openThisSubagent,
                  "symbol": "arrow.right.circle"],
                 ["separator": true],
             ]
-            sub.append(contentsOf: children.map { menuNode($0, tree: tree) })
+            sub.append(contentsOf: children.map { menuNode($0, tree: tree, strings) })
             spec["submenu"] = sub
         }
         return spec
     }
 
     /// 菜单项第二行的次要信息。
-    private static func nodeDetail(_ node: HeaderSnapshot.SubagentNode) -> String {
+    private static func nodeDetail(_ node: HeaderSnapshot.SubagentNode,
+                                  _ strings: L) -> String {
         var parts: [String] = []
-        if let mode = node.mode { parts.append(mode == "one-shot" ? "一次性" : "可继续") }
-        parts.append(node.running ? "运行中" : "已停止")
+        if node.mode != nil { parts.append(strings.subagentMode(node.mode)) }
+        parts.append(strings.subagentActivity(running: node.running))
         if let tokens = node.tokens, tokens > 0 {
+            // 数字不过 `L`：token 缩写（`1.2K` / `3M`）两种语言一模一样，
+            // 而且要与网页那份逐字相同。
             parts.append(HeaderFormatting.tokens(tokens))
         }
         return parts.joined(separator: " · ")
@@ -247,21 +270,25 @@ final class HeaderToolbarSync {
     /// 锁上之后它退成 `window.subtitle` 里的一段只读文字——见
     /// `pushWindowIdentity`。这比"留一个点得开、但每一项都是灰的菜单"诚实：
     /// 那种菜单是个假按钮，而假按钮正是这轮要清掉的东西。
-    private func modePatch() -> [String: Any] {
+    private func modePatch(_ strings: L) -> [String: Any] {
         guard let preset = model.session?.preset, !preset.locked else {
             return ["hidden": true]
         }
-        let current = Self.presetLabel(preset)
+        let current = Self.presetLabel(preset, strings)
         return [
             "hidden": false,
             "enabled": true,
+            // **这个 label 走活通道是对的**：它是当前 preset 的名字，一换就变
+            // ——与「子代理」那种常量 label 不是一回事（见 `subagentsPatch`）。
+            // preset 名本身是 dsh 给的数据，不翻。
             "label": current,
-            "tooltip": "模式：\(current)",
+            "tooltip": strings.modeTooltip(current),
             "menu": preset.options.map { option in
                 [
                     "id": option.id,
                     // 坏掉的仍然列出（它占着这个 id），但标出来。
-                    "label": option.broken ? "\(option.label)（不可用）" : option.label,
+                    "label": option.broken ? strings.presetUnavailable(option.label)
+                                           : option.label,
                     "state": option.id == preset.current,
                     "enabled": !option.broken,
                 ] as [String: Any]
@@ -279,8 +306,8 @@ final class HeaderToolbarSync {
     /// 一个圆点，空心的站不住，叠方块的细节全丢——没有一个像图标，只像噪点。
     /// 所以副标题就是纯文字。
 
-    private static func presetLabel(_ preset: HeaderSnapshot.Preset) -> String {
-        guard let current = preset.current else { return "默认" }
+    private static func presetLabel(_ preset: HeaderSnapshot.Preset, _ strings: L) -> String {
+        guard let current = preset.current else { return strings.defaultPreset }
         return preset.options.first { $0.id == current }?.label ?? current
     }
 
