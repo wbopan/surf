@@ -25,8 +25,12 @@ final class ShellUpdateBanner: NSView {
     private var primaryHandler: ((Kind) -> Void)?
     private var dismissHandler: (() -> Void)?
     private var kind: Kind = .building
+    /// 当前语言下的文案表。提示条可能挂好几分钟，中途换语言是可能的
+    /// ——所以它存一份，并有 `apply(strings:)` 换。
+    private var strings: L
 
-    init(onPrimary: @escaping (Kind) -> Void, onDismiss: @escaping () -> Void) {
+    init(strings: L, onPrimary: @escaping (Kind) -> Void, onDismiss: @escaping () -> Void) {
+        self.strings = strings
         primaryHandler = onPrimary
         dismissHandler = onDismiss
         super.init(frame: .zero)
@@ -61,7 +65,7 @@ final class ShellUpdateBanner: NSView {
 
         dismiss.bezelStyle = .rounded
         dismiss.controlSize = .small
-        dismiss.title = "稍后"   // ready 态的默认文案；failed 态会改成「知道了」
+        // 标题按态在 show() 里给（ready 是「稍后」，failed 是「好」）。
         dismiss.target = self
         dismiss.action = #selector(dismissTapped)
 
@@ -90,25 +94,31 @@ final class ShellUpdateBanner: NSView {
         switch kind {
         case .building:
             spinner.startAnimation(nil)
-            label.stringValue = "正在重建壳…"
+            label.stringValue = strings.shellBuilding
             primary.isHidden = true
             dismiss.isHidden = true
         case .ready(let detail):
             spinner.stopAnimation(nil)
-            label.stringValue = "壳有新版本\(detail.isEmpty ? "" : "（\(detail)）")"
-            primary.title = "重启 \(AppInfo.displayName)"
+            label.stringValue = strings.shellUpdateReady(detail: detail)
+            primary.title = strings.shellRestart
             primary.isHidden = false
             primary.keyEquivalent = ""
-            dismiss.title = "稍后"
+            dismiss.title = strings.shellLater
             dismiss.isHidden = false
         case .failed:
             spinner.stopAnimation(nil)
-            label.stringValue = "壳重建失败"
-            primary.title = "看日志"
+            label.stringValue = strings.shellBuildFailed
+            primary.title = strings.shellViewLog
             primary.isHidden = false
-            dismiss.title = "知道了"
+            dismiss.title = strings.ok
             dismiss.isHidden = false
         }
+    }
+
+    /// 换语言：照当前这一态原样再画一次。
+    func apply(strings: L) {
+        self.strings = strings
+        show(kind)
     }
 
     @objc private func primaryTapped() { primaryHandler?(kind) }

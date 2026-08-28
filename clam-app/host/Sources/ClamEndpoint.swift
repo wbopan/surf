@@ -31,14 +31,18 @@ struct ClamEndpoint: Equatable {
             == URL(fileURLWithPath: own).standardizedFileURL.path
     }
 
-    /// 描述给引导页/日志看的一行。
+    /// 描述给诊断面板/日志看的一行。
+    ///
+    /// **刻意不带任何自然语言**：里面只有 URL、profile 名、pid 这些技术标识，
+    /// 两种界面语言下长得一模一样。"这不是本 worktree 那一套"那句警告因此
+    /// 不在这里拼——它是文案，归 `L.diagEndpointNotOwn`（诊断面板）与调用方的
+    /// 日志各自加（日志一律留中文，见 Strings.swift 顶注）。
     var summary: String {
-        var s = httpBase.absoluteString
-        if let profile { s += "（profile \(profile)" }
-        if let pid { s += profile == nil ? "（pid \(pid)" : "，pid \(pid)" }
-        if profile != nil || pid != nil { s += "）" }
-        if !isOwn { s += " ⚠️ 不是本 worktree 那一套" }
-        return s
+        var parts: [String] = []
+        if let profile { parts.append("profile \(profile)") }
+        if let pid { parts.append("pid \(pid)") }
+        guard !parts.isEmpty else { return httpBase.absoluteString }
+        return httpBase.absoluteString + " (" + parts.joined(separator: ", ") + ")"
     }
 }
 

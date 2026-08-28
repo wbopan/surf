@@ -35,6 +35,9 @@ final class WebPolicy: NSObject {
 
     /// 当前连着的 dsh。**每次现取**：壳会重连、会换端口，同源判定不能吃快照。
     private let currentEndpoint: () -> ClamEndpoint?
+    /// 当前界面语言下的文案表。同样**现取**——下载可能跨越一次语言切换，
+    /// 而这一层活得和窗口一样久。
+    private let currentStrings: () -> L
     private let presentToast: (ShellToast.Content) -> Void
 
     /// `target="_blank"` 开出来的次级窗口，按其 WKWebView 索引。
@@ -43,8 +46,10 @@ final class WebPolicy: NSObject {
     private var destinations: [ObjectIdentifier: URL] = [:]
 
     init(currentEndpoint: @escaping () -> ClamEndpoint?,
+         currentStrings: @escaping () -> L,
          presentToast: @escaping (ShellToast.Content) -> Void) {
         self.currentEndpoint = currentEndpoint
+        self.currentStrings = currentStrings
         self.presentToast = presentToast
         super.init()
     }
@@ -264,7 +269,7 @@ extension WebPolicy: WKUIDelegate {
                  completionHandler: @escaping () -> Void) {
         let alert = NSAlert()
         alert.messageText = message
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: currentStrings().ok)
         alert.runModal()
         completionHandler()
     }
@@ -274,9 +279,10 @@ extension WebPolicy: WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping (Bool) -> Void) {
         let alert = NSAlert()
+        let s = currentStrings()
         alert.messageText = message
-        alert.addButton(withTitle: "好")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: s.ok)
+        alert.addButton(withTitle: s.cancel)
         completionHandler(alert.runModal() == .alertFirstButtonReturn)
     }
 
@@ -286,9 +292,10 @@ extension WebPolicy: WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping (String?) -> Void) {
         let alert = NSAlert()
+        let s = currentStrings()
         alert.messageText = prompt
-        alert.addButton(withTitle: "好")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: s.ok)
+        alert.addButton(withTitle: s.cancel)
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 22))
         field.stringValue = defaultText ?? ""
         alert.accessoryView = field
@@ -318,9 +325,10 @@ extension WebPolicy: WKDownloadDelegate {
         DistributedNotificationCenter.default().postNotificationName(
             NSNotification.Name("com.apple.DownloadFileFinished"),
             object: url.path, userInfo: nil, deliverImmediately: true)
+        let s = currentStrings()
         presentToast(ShellToast.Content(
-            text: "已下载 \(url.lastPathComponent)",
-            actionTitle: "在访达中显示",
+            text: s.downloadFinished(url.lastPathComponent),
+            actionTitle: s.showInFinder,
             action: { NSWorkspace.shared.activateFileViewerSelecting([url]) }))
     }
 
@@ -328,9 +336,10 @@ extension WebPolicy: WKDownloadDelegate {
         let url = destinations.removeValue(forKey: ObjectIdentifier(download))
         // 用户自己取消的不必再提醒一次。
         if (error as NSError).code == NSURLErrorCancelled { return }
-        let name = url?.lastPathComponent ?? "文件"
+        let s = currentStrings()
+        let name = url?.lastPathComponent ?? s.downloadFallbackName
         Log.write("下载失败 \(name)：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "download")
-        presentToast(ShellToast.Content(text: "下载失败：\(name)", actionTitle: nil, action: nil))
+        presentToast(ShellToast.Content(text: s.downloadFailed(name), actionTitle: nil, action: nil))
     }
 }
 

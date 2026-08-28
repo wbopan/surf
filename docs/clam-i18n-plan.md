@@ -266,3 +266,29 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   不是文案翻译。
   ③ clam-notify 启动时用 `log.info` 打一行当前语言（stderr），
   同样是为了让 i0 在终端可验。
+- **2026-08-28 · i1（壳文案双语化）· 完成。** 新增
+  `clam-app/host/Sources/Strings.swift`（`struct L`，95 条：77 个属性 + 18 个带
+  插值的方法），壳的菜单栏 / 引导页 / 提示条 / 浮条 / WebPolicy 弹窗与下载 /
+  诊断面板 / 快捷键面板全部改从它取；日志与 wire 载荷仍是中文，一条没动。
+  壳持有 `strings`（`L(activeLocale)` 现算，不存快照），语言变更时
+  `rebuildLocalizedSurfaces()` 重建：主菜单整棵新建、提示条重画当前态、
+  两个面板换 chrome 并重采、引导页照当前"幕"重画。
+  **菜单可重入**：新增 `rebuildMenus()` 作为唯一入口 + `observeMenuTracking()`
+  盯 `NSMenu.did{Begin,End}TrackingNotification`（只认根菜单是 `NSApp.mainMenu`
+  的那些），菜单正张着就记账、`didEndTracking` 后延一拍补做；换键位那条路
+  也改走它。菜单 action/selector、AX 一个没动。
+  **文案同时按 Apple 简中风格打磨**，改动较大的在 `Strings.swift` 行尾以
+  `// 原：…` 标出（共 12 条），供 i6 汇总审校表。
+  壳 `xcodebuild` Debug **BUILD SUCCEEDED**，无新增警告；
+  `Sources/` 里除注释、日志与 `Strings.swift` 外已无中文字符串字面量（grep 核过）。
+  **偏离计划三处**：
+  ① §8-2 的 `ShortcutsPanel.displayWidth`（CJK 补空格对齐）**整块删掉**，
+  改成 `NSAttributedString` + 按节实测最长标题定 `NSTextTab` 制表位——
+  等宽假设在英文下本就不成立，而制表位让布局引擎按真实字形对齐，两种语言
+  都齐整；拷出去仍是 `标题\t快捷键`。
+  ② `ClamEndpoint.summary` 去掉了"⚠️ 不是本 worktree 那一套"与全角括号，
+  变成纯技术标识（`url (profile x, pid 1)`）：那句警告是文案，进了
+  `L.diagEndpointNotOwn`，日志那一侧由调用方自己拼中文。
+  ③ `BootstrapViewController` 的两个按钮标题（拷贝/重试）改由调用方每次递入，
+  `MainWindowController` 新增 `BootstrapPhase` 记"在演哪一幕"而不是记文案
+  ——这是"语言变更后能照原样重画"的最小代价，顺带把 `guideShown` 变成计算属性。

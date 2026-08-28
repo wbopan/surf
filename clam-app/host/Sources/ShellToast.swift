@@ -21,11 +21,15 @@ final class ShellToast: NSView {
     private static let actionableLifetime: TimeInterval = 9
 
     private let content: Content
+    /// 只用来画那颗「关闭」按钮——`content` 里的字由生产者按当时的语言拼好。
+    /// 浮条活不过几秒，**不设换语言的通道**：几秒后它自己就走了。
+    private let strings: L
     private let onDismiss: (ShellToast) -> Void
     private var expiry: DispatchWorkItem?
 
-    init(content: Content, onDismiss: @escaping (ShellToast) -> Void) {
+    init(content: Content, strings: L, onDismiss: @escaping (ShellToast) -> Void) {
         self.content = content
+        self.strings = strings
         self.onDismiss = onDismiss
         super.init(frame: .zero)
         build()
@@ -57,7 +61,7 @@ final class ShellToast: NSView {
             button.controlSize = .small
             views.append(button)
         }
-        let close = NSButton(title: "关闭", target: self, action: #selector(dismissTapped))
+        let close = NSButton(title: strings.close, target: self, action: #selector(dismissTapped))
         close.bezelStyle = .rounded
         close.controlSize = .small
         views.append(close)

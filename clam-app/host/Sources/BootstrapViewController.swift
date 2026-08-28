@@ -97,7 +97,8 @@ final class BootstrapViewController: NSViewController {
         commandField.isBordered = true
         commandField.bezelStyle = .roundedBezel
 
-        copyButton.title = "拷贝"
+        // 按钮文案（拷贝 / 重试）由 setGuide 每次带进来：引导页可能跨越一次
+        // 语言切换，写死在这里就换不掉了。
         copyButton.bezelStyle = .rounded
         copyButton.controlSize = .small
         copyButton.target = self
@@ -109,7 +110,6 @@ final class BootstrapViewController: NSViewController {
         commandRow.addArrangedSubview(copyButton)
         commandRow.isHidden = true
 
-        retryButton.title = "重试"
         retryButton.bezelStyle = .rounded
         retryButton.target = self
         retryButton.action = #selector(retryTapped)
@@ -145,8 +145,11 @@ final class BootstrapViewController: NSViewController {
 
     /// 引导态：标题 + 说明 +（可选）可复制命令 + 重试按钮。
     /// 停转圈——这一态不是"在等"，是"等你做点什么"。
+    ///
+    /// **文案一概由调用方递进来**（含两个按钮的标题）：这个 VC 不认识语言，
+    /// 换语言时壳照着当前那一幕再调一次就行（`MainWindowController.renderBootstrap`）。
     func setGuide(title: String, detail: String, command: String? = nil,
-                  retryTitle: String = "重试", retry: @escaping () -> Void) {
+                  copyTitle: String, retryTitle: String, retry: @escaping () -> Void) {
         spinner.stopAnimation(nil)
         spinner.isHidden = true
         titleLabel.stringValue = title
@@ -158,13 +161,17 @@ final class BootstrapViewController: NSViewController {
         } else {
             commandRow.isHidden = true
         }
+        copyButton.title = copyTitle
         retryButton.title = retryTitle
         retryButton.isHidden = false
         retryHandler = retry
     }
 
-    func setError(_ text: String, retry: @escaping () -> Void) {
-        setGuide(title: "出错了", detail: text, command: nil, retry: retry)
+    /// error 态 = guide 的无命令版。眼下没有调用方（连接失败都归到 guide 那两幕），
+    /// 留着是因为它是三态之一，且成本为零。
+    func setError(title: String, detail: String, retryTitle: String, retry: @escaping () -> Void) {
+        setGuide(title: title, detail: detail, command: nil,
+                 copyTitle: "", retryTitle: retryTitle, retry: retry)
     }
 
     @objc private func copyCommand() {

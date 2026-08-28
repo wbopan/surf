@@ -127,8 +127,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 导航策略与下载（Native/WebPolicy.swift）。同源判定要现取 endpoint：
     /// 壳会重连、会换端口，快照会把重连后的自家页面误判成外链。
+    /// 文案同理现取（用户可能在下载途中换语言）。
     private lazy var webPolicy = WebPolicy(
         currentEndpoint: { [weak self] in self?.endpoint },
+        currentStrings: { [weak self] in self?.strings ?? L(.en) },
         presentToast: { [weak self] content in self?.presentToast(content) })
 
     // MARK: - WebView
@@ -196,6 +198,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 先用默认表把菜单建起来：页面还没加载完，设置里那份键位表要等
         // clam-layout 的 client 半边投影过来（`clam.page.keymap`），届时重建。
         setupMenus(activeKeymap)
+        observeMenuTracking()
         observeKeymap()
         // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
@@ -287,7 +290,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 三级定位 → 健康探测 → 接入。同时装上轮询：壳已不是 dsh 的父进程，
     /// 拿不到它的退出信号，只能靠周期性 GET 发现它走了、也发现它回来了。
     func start() {
-        showBootstrap("正在寻找 dsh…")
+        showBootstrap(.searching)
         startConnectPolling()
         probeNow()
     }
@@ -327,7 +330,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard found != endpoint else { return }
         let isReconnect = endpoint != nil
         endpoint = found
-        Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)",
+        // 日志一律中文（Strings.swift 顶注）：读它的是终端前的人和 agent，
+        // 跟着界面语言变只会让排错时对不上账。
+        Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)"
+                  + (found.isOwn ? "" : " ⚠️ 不是本 worktree 那一套"),
                   to: ClamPaths.logURL, tag: "endpoint")
         if isReconnect {
             Log.write("端点变化，插件将随重连的桥重新对齐", to: ClamPaths.logURL, tag: "endpoint")
@@ -351,16 +357,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         endpoint = nil
         nativeHost.disconnect()
         webView.stopLoading()
-        showBootstrapGuide(
-            title: "与 dsh 断开连接",
-            detail: "dsh 已退出或不再应答。重新运行下面的命令，\(AppInfo.displayName) 会自动接回。")
+        showBootstrap(.disconnected)
     }
 
     private func showSearchGuide() {
-        showBootstrapGuide(
-            title: "未检测到 dsh",
-            detail: "\(AppInfo.displayName) 是 dsh 的客户端外设，需要 dsh 先在终端跑起来；"
-                  + "启动后本页会自动接入，无需重开 App。")
+        showBootstrap(.notFound)
     }
 
     private func loadWebUI() {
@@ -400,7 +401,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         nativeHost.disconnect()
         webView.stopLoading()
         endpoint = nil
-        showBootstrap("正在重新连接 dsh…")
+        showBootstrap(.reconnecting)
         probeNow()
     }
 
@@ -438,9 +439,25 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // MARK: - 引导视图
 
+    /// 引导页此刻在演哪一幕。**存的是"哪一幕"而不是那几句话**：语言一变
+    /// 照着同一幕重画一次就行（`refreshBootstrap()`），不必把文案存两份。
+    private enum BootstrapPhase {
+        case searching      // 转圈：正在找 dsh
+        case reconnecting   // 转圈：⌘⇧R 之后
+        case disconnected   // 引导：连上过又断了
+        case notFound       // 引导：从头到尾就没找到
+
+        /// guide 态 = "等你做点什么"（有标题、命令与重试按钮）；
+        /// busy 态 = "在等"（只有转圈和一行字）。
+        var isGuide: Bool { self == .disconnected || self == .notFound }
+    }
+
+    /// 引导页当前在演的那一幕；nil = 引导页不在场。
+    private var bootstrapPhase: BootstrapPhase?
+
     /// 引导页当前在场且处于 guide 态（非转圈）。轮询每 2s 打一次，
     /// 靠它避免把同一段文案反复重设。
-    private var guideShown = false
+    private var guideShown: Bool { bootstrapPhase?.isGuide ?? false }
 
     /// 引导页盖在 contentView 之上，铺满窗口；重复调用只换文案。
     private func mountBootstrap() -> BootstrapViewController {
@@ -461,26 +478,44 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         return vc
     }
 
-    private func showBootstrap(_ text: String) {
-        guideShown = false
+    /// 演某一幕。guide 那两幕会告诉用户在终端跑 `dsh web`，附可拷贝命令与"重试"
+    /// ——重试只是催一次探测，轮询本来就会自己接回来。
+    private func showBootstrap(_ phase: BootstrapPhase) {
+        bootstrapPhase = phase
         dismissUpdateBanner()
-        mountBootstrap().setBusy(text)
+        renderBootstrap(phase)
     }
 
-    /// 引导态：告诉用户在终端跑 `dsh web`，附可拷贝命令与"重试"。
-    /// 重试只是催一次探测——轮询本来就会自己接回来。
-    private func showBootstrapGuide(title: String, detail: String) {
-        guideShown = true
-        dismissUpdateBanner()
-        mountBootstrap().setGuide(title: title, detail: detail, command: "dsh web",
-                                  retryTitle: "立即重试") { [weak self] in
-            self?.showBootstrap("正在寻找 dsh…")
-            self?.probeNow()
+    /// 把当前这一幕按**当前语言**画出来。`showBootstrap` 与语言变更共用同一段。
+    private func renderBootstrap(_ phase: BootstrapPhase) {
+        let s = strings
+        let vc = mountBootstrap()
+        switch phase {
+        case .searching:
+            vc.setBusy(s.bootstrapSearching)
+        case .reconnecting:
+            vc.setBusy(s.bootstrapReconnecting)
+        case .disconnected, .notFound:
+            let title = phase == .disconnected ? s.bootstrapDisconnectedTitle : s.bootstrapNotFoundTitle
+            let detail = phase == .disconnected ? s.bootstrapDisconnectedDetail : s.bootstrapNotFoundDetail
+            vc.setGuide(title: title, detail: detail, command: "dsh web",
+                        copyTitle: s.copy, retryTitle: s.retry) { [weak self] in
+                self?.showBootstrap(.searching)
+                self?.probeNow()
+            }
         }
     }
 
+    /// 语言变了：引导页在场就照着同一幕重画一次。
+    /// （实际上这一幕多半不会赶上换语言——没连上 dsh 时页面根本没在跑，
+    /// 也就没人来投影语言。写这几行是为了"任何时候语言都自洽"，不是为了某个场景。）
+    private func refreshBootstrap() {
+        guard let phase = bootstrapPhase, bootstrapVC != nil else { return }
+        renderBootstrap(phase)
+    }
+
     private func hideBootstrap() {
-        guideShown = false
+        bootstrapPhase = nil
         bootstrapVC?.view.removeFromSuperview()
         bootstrapVC = nil
     }
@@ -515,6 +550,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private func mountUpdateBanner() -> ShellUpdateBanner {
         if let banner = updateBanner { return banner }
         let banner = ShellUpdateBanner(
+            strings: strings,
             onPrimary: { [weak self] kind in
                 guard let self else { return }
                 switch kind {
@@ -544,7 +580,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 一次性浮条：下载完成/失败这类"已经发生了"的事，说完自己走。
     private func presentToast(_ content: ShellToast.Content) {
-        let toast = ShellToast(content: content, onDismiss: { [weak self] view in
+        let toast = ShellToast(content: content, strings: strings, onDismiss: { [weak self] view in
             self?.bannerStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         })
@@ -586,47 +622,51 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 其余（⌘W/⌘Q/编辑菜单/⌘R/⌥⌘S/缩放/⌥⌘D/⌘⇧R/⌘/）是 macOS 系统惯例，
     /// 硬编码不动——它们改了只会更难用，不值得摆进设置里。
     ///
-    /// **整个函数是幂等的**：换键位时原样再跑一遍、连 `NSApp.mainMenu` 一起换新。
+    /// **整个函数是幂等的**：换键位、换界面语言时原样再跑一遍、连 `NSApp.mainMenu`
+    /// 一起换新（入口统一走 `rebuildMenus()`，它替这里避开"菜单正张着"那一刻）。
     /// `windowsMenu` / `helpMenu` 的重新赋值 AppKit 自己会把托管项（窗口列表、
     /// 帮助搜索框）迁到新菜单上，不需要先拆旧的。
+    ///
+    /// 文案全部现取（`strings`），一个字面量都不留在这里——见 Strings.swift。
     private func setupMenus(_ keymap: Keymap) {
+        let s = strings
         let mainMenu = NSMenu()
 
         // 应用菜单（⌘Q 退出、⌘H 隐藏）
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 \(AppInfo.displayName)",
+        appMenu.addItem(withTitle: s.menuAbout,
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
         // 壳自己已无偏好可设（Node 路径/更新频率随 spawn 层退役）；
         // ⌘, 改为经页内桥打开 dsh 自己的设置面板。
-        let settingsItem = appMenu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "")
+        let settingsItem = appMenu.addItem(withTitle: s.menuSettings, action: #selector(openSettings), keyEquivalent: "")
         bind(settingsItem, "openSettings", keymap)
         settingsItem.target = self
-        let reconnectItem = appMenu.addItem(withTitle: "重新连接 dsh",
+        let reconnectItem = appMenu.addItem(withTitle: s.menuReconnect,
                                             action: #selector(reconnectNow),
                                             keyEquivalent: "r")
         reconnectItem.keyEquivalentModifierMask = [.command, .shift]
         reconnectItem.target = self
-        let logsItem = appMenu.addItem(withTitle: "打开日志目录",
+        let logsItem = appMenu.addItem(withTitle: s.menuOpenLogs,
                                        action: #selector(openLogs), keyEquivalent: "")
         logsItem.target = self
-        let diagItem = appMenu.addItem(withTitle: "诊断信息…",
+        let diagItem = appMenu.addItem(withTitle: s.menuDiagnostics,
                                        action: #selector(showDiagnostics), keyEquivalent: "d")
         diagItem.keyEquivalentModifierMask = [.command, .option]
         diagItem.target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 \(AppInfo.displayName)",
+        appMenu.addItem(withTitle: s.menuHide,
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthersItem = appMenu.addItem(withTitle: "隐藏其他",
+        let hideOthersItem = appMenu.addItem(withTitle: s.menuHideOthers,
                                              action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
-        appMenu.addItem(withTitle: "全部显示",
+        appMenu.addItem(withTitle: s.menuShowAll,
                         action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 \(AppInfo.displayName)",
+        appMenu.addItem(withTitle: s.menuQuit,
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         appItem.title = AppInfo.displayName
@@ -634,92 +674,92 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 文件菜单（会话的增删改名 + ⌘W 关闭窗口）
         let fileItem = NSMenuItem()
         mainMenu.addItem(fileItem)
-        let fileMenu = NSMenu(title: "文件")
-        let newSessionItem = fileMenu.addItem(withTitle: "新建会话",
+        let fileMenu = NSMenu(title: s.menuFile)
+        let newSessionItem = fileMenu.addItem(withTitle: s.menuNewSession,
                                               action: #selector(newSession), keyEquivalent: "")
         bind(newSessionItem, "newSession", keymap)
         newSessionItem.target = self
         fileMenu.addItem(.separator())
-        let renameItem = fileMenu.addItem(withTitle: "重命名会话…",
+        let renameItem = fileMenu.addItem(withTitle: s.menuRenameSession,
                                           action: #selector(renameSession), keyEquivalent: "")
         bind(renameItem, "renameSession", keymap)
         renameItem.target = self
-        let archiveItem = fileMenu.addItem(withTitle: "归档会话",
+        let archiveItem = fileMenu.addItem(withTitle: s.menuArchiveSession,
                                            action: #selector(archiveSession), keyEquivalent: "")
         bind(archiveItem, "archiveSession", keymap)
         archiveItem.target = self
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "关闭窗口",
+        fileMenu.addItem(withTitle: s.menuCloseWindow,
                          action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
-        fileItem.title = "文件"
+        fileItem.title = s.menuFile
 
         // 编辑菜单（⌘Z/⌘⇧Z/⌘X/⌘C/⌘V/⌘A）
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        let redoItem = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        let editMenu = NSMenu(title: s.menuEdit)
+        editMenu.addItem(withTitle: s.menuUndo, action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: s.menuRedo, action: Selector(("redo:")), keyEquivalent: "z")
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "剪切", action: Selector(("cut:")), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: Selector(("copy:")), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: Selector(("paste:")), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "删除", action: Selector(("delete:")), keyEquivalent: "")
+        editMenu.addItem(withTitle: s.menuCut, action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: s.menuCopy, action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: s.menuPaste, action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: s.menuDelete, action: Selector(("delete:")), keyEquivalent: "")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "全选", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editMenu.addItem(withTitle: s.menuSelectAll, action: Selector(("selectAll:")), keyEquivalent: "a")
         editItem.submenu = editMenu
-        editItem.title = "编辑"
+        editItem.title = s.menuEdit
 
         // 显示菜单（⌘R 重载；⌘⌥S 收起/展开侧边栏——系统标准行为）
         let viewItem = NSMenuItem()
         mainMenu.addItem(viewItem)
-        let viewMenu = NSMenu(title: "显示")
-        let reloadItem = viewMenu.addItem(withTitle: "重新载入页面",
+        let viewMenu = NSMenu(title: s.menuView)
+        let reloadItem = viewMenu.addItem(withTitle: s.menuReloadPage,
                                           action: #selector(reloadPage), keyEquivalent: "r")
         reloadItem.target = self
-        let sidebarItem = viewMenu.addItem(withTitle: "切换侧边栏",
+        let sidebarItem = viewMenu.addItem(withTitle: s.menuToggleSidebar,
                                            action: Selector(("toggleSidebar:")), keyEquivalent: "s")
         sidebarItem.keyEquivalentModifierMask = [.command, .option]
         viewMenu.addItem(.separator())
-        let focusSearchItem = viewMenu.addItem(withTitle: "聚焦搜索",
+        let focusSearchItem = viewMenu.addItem(withTitle: s.menuFocusSearch,
                                                action: #selector(focusSearch), keyEquivalent: "")
         bind(focusSearchItem, "focusSearch", keymap)
         focusSearchItem.target = self
         viewMenu.addItem(.separator())
-        let zoomInItem = viewMenu.addItem(withTitle: "放大",
+        let zoomInItem = viewMenu.addItem(withTitle: s.menuZoomIn,
                                           action: #selector(zoomIn), keyEquivalent: "+")
         zoomInItem.target = self
         // ⌘= 的别名：键盘上 + 与 = 同一个键，用户多半不按 shift。macOS 惯例是
         // 菜单里只显示 ⌘+，另挂一个隐藏项接住 ⌘=。隐藏项的快捷键默认不生效，
         // 必须显式 allowsKeyEquivalentWhenHidden。
-        let zoomInAlias = viewMenu.addItem(withTitle: "放大",
+        let zoomInAlias = viewMenu.addItem(withTitle: s.menuZoomIn,
                                            action: #selector(zoomIn), keyEquivalent: "=")
         zoomInAlias.target = self
         zoomInAlias.isHidden = true
         zoomInAlias.allowsKeyEquivalentWhenHidden = true
-        let zoomOutItem = viewMenu.addItem(withTitle: "缩小",
+        let zoomOutItem = viewMenu.addItem(withTitle: s.menuZoomOut,
                                            action: #selector(zoomOut), keyEquivalent: "-")
         zoomOutItem.target = self
-        let zoomResetItem = viewMenu.addItem(withTitle: "实际大小",
+        let zoomResetItem = viewMenu.addItem(withTitle: s.menuActualSize,
                                              action: #selector(zoomReset), keyEquivalent: "0")
         zoomResetItem.target = self
         viewItem.submenu = viewMenu
-        viewItem.title = "显示"
+        viewItem.title = s.menuView
 
         // 会话菜单（前后切换 + ⌘1…⌘9 直达）
         let sessionItem = NSMenuItem()
         mainMenu.addItem(sessionItem)
-        let sessionMenu = NSMenu(title: "会话")
-        let prevItem = sessionMenu.addItem(withTitle: "上一个会话",
+        let sessionMenu = NSMenu(title: s.menuSession)
+        let prevItem = sessionMenu.addItem(withTitle: s.menuPrevSession,
                                            action: #selector(prevSession), keyEquivalent: "")
         bind(prevItem, "prevSession", keymap)
         prevItem.target = self
-        let nextItem = sessionMenu.addItem(withTitle: "下一个会话",
+        let nextItem = sessionMenu.addItem(withTitle: s.menuNextSession,
                                            action: #selector(nextSession), keyEquivalent: "")
         bind(nextItem, "nextSession", keymap)
         nextItem.target = self
-        let nextPendingItem = sessionMenu.addItem(withTitle: "下一个待处理会话",
+        let nextPendingItem = sessionMenu.addItem(withTitle: s.menuNextPendingSession,
                                                   action: #selector(nextPendingSession), keyEquivalent: "")
         bind(nextPendingItem, "nextPendingSession", keymap)
         nextPendingItem.target = self
@@ -730,7 +770,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 九项一把抓：修饰键由 `sessionDigits` 一个设置项决定，nil = 不挂键
         // （数字键在页面里是正常输入，这条比别的更该留一个关掉的口子）。
         for n in 1...9 {
-            let item = sessionMenu.addItem(withTitle: "会话 \(n)",
+            let item = sessionMenu.addItem(withTitle: s.menuSessionAt(n),
                                            action: #selector(selectSessionAt(_:)),
                                            keyEquivalent: "")
             if let digits = keymap.digitsMask {
@@ -743,33 +783,94 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             item.allowsKeyEquivalentWhenHidden = true
         }
         sessionItem.submenu = sessionMenu
-        sessionItem.title = "会话"
+        sessionItem.title = s.menuSession
 
         // 窗口菜单（⌘M 最小化）
         let windowItem = NSMenuItem()
         mainMenu.addItem(windowItem)
-        let windowMenu = NSMenu(title: "窗口")
-        windowMenu.addItem(withTitle: "最小化",
+        let windowMenu = NSMenu(title: s.menuWindow)
+        windowMenu.addItem(withTitle: s.menuMinimize,
                            action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "缩放",
+        windowMenu.addItem(withTitle: s.menuZoomWindow,
                            action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowItem.submenu = windowMenu
-        windowItem.title = "窗口"
+        windowItem.title = s.menuWindow
         NSApp.windowsMenu = windowMenu
 
         // 帮助菜单。设 NSApp.helpMenu 才会被系统摆到标准位置（最右）
         // 并挂上那个搜索框；只当普通菜单加进去位置就不对。
         let helpItem = NSMenuItem()
         mainMenu.addItem(helpItem)
-        let helpMenu = NSMenu(title: "帮助")
-        let shortcutsItem = helpMenu.addItem(withTitle: "键盘快捷键",
+        let helpMenu = NSMenu(title: s.menuHelp)
+        let shortcutsItem = helpMenu.addItem(withTitle: s.menuKeyboardShortcuts,
                                              action: #selector(showShortcuts), keyEquivalent: "/")
         shortcutsItem.target = self
         helpItem.submenu = helpMenu
-        helpItem.title = "帮助"
+        helpItem.title = s.menuHelp
         NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: - 菜单重建（换键位 / 换语言共用一条路）
+
+    /// 此刻有几层由主菜单发起的菜单正张着。**菜单张开时不许换 `NSApp.mainMenu`**：
+    /// 用户眼前那份会被抽走，轻则菜单当场收起、重则点下去落在已经不存在的项上。
+    private var menuTrackingDepth = 0
+
+    /// 菜单张着时来的重建请求记在这儿，等它关了再补做。
+    /// 只记"要不要做"不记"做什么"——重建总是照当下的键位与语言整棵新建。
+    private var pendingMenuRebuild = false
+
+    private var menuTrackingObservers: [NSObjectProtocol] = []
+
+    /// 重建主菜单的**唯一入口**。菜单正张着就先记账，等 `didEndTracking` 再补。
+    private func rebuildMenus() {
+        guard menuTrackingDepth == 0 else {
+            pendingMenuRebuild = true
+            return
+        }
+        setupMenus(activeKeymap)
+    }
+
+    /// 盯住主菜单的张合。只认根菜单是 `NSApp.mainMenu` 的那些——
+    /// 弹出菜单（工具栏贡献、右键菜单）与主菜单无关，不该拦住重建。
+    private func observeMenuTracking() {
+        let center = NotificationCenter.default
+        func rooted(_ note: Notification) -> Bool {
+            guard var menu = note.object as? NSMenu else { return false }
+            while let sup = menu.supermenu { menu = sup }
+            return menu === NSApp.mainMenu
+        }
+        // **必须 weak**：block 版 addObserver 会一直持有这个闭包，强捕 self
+        // 就是 self → observers → block → self 的循环。
+        menuTrackingObservers = [
+            center.addObserver(forName: NSMenu.didBeginTrackingNotification,
+                               object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, rooted(note) else { return }
+                    self.menuTrackingDepth += 1
+                }
+            },
+            center.addObserver(forName: NSMenu.didEndTrackingNotification,
+                               object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, rooted(note) else { return }
+                    self.menuTrackingDepth = max(0, self.menuTrackingDepth - 1)
+                    guard self.menuTrackingDepth == 0, self.pendingMenuRebuild else { return }
+                    self.pendingMenuRebuild = false
+                    // 延到下一拍：AppKit 这会儿还在收尾这次 tracking。
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.setupMenus(self.activeKeymap)
+                    }
+                }
+            },
+        ]
+    }
+
+    deinit {
+        for token in menuTrackingObservers { NotificationCenter.default.removeObserver(token) }
     }
 
     /// 给一条菜单项装上键位。**掩码必须显式设**：`NSMenuItem` 的默认掩码是
@@ -809,7 +910,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let changed = keymap != activeKeymap
         if changed {
             activeKeymap = keymap
-            setupMenus(keymap)
+            rebuildMenus()
+            // ⌘/ 面板开着的话，它列的键位这会儿已经过期了。
+            shortcutsPanel?.refreshIfVisible(strings: strings, stopSpec: keymap.stopSpec)
         }
         // **解析失败要无条件落日志**：坏 spec 退回默认之后，算出来的表可能与在役的
         // 那份一模一样（把默认值打错一个字母就是这种情形），只按"变了没"记日志的话
@@ -864,6 +967,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 页面还没说话时是 `startupLocale` 那一级的猜测。
     private(set) var activeLocale: ClamLocale = .en
 
+    /// 壳自己那张文案表，按当前语言现算。**别把它存成属性**：存下来就多了一份
+    /// 要跟着语言更新的状态，而它本来就只是 `activeLocale` 的一个视图。
+    var strings: L { L(activeLocale) }
+
     /// 冷启动时的决议：**缓存 → 系统语言 → en**。
     ///
     /// 为什么要缓存这一级：菜单在 `init` 里就建好了，而页面侧的投影要等
@@ -903,7 +1010,23 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         UserDefaults.standard.set(next.rawValue, forKey: Self.localeDefaultsKey)
         guard next != activeLocale else { return }
         publishLocale(next)
+        rebuildLocalizedSurfaces()
         Log.write("界面语言切到 \(next.rawValue)（来自 dsh 设置）", to: ClamPaths.logURL, tag: "locale")
+    }
+
+    /// 语言变了，把壳自己画的每一处语言相关表面重来一遍。
+    ///
+    /// **只有"活着且长期在场"的表面需要出现在这里**：菜单栏、提示条、两个面板、
+    /// 引导页。诊断正文、快捷键正文、各种 alert 与浮条都是**打开/生成那一刻**
+    /// 才取文案的，天然就是新的；插件那半边自己订 `clam.locale` 粘性主题
+    /// （`ClamLocaleStore`），也不归这里管。
+    private func rebuildLocalizedSurfaces() {
+        let s = strings
+        rebuildMenus()
+        updateBanner?.apply(strings: s)
+        diagnosticsPanel?.apply(strings: s)
+        shortcutsPanel?.refreshIfVisible(strings: s, stopSpec: activeKeymap.stopSpec)
+        refreshBootstrap()
     }
 
     // MARK: - 菜单动作：喊命令
@@ -971,9 +1094,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// ⌘/：把当前主菜单里所有带快捷键的项摊成一张表。
     @objc private func showShortcuts() {
-        let panel = shortcutsPanel ?? ShortcutsPanel()
+        let panel = shortcutsPanel ?? ShortcutsPanel(strings: strings)
         shortcutsPanel = panel
-        panel.present(stopSpec: activeKeymap.stopSpec)
+        panel.present(strings: strings, stopSpec: activeKeymap.stopSpec)
     }
 
     @objc private func reconnectNow() {
@@ -990,71 +1113,74 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// ⌥⌘D：把壳此刻的全部认知摊平成一屏可拷贝的文本。
     @objc private func showDiagnostics() {
-        let panel = diagnosticsPanel ?? DiagnosticsPanel(collect: { [weak self] in
-            self?.diagnosticsText() ?? "（窗口已销毁）"
+        // 采集闭包返回 nil = 窗口已销毁，面板自己用文案表里那句话兜底。
+        let panel = diagnosticsPanel ?? DiagnosticsPanel(strings: strings, collect: { [weak self] in
+            self?.diagnosticsText()
         })
         diagnosticsPanel = panel
-        panel.present()
+        panel.present(strings: strings)
     }
 
     /// 诊断正文。顺序按"离用户多远"排：先是它连着谁，再是它跑着什么。
     private func diagnosticsText() -> String {
+        let s = strings
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         var lines: [String] = []
         lines.append("\(AppInfo.displayName)  \(version)  (\(Bundle.main.bundleIdentifier ?? "?"))")
-        lines.append("构建时间：\(AppInfo.buildTimestamp.isEmpty ? "未知" : AppInfo.buildTimestamp)")
+        lines.append(s.diagBuildTime(AppInfo.buildTimestamp))
         lines.append("")
-        lines.append("── dsh 连接 ──")
+        lines.append(s.diagSectionConnection)
         if let endpoint {
-            lines.append("端点：\(endpoint.summary)")
-            lines.append("来源：\(endpoint.source.rawValue)")
+            // "不是本 worktree 那一套"是警告，得跟着端点这一行走（见 ClamEndpoint.summary）。
+            lines.append(s.diagEndpoint(endpoint.summary + (endpoint.isOwn ? "" : s.diagEndpointNotOwn)))
+            lines.append(s.diagEndpointSource(endpoint.source.rawValue))
         } else {
-            lines.append("端点：未连接（引导页在场）")
+            lines.append(s.diagEndpointNone)
         }
-        lines.append("桥：\(nativeHost.isBridgeConnected ? "已连接" : "未连接")")
-        lines.append("页内桥：\(bridgeReady ? "已就绪" : "未就绪")")
-        lines.append("原生侧边栏门控：\(nativeSidebarParamInUse ? "开（?clam-native-sidebar=1）" : "关（完整网页模式）")")
+        lines.append(s.diagBridge(connected: nativeHost.isBridgeConnected))
+        lines.append(s.diagPageBridge(ready: bridgeReady))
+        lines.append(s.diagSidebarGate(on: nativeSidebarParamInUse))
         // 页面还没投影过来时，显示的是缓存/系统语言那两级的猜测——分得清才好查
         // "原生和网页各说各话"这类问题。
         let localeSource = UserDefaults.standard.string(forKey: Self.localeDefaultsKey) == nil
-            ? "系统语言" : "缓存或页面投影"
-        lines.append("界面语言：\(activeLocale.rawValue)（\(localeSource)）")
+            ? s.diagLocaleFromSystem : s.diagLocaleFromCache
+        lines.append(s.diagLocale(activeLocale.rawValue, source: localeSource))
         lines.append("")
-        lines.append("── 原生插件 ──")
-        lines.append("在役 \(nativeHost.loadedCount) 个，本次运行退休 \(nativeHost.retiredThisRun) 个 image")
+        lines.append(s.diagSectionPlugins)
+        lines.append(s.diagPluginCounts(loaded: nativeHost.loadedCount, retired: nativeHost.retiredThisRun))
         if nativeHost.diagnostics.isEmpty {
-            lines.append("（一个都没有：root 槽由壳的全出血 WebView 兜底）")
+            lines.append(s.diagPluginsNone)
         } else {
             lines.append(contentsOf: nativeHost.diagnostics.map { "  \($0)" })
         }
-        lines.append("root 槽占用者：\(nativeHost.registry.owner(of: "root") ?? "无（兜底 WebView）")")
-        lines.append("sidebar 槽占用者：\(nativeHost.registry.owner(of: "sidebar") ?? "无")")
+        lines.append(s.diagRootOwner(nativeHost.registry.owner(of: "root")))
+        lines.append(s.diagSidebarOwner(nativeHost.registry.owner(of: "sidebar")))
         lines.append("")
-        lines.append("── 壳自身构建 ──")
+        lines.append(s.diagSectionShellBuild)
         if let build = nativeHost.appBuild {
-            lines.append("最近播报：\(build.status)"
+            lines.append(s.diagLastBuild(build.status
                          + (build.hash.map { "  \($0)" } ?? "")
-                         + (build.durationMs.map { String(format: "  %.1fs", Double($0) / 1000) } ?? ""))
+                         + (build.durationMs.map { String(format: "  %.1fs", Double($0) / 1000) } ?? "")))
             if let log = build.log, !log.isEmpty {
-                lines.append("日志尾巴：")
+                lines.append(s.diagBuildLogTail)
                 lines.append(contentsOf: log.split(separator: "\n").map { "  \($0)" })
             }
         } else {
-            lines.append("本次连接期间没有重建过（clam-app 没播报过 app-build）")
+            lines.append(s.diagNoBuild)
         }
         lines.append("")
-        lines.append("── 路径 ──")
+        lines.append(s.diagSectionPaths)
         // 日志一个实例一份，写全路径而不是目录——多 worktree 时"我该看哪个文件"
         // 正是最容易搞错的一步。
-        lines.append("日志：\(ClamPaths.logURL.path)")
-        lines.append("发现文件：\(ClamPaths.endpointsDir.path)")
+        lines.append(s.diagLogPath(ClamPaths.logURL.path))
+        lines.append(s.diagEndpointsPath(ClamPaths.endpointsDir.path))
         // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 surfclam 在跑"。
         let discovered = EndpointLocator.discoveredEndpoints()
         let discoveredText = discovered.isEmpty
-            ? "无"
+            ? s.diagDiscoveredNone
             : discovered.map { "\($0.profile ?? "?") → \($0.httpBase.absoluteString)" }
-                .joined(separator: "，")
-        lines.append("发现的 dsh：\(discoveredText)")
+                .joined(separator: ", ")
+        lines.append(s.diagDiscovered(discoveredText))
         return lines.joined(separator: "\n")
     }
 
@@ -1124,13 +1250,15 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     // MARK: - 提示
 
     /// 异步 NSAlert；返回 0 = 第一个按钮。必须在主线程调用。
+    /// `buttons` 传 nil = 只有一个"好"（按当前语言）。
     @discardableResult
-    private func presentAlert(title: String, message: String, buttons: [String] = ["好"]) async -> Int {
-        await withCheckedContinuation { cont in
+    private func presentAlert(title: String, message: String, buttons: [String]? = nil) async -> Int {
+        let titles = buttons ?? [strings.ok]
+        return await withCheckedContinuation { cont in
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = message
-            for b in buttons { alert.addButton(withTitle: b) }
+            for b in titles { alert.addButton(withTitle: b) }
             let idx = alert.runModal() == .alertFirstButtonReturn ? 0 : 1
             cont.resume(returning: idx)
         }
