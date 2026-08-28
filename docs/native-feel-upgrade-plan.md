@@ -1,0 +1,236 @@
+# 原生感升级计划（对照 webview-native-feel-playbook）
+
+> 权威计划。输入是 `docs/webview-native-feel-playbook.md`（Raycast 2.1.0 逆向手册，
+> 2026-08-28 从桌面拷入归档）。每完成一个里程碑在 §7 追加执行日志；
+> 发现本文与源码冲突，以源码为准并就地更新本文。
+
+## §0 立场（先读这个，它决定所有裁决）
+
+1. **自然延伸 dsh，不另建主真相来源。** 主题、强调色、字体栈的权威都是 dsh；
+   我们做投影与适配，不做第二偏好源。
+2. **能用官方/系统原生渲染（含私有 API）就不手绘。** 本仓库不上架、ad-hoc 签名、
+   部署目标 27.0，私有 API 无合规障碍；风险只剩 WebKit 升级改名，一律
+   `CSS.supports` / `responds(to:)` 探测 + 保留现有手绘实现为降级路径。
+3. **视觉拿不准就截图请用户裁决**，其余可逆决策自主推进。
+
+## §1 本机验证过的事实（不是照抄手册）
+
+| 事实 | 验证方式 | 对计划的影响 |
+|---|---|---|
+| `UseSystemAppearance` 私有 feature 存在（601 个 feature，默认关） | 附录 B 探测脚本在本机跑通 | P2 的开关有的放矢 |
+| dsh 全局写死 `-webkit-font-smoothing: antialiased` | grep dsh-web-frontend 构建产物 | 字重偏细是 dsh 造成的，P1 必须覆盖回 `subpixel-antialiased` |
+| dsh 字体栈是 `-apple-system` 系统栈（仅 KaTeX 是 web 字体） | 同上 | 手册 §3.2 的 40 条 Inter 光学字距表**不适用**，白捡 |
+| `--dsw-alias-button-primary-fill` / `--dsw-alias-brand-primary` 存在 | 同上 | `_primary` 高光写死蓝色的死结可用相对颜色解（P1） |
+| dsh 无 `color-scheme` / `caret-color` / `::selection`，滚动条仅两处局部样式 | 同上 | P1 的补课项不与 dsh 冲突 |
+| 壳侧无 Inspector、无外观处理、无 document-start 注入、右键菜单未动 | 通读 clam-app/host/Sources | P2/P4/P5 的落点 |
+
+现状两句话：clam-nativeify 在玻璃表面（8 层 box-shadow 几何衰减、四态矩阵）和字体
+度量两个维度做到了极深，但手册里的其余「姿态」维度（smoothing/cursor/color-scheme/
+selection/焦点环/降透明度适配）一条都没有；壳侧 WKWebView 只配了 6 行，
+系统 NSAppearance 与 dsh `ui-theme` 是两套互不知情的主题源。
+
+## §2 里程碑总表
+
+| # | 名字 | 依赖 | 风险 | 一句话 |
+|---|---|---|---|---|
+| P1 | 姿态与文字补课 + bug 修 | 无 | 低 | 纯标准 CSS，全在 clam-nativeify/lib/client.js |
+| P2 | 壳侧开关 + 真材质 spike | 无 | 低（开关有守卫） | 壳 3 行 + 可复跑 spike，产出四态对比截图 |
+| P3 | 真材质接管玻璃表面 | P2 | 中（私有 API） | `@supports` 门控渐进增强，手绘栈降级保留 |
+| P4 | 原生侧跟随 dsh 主题 | 无 | 中（新 swift 半边） | nativeify 长出 node 投影 + 薄 swift 半边 |
+| P5 | 右键菜单薄版 | 无 | 低 | WKWebView 子类裁默认菜单 |
+
+P1、P2、P5 相互独立可并行；P3 等 P2 的截图结论（拿不准就停下来给用户看）；
+P4 独立于材质线。
+
+## §3 里程碑详情
+
+### P1 姿态与文字补课 + bug 修（clam-nativeify）
+
+全部落在 `clam-nativeify/lib/client.js` 主 style（个别进字体 style），改完同步 README
+（README 数值已多处与代码脱节，见下「顺手账」）。
+
+1. **`html body { -webkit-font-smoothing: subpixel-antialiased; }`**——覆盖 dsh 的
+   `antialiased`。实效是去掉「字变细」、与 AppKit 字重一致（Mojave 后系统全局灰度
+   AA，`subpixel-antialiased` 实际渲染等同 auto）。注入顺序上我们的 style 晚于 dsh
+   构建产物，同特异性后者胜，核实后**不加** `!important`（README 的既定纪律：核实
+   存在后不留 fallback，同理不留保险）。
+2. **cursor 姿态**：`body { cursor: default }`；已有的可选中白名单
+   （`_flowItem` / `_contentColumn` / pre / code / input / textarea /
+   contenteditable）补 `cursor: text`（输入类控件浏览器默认即 text，只补内容区）。
+3. **`color-scheme`**：`html:has(body[data-ds-dark-theme]) { color-scheme: dark }`、
+   else light。让 UA 层（表单控件、原生滚动条、默认 `::selection` 底色）跟着 dsh
+   主题翻面，而不是跟系统。
+4. **`::selection` / `caret-color`**：手册配方是从前景派生——
+   `::selection { background: rgb(from var(--dsw-alias-label-primary) r g b / 20%) }`、
+   `input, textarea { caret-color: var(--dsw-alias-label-primary) }`（token 名先
+   核实存在，README 纪律）。
+5. **`_primary` 高光解死结**：`--clam-glass-glow-c` 眼下写死 `0 192 255` / `0 203 255`
+   （dsh 换主题色会偏色，README:380-382 自认）。改成从
+   `var(--dsw-alias-button-primary-fill)` 用相对颜色取通道：发光层的
+   `rgb(var(--clam-glass-glow-c) / calc(…))` 改写为
+   `rgb(from var(--dsw-alias-button-primary-fill) r g b / calc(…))` 形态，或把
+   `--clam-glass-glow-c` 定义成 `@property` + relative color 中转。保持浅/深两档
+   peak/decay 不变，只换色相来源。
+6. **按压时序**：手册量的原生行为是「按下即时、松开缓动」——按下态
+   `transition-duration: 0s`（现在是 90ms），松开沿用 `--clam-dur-fast`。
+   `--clam-dur-press` 变量随之退休或归零。
+7. **`prefers-reduced-transparency`**：`@media (prefers-reduced-transparency: reduce)`
+   里关 `backdrop-filter`、把 `--clam-glass-fill` 提到不透明近似色。
+   四态变量结构不动，只在媒体查询里覆写。
+8. **bug 修：`watchWindowFocus` 的 HMR 实例守卫**。cleanup 现在无条件
+   `removeAttribute("data-clam-blur"/"data-clam-nofx")`，撞 CLAUDE.md 记过的
+   「新实例先启、旧实例后清」坑（字体 style 那处已有 `fontStyle === style` 守卫，
+   这处漏了）。照 clam-layout 的 makeToken 思路：属性值写实例 token，cleanup 只清
+   token 对得上的。
+9. **顺手账（README 修正）**：发光表 peak/decay 数值、左右阴影 12→14px、
+   「五个按钮」实为 6 条选择器、README:5 声称包内有 `cordis.patch.yml`（实在伞包）。
+
+**明确不做**：letter-spacing 表（系统字体栈自带光学字距）；`:focus-visible` 焦点环
+（dsh 有无自己的 focus 样式未核实，单列成 backlog 待查）；滚动条隐藏+自绘（backlog，
+dsh 已有局部样式、回归面大）。
+
+**验收**：`tools/dump-css.mjs` 括号平衡；`./dev` 起真 App 后 `tools/shot.sh` 截
+浅/深 × 激活/失活四张；普通浏览器打开 dsh 确认零影响（UA 门控本就挡着，но
+color-scheme 等新规则都在门控内）。
+
+### P2 壳侧开关 + 真材质 spike
+
+**壳（`clam-app/host/Sources/MainWindowController.swift` webView 懒加载处）**：
+
+1. `#if DEBUG` 下 `wv.isInspectable = true`——现在 Inspector 完全开不出来，调材质必备。
+2. 开系统外观私有开关，带守卫：
+   ```swift
+   let prefs = config.preferences
+   if prefs.responds(to: NSSelectorFromString("_setUseSystemAppearance:")) {
+       prefs.setValue(true, forKey: "useSystemAppearance")
+   }
+   ```
+   守卫失败即静默不开——页面侧 `@supports` 探测本来就兜底，两层各自独立降级。
+3. 同样带守卫地关 `shouldAllowUserInstalledFonts`（用户自装字体不污染渲染）。
+
+**spike（`docs/spikes/apple-visual-effect/`，可复跑）**，回答三个手册没答的问题：
+
+- **不透明窗口里 glass material 采样什么？** 我们窗口 `isOpaque=true`（Raycast 透明）。
+  预期采样身后页面内容（对胶囊控件正是想要的），但必须实测。
+- **开关对 dsh 页面其余渲染有无副作用？** 全页走查一遍（表单、代码块、图片）。
+- **失活时材质自己会不会变哑光？** 从 Raycast 手工复刻失焦态推断不会，
+  需确认——决定 P3 的失活态方案。
+
+方法：`isInspectable` 开着，在 Inspector 里对 neutral 组任一按钮手工换
+`-apple-visual-effect: -apple-system-glass-material-media-controls`（以及
+`-subdued`、`-apple-system-glass-material` 各试），`tools/shot.sh` 截四态对比图
+（手绘版 vs 材质版并排）。spike 目录里落一份最小 HTML + 结论 README。
+
+**产出即停点**：对比截图交给用户看（立场 §0.3）。用户裁决前 P3 不动工。
+
+### P3 真材质接管玻璃表面（gate on P2 + 用户裁决）
+
+结构（方向，细节按 P2 结论定）：
+
+- 主 style 里加 `@supports (-apple-visual-effect: -apple-system-glass-material-media-controls)`
+  块，块内对 neutral 组：`backdrop-filter` + `--clam-glass-fill` 让位给材质；
+  8 层发光/描边/侧影按对比结论裁——材质自带高光描边就整层退休，
+  只保留 hover/press 的 tint 与按压径向光。
+- `_primary`（实色）不上材质，维持 P1 后的相对颜色高光。
+- **失活态**：沿用 `data-clam-blur` 切换——blur 时 `-apple-visual-effect: none`
+  并回落到现有失活 3 层（Raycast 同款做法）；若 P2 发现 `-subdued` 更像系统失活，
+  用它。
+- 手绘四态栈**原样保留**在 `@supports` 块外，是普通浏览器与未开开关时的降级路径。
+- 玻璃不嵌套（HIG + Raycast 实测：材质套材质出伪影）——我们的按钮都直接浮在
+  页面上，天然满足，写进注释即可。
+- 可选：按钮文字 `-apple-visual-effect: -apple-system-vibrancy-label`（dsh 控制
+  文字颜色，覆盖前截图比对，拿不准就不做）。
+
+**验收**：四态截图 vs P2 对比图一致；关掉开关（或普通浏览器）走降级路径截图
+确认手绘栈完好；`prefers-reduced-transparency` 下材质也退（媒体查询在
+`@supports` 块内同样生效，需覆写）。
+
+### P4 原生侧跟随 dsh 主题
+
+缺口：系统 NSAppearance 与 dsh `ui-theme` 互不知情——dsh 设 light + 系统 dark 时
+原生侧边栏/工具栏深、网页正文浅，一眼穿帮；窗口 `backgroundColor` 跟系统而非 dsh
+主题，首帧与 resize 露底闪错色。
+
+**方向（立场 §0.1）**：dsh `ui-theme` 是权威，原生侧跟随。
+
+**归属**：clam-nativeify——「摸起来像原生」正是它的宪章，缺席即回到现状（两套
+主题源各行其是），符合「缺席即退化」。代价是它不再纯 CSS：长出 swift 半边。
+
+- **node 半边**（lib/index.js）：运行时嵌套 inject 订 dsh 的 `ui-theme` 设置
+  （具体 ns/键名以 dsh 源码为准——clam-settings 的 swift 侧已在消费它，照抄其
+  读法），经 `createSwiftPlugin`（clam-bridge 的 `./plugin` 出口）投影
+  `{ theme: "light"|"dark"|"system", bgBase: { light, dark } }`。设置服务缺席时
+  不投影 = swift 半边保持系统外观，无害降级。
+- **swift 半边**（新增 swift/）：收投影设
+  `NSApp.appearance = nil | NSAppearance(named: .aqua / .darkAqua)`；同时把
+  `window.backgroundColor` 设成 dsh 主题 base 底色（深色 `#1E1E1E`，与 client.js
+  写死的 `--dsw-alias-bg-base` 同源，投影里带值不再两处写死），消首帧闪色。
+  注意「不占槽的插件没有生命周期锚」坑：`activate` 返回持有者对象；
+  「清理别挂析构」坑:appearance 是进程级状态,新一代 activate 时按投影重设即可,
+  换代天然收敛。
+- **顺手（可选子项）**：swift 半边订 `didBecomeKey/didResignKey`，
+  `ClamEventBus.emitSticky` 一条窗口 key 态，client.js 订到就用它打
+  `data-clam-blur`（语义精确：分得清 app 失活/窗口非 key/遮挡），
+  `document.hasFocus()` 降级保留（收不到事件就维持现状，零契约哲学不破）。
+  注意 client 半边收壳事件需经页内桥——评估成本，高就砍掉这个子项。
+
+**验收**：dsh 设 dark + 系统 light（及反向）各截一张——侧边栏、工具栏、正文
+同色温；设置滑到 `system` 跟系统翻面；杀掉 nativeify（从 patch 表摘行）回现状。
+
+### P5 右键菜单薄版
+
+现状 WebKit 默认菜单带 Reload / Back 这类穿帮项。做薄版：
+
+- 新建 `WKWebView` 薄子类（落点 `Native/`），覆写 `willOpenMenu(_:with:)` 按
+  `NSMenuItem.identifier`（`WKMenuItemIdentifier*`）白名单裁项：保留
+  Copy / Look Up / Translate / Services / Share / Inspect Element（Debug），
+  裁掉 Reload、Back/Forward、Open Link in New Window 类导航项。
+- `MainWindowController.swift` 创建处换用子类，一行。
+- 全版（`contextmenu → NSMenu` 桥、真 Services/Share 注入 web 元素）进 backlog——
+  dsh 页内右键需求少，薄版已消穿帮。
+
+**验收**：正文/链接/选中文字/输入框四种右键各弹一次，无导航类穿帮项，
+复制粘贴查词照常。
+
+## §4 明确不采纳（手册条目 → 理由）
+
+| 手册条目 | 理由 |
+|---|---|
+| 透明窗口 + 桌面采样（§1.2） | 文档型 app，内容不透明，无收益；牵动整条背景链 |
+| `NSThemeFrame` 圆角 swizzle（§1.3） | 标准 titled 窗口默认圆角就是对的 |
+| `window.open` 劫持成原生弹层架构（§2.1） | 我们的路线更激进：整面 UI 原生化（sidebar/header/settings 已是真 AppKit）；dsh 页内小弹层随 dsh |
+| `ipc://` 图像 scheme（§2.4） | 聊天内容无 app 图标/QuickLook 需求 |
+| 键盘布局推送 / ⌘⌘ / 强制 ASCII（§2.5） | 无全局快捷键录制场景 |
+| 预热窗口 / 禁 App Nap / 禁定时器节流（§1.4） | 常驻窗口非呼出型；后台节流反而省电 |
+| `--spx` / `round()` 全站 token（§3.1） | 设计系统归 dsh，不归我们；自家注入值本就整数 px |
+| Inter 光学字距表（§3.2） | dsh 是系统字体栈，SF 自带光学字距 |
+| 拖拽改 `data-draggable-region` 桥（§2.2） | 标题栏是原生 toolbar，`installTitlebarDrag` 已解决 |
+
+**Backlog**（不进本期，条件成熟再议）：滚动条全隐藏+自绘 overlay；右键菜单全版
+NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式）；
+`text-box: trim-both` 行盒对齐。
+
+## §5 风险
+
+- **私有 API 漂移**（P2/P3）：WebKit 升级可能改名 `UseSystemAppearance` /
+  `-apple-visual-effect` 值。两层探测（swift `responds(to:)` + CSS `@supports`）
+  各自静默降级到手绘栈，失效方向安全。dsh 钉版本、macOS 大版本升级前跑一次
+  spike 目录即可回归。
+- **`color-scheme` 翻面副作用**（P1）：UA 层控件换肤可能与 dsh 自绘控件混搭出
+  不协调，截图走查表单区。
+- **nativeify 身份变化**（P4）：从「纯 CSS 免构建」变成三半边插件。CLAUDE.md
+  的插件简介要同步改口。
+- **README/代码脱节**是本包已有病灶，P1 顺手修一轮，后续改动带上 README。
+
+## §6 验证方法（通用）
+
+- `./dev` 起真 App；改 swift 存盘热替换 1~3s，改 client.js HMR ~0.5s。
+- `tools/shot.sh` 截图（失活态用 `--app <pid>` 点别的窗口再截；注意「遮挡窗口
+  返回陈旧帧」坑，先改个可见值验新鲜度）。
+- `clam-nativeify/tools/dump-css.mjs` 验 CSS 括号/前缀。
+- 每条视觉改动做对照组：关掉修复截一张（CLAUDE.md 纪律）。
+- 拿不准的视觉差异：并排截图停下来给用户看。
+
+## §7 执行日志
+
+- 2026-08-28 计划定稿。立场三条由用户定调（跟随 dsh / 优先原生渲染 / 截图裁决）。
