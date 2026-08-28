@@ -108,7 +108,9 @@ window.__ModuleLoader__.load({
 		// 半透明白压在 dsh 的强调蓝上，把发送键洗成藕荷色。少一个能给色的地方，
 		// 这个 bug 在结构上就不可能再出现。
 		const TINTED = ['button[class*="_primary"]'];
-		const neutral = SOLID_BUTTONS.filter((sel) => !TINTED.includes(sel)).join(",\n");
+		/** 无色玻璃那组 = 白名单去掉自带强调色的 `_primary`。真材质只接管这一组。 */
+		const NEUTRAL = SOLID_BUTTONS.filter((sel) => !TINTED.includes(sel));
+		const neutral = NEUTRAL.join(",\n");
 		const tinted = TINTED.join(",\n");
 		const solid = join("");
 		const solidPlain = joinPlain("");
@@ -119,6 +121,9 @@ window.__ModuleLoader__.load({
 		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-blur] ' + sel).join(",\n");
 		// 切焦点那一帧用的「禁过渡」选择器，同样得逐条加前缀。
 		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-nofx] ' + sel).join(",\n");
+		// 真材质接管的那组（P3）。**只在窗口激活时接管** —— 失活整个交还给手绘四态，
+		// 理由见文件末尾 @supports 块的注释。前缀同样逐条加，逗号串上只写一次只命中第一条。
+		const materialNeutral = NEUTRAL.map((sel) => ':root:not([data-clam-blur]) ' + sel).join(",\n");
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -1096,6 +1101,82 @@ window.__ModuleLoader__.load({
 					"  :root[data-clam-blur] body { --clam-glass-fill: #F0F0F0; }",
 					"  :root[data-clam-blur] body[data-ds-dark-theme] { --clam-glass-fill: #333333; }",
 					"  " + neutral + " { backdrop-filter: none; }",
+					"}",
+
+					// ===== 真材质接管玻璃表面（计划 P3）=====
+					//
+					// 上面整摞手绘四态**一字不动**：它是普通浏览器、以及壳侧那个私有
+					// 开关没开时的降级路径。spike 实测（docs/spikes/apple-visual-effect/）
+					// 开关一关 `CSS.supports` 九个值全 ✘、材质层什么都不画 —— 干脆的
+					// 全有全无，所以块外必须留着**完整**的手绘栈，不能写成"块外留一半、
+					// 指望材质补另一半"。
+					//
+					// ── 三层门控，都是「进入条件」而不是「进去之后再覆写回来」 ──
+					//
+					//   ① `@supports (-apple-visual-effect: …)`   WebKit 解锁了没有
+					//   ② `prefers-reduced-transparency: no-preference`
+					//                                             "别让我透过控件看背景"
+					//   ③ `:root:not([data-clam-blur])`           窗口激活态
+					//
+					// **②③ 刻意写成条件而不是覆写**，虽然计划里写的是"块内覆写
+					// `-apple-visual-effect: none` 再让手绘层重新生效"。两者的计算值
+					// 完全等价，代价却差得远：覆写那条路要在块内把手绘的
+					// `--clam-surface` 整摞重新列一遍（还得分 plain / bordered 两组，
+					// 因为只有前者带描边层），并把 `--clam-glass-drop` 按浅深两档复述
+					// 一遍常量 —— 等于给同一份真相开第二个抄本。而抄错或抄漏的后果不是
+					// "少一层"：任何一条 `var()` 解析不出来会让**整条 box-shadow 失效、
+					// 玻璃表面直接消失，且静默无报错**（README「已知脆弱点」记的正是这个
+					// 形状）。写成进入条件之后，失活态与降透明度态的计算值与今天**逐字节
+					// 相同**，一条回滚规则都不需要。
+					//
+					// **失活必须由我们自己关掉材质**，这是必需项不是优化：spike 实测
+					// 窗口失活时材质自己**一个像素都不变**（激活/失活两张截图的取样值
+					// 逐位相同），系统不会替我们表达失活；而 `-subdued` 与
+					// `media-controls` 在同一背景上只差几个色阶，也不足以表达失活。
+					//
+					// **`_primary` 不上材质**：它是实色强调键，色由 dsh 自己画，背后糊
+					// 什么都看不见 —— 和它没有 backdrop-filter 是同一个理由。
+					//
+					// **材质直接挂在按钮自身上**，没有 Raycast 那个空的 `.fx` 子元素。
+					// 他们要那一层是为了 z-index 分层（材质 `z-index:-1` 压在内容之下、
+					// 且 `pointer-events:none` 不吃指针），而我们的按钮内容就是一行字
+					// 加一个图标，材质走元素自己的背景层天然就在内容之下。已知风险是
+					// **材质与 background-image（按压泛光）、inset box-shadow（tint）
+					// 的绘制次序没有实测过** —— 待视觉验证，清单见 README「真材质路线」。
+					//
+					// **玻璃不嵌套**（HIG + Raycast 实测：材质套材质出材质合并伪影）。
+					// 白名单里这几枚按钮都直接浮在页面上，没有一枚坐在另一块材质里，
+					// 天然满足；往名单里加按钮时要自己确认这一条。
+					"@supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {",
+					"@media (prefers-reduced-transparency: no-preference) {",
+					materialNeutral + " {",
+					// 玻璃的两根支柱同时让位给材质。
+					// **`!important` 是必须的**：上面 neutral 那条 background-color
+					// 自己就是 !important 的，特异性只在同一重要度内部比。不退成透明的话
+					// 半透明白压在材质上，把系统辛苦采样来的那层洗白。
+					"  background-color: transparent !important;",
+					// backdrop-filter 也退场：页面 compositor 与 CoreMaterial 两层糊
+					// 同一块背景，只会互相叠加，还白白多一个合成层。
+					"  backdrop-filter: none;",
+					// 胶囊控件那一档（Safari 视频控件同款，Raycast 的 `.macos__control`
+					// 也是它）。不用 `-apple-system-glass-material`：那是面板/popover 档。
+					"  -apple-visual-effect: -apple-system-glass-material-media-controls;",
+					// 手绘表面**整摞退休，只留 tint 这一层**。材质自带完整外观（模糊、
+					// 提饱和、边缘高光描边，spike 里那圈高光是它造型语言的一部分、关不掉），
+					// 8 层发光 + 描边 + 左右侧影再叠上去就是两套边缘打架。
+					// **tint 必须留**：材质不提供任何交互态（它连窗口失活都不变，
+					// 更不会响应 hover / 按下），hover 与按下那两级层次只能由我们出。
+					// 按压那片跟着指针走的径向光走的是 background-image，不在这条里，
+					// 原样保留。
+					"  --clam-surface: inset 0 0 0 100px var(--clam-tint);",
+					// 外投影一并交出去。它本来是"让手绘的一块半透明白在页面上站住"的
+					// 拐杖 —— 材质是真实合成层，接地关系是它自己的事；两份贴地阴影叠
+					// 起来只会脏。代价是 hover 少掉"浮起来"那一级（1px→2px→0 的三档
+					// 投影一起没了），**只剩 tint 一级层次**；真觉得反馈不够，把这一行
+					// 删掉就整套回来，不牵动别的。
+					"  --clam-glass-drop: transparent;",
+					"}",
+					"}",
 					"}",
 				];
 				style.textContent = rules.join("\n");

@@ -141,7 +141,9 @@ color-scheme 等新规则都在门控内）。
 - `_primary`（实色）不上材质，维持 P1 后的相对颜色高光。
 - **失活态**：沿用 `data-clam-blur` 切换——blur 时 `-apple-visual-effect: none`
   并回落到现有失活 3 层（Raycast 同款做法）；若 P2 发现 `-subdued` 更像系统失活，
-  用它。
+  用它。（P2 实测 `-subdued` 与 `media-controls` 只差几个色阶，不够表达失活，
+  没用它。**动手时这条又改了形状**：失活写成了"不进材质块"的**进入条件**
+  `:root:not([data-clam-blur])` 而不是"进去再覆写回来"，理由见 §7 的 P3 条。）
 - 手绘四态栈**原样保留**在 `@supports` 块外，是普通浏览器与未开开关时的降级路径。
 - 玻璃不嵌套（HIG + Raycast 实测：材质套材质出伪影）——我们的按钮都直接浮在
   页面上，天然满足，写进注释即可。
@@ -150,7 +152,9 @@ color-scheme 等新规则都在门控内）。
 
 **验收**：四态截图 vs P2 对比图一致；关掉开关（或普通浏览器）走降级路径截图
 确认手绘栈完好；`prefers-reduced-transparency` 下材质也退（媒体查询在
-`@supports` 块内同样生效，需覆写）。
+`@supports` 块内同样生效，需覆写——**实现改成了正向的 `no-preference` 门**，
+同样一句话的事，见 §7）。**结构已落地、视觉一格未验**，八条待验清单在
+`clam-nativeify/README.md` 的「真材质路线」末尾。
 
 ### P4 原生侧跟随 dsh 主题
 
@@ -326,3 +330,38 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
   **留给真 App 的**：dsh 设 dark + 系统 light（及反向）各截一张看侧边栏/工具栏/正文
   同色温；滑到 `system` 跟系统翻面；resize 与冷启动首帧不闪底色；clam-settings
   那扇窗没被刷成页面底色。
+- 2026-08-28 **P3 完成**（真材质接管玻璃表面）。改动只有三处：
+  `clam-nativeify/lib/client.js`（新增 `NEUTRAL` 数组 + `materialNeutral` 选择器
+  + 主 style 末尾一个 `@supports` 块）、本包 README 新增「真材质路线」一节、本条日志。
+  **手绘四态栈一字未动**——`tools/dump-css.mjs` 前后 diff 是纯新增的 15 行，
+  没有一行被改写。
+  **一处对计划的偏离，是有意的**：计划（§3 P3 第三条）写的是"块内覆写
+  `-apple-visual-effect: none`、让手绘失活层重新生效"，实现改成了**把失活与
+  降透明度写成进入条件**——`@supports (…) { @media (prefers-reduced-transparency:
+  no-preference) { :root:not([data-clam-blur]) <neutral> { … } } }`。
+  计算值完全等价，但覆写那条路要在块内把 `--clam-surface` 整摞重列一遍
+  （分 plain / bordered 两组，只有前者带描边层）、还要按浅深两档复述
+  `--clam-glass-drop` 的常量，等于给同一份真相开第二个抄本；而抄错的后果不是
+  "少一层"，是**整条 `box-shadow` 连带失效、玻璃表面直接消失且静默无报错**
+  （README「已知脆弱点」记的形状）。写成进入条件之后失活态与降透明度态与改动前
+  逐字节相同，一条回滚规则都不需要。同理，计划第 7 项说的"`@media` 在 `@supports`
+  块内也要覆写"变成了正向的 `no-preference` 门。
+  三条实现裁决（理由都写在代码与 README 里）：① 只留 `--clam-tint` 一层，8 层发光
+  + 描边 + 左右侧影整摞退休（材质自带完整外观，而它**不提供任何交互态**）；
+  ② 外投影 `--clam-glass-drop` 一并去掉（它是给手绘的半透明白当拐杖的；材质是真实
+  合成层，两份贴地阴影只会脏。代价是 hover 只剩 tint 一级层次，删掉那一行即恢复）；
+  ③ 材质直接挂按钮自身，不学 Raycast 的空 `.fx` 子元素（他们要那层是为了
+  `z-index:-1` + `pointer-events:none` 的分层，我们的按钮内容压不住背景层）。
+  **计划第 5 项（带色玻璃那组）在当前源码里不成立**：P1 之后
+  `--clam-glass-glow-c` 的蓝色派生只给 `tinted` = `_primary` 一条，
+  `_sessionLogButton` 等在 `neutral` 组里用的是默认白高光。所以没有第二组"带色玻璃"
+  要裁决 `-subdued` 还是维持手绘——`_primary` 本来就不上材质，这一项自然消解。
+  验证：`node --check` 过；`tools/dump-css.mjs` exit 0、432 行 48 条规则、括号配对
+  正确，`@supports` 块内五条选择器逐条带 `:root:not([data-clam-blur])` 前缀
+  （逗号串只加一次前缀那个老坑）。特异性逐条核过：我们那五条是 (0,3,1)（`_toBottom`
+  那条 (0,4,0)），被覆盖的 `neutral` / `solid` / `solidPlain` 是 (0,1,1)（(0,2,0)），
+  全部靠特异性取胜、不靠源码顺序；唯一的例外是 `background-color`——被覆盖的那条
+  自己带 `!important`，所以我们这条也必须带（重要度先于特异性比）。
+  **视觉一格都没验**（屏幕锁着），待验证清单八条写在 README「真材质路线」末尾，
+  第 1 条是必查项：材质没生效时观感与改动前**完全一致**，"看着没变"分不出
+  "生效了但差别小"和"根本没进那个块"。

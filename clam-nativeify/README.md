@@ -661,6 +661,107 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 窗口里控件通常也不响应 hover，实际撞不上，但没验证过）。
 
 
+### 真材质路线：把无色玻璃交给系统渲染
+
+计划 `docs/native-feel-upgrade-plan.md` P3。上面整节讲的手绘四态**一个字都没改**，
+它现在的身份是**降级路径**；在壳里、且几个条件都成立时，`neutral` 那组（白名单去掉
+实色的 `_primary`，眼下 5 条选择器）的表面改由 WebKit 的私有材质
+`-apple-visual-effect: -apple-system-glass-material-media-controls` 画。
+
+这条路建立在 `docs/spikes/apple-visual-effect/` 的三条实测上：
+
+1. **不透明窗口里材质照常采样身后的页面内容**，不是黑块——透明窗口不是前提。
+   我们要的正是"胶囊控件采样身下那块页面"。
+2. **探测是干脆的全有全无**：壳侧私有开关一关，`CSS.supports` 九个值全 ✘，
+   材质层什么都不画。所以 `@supports` 块外必须留着**完整**的手绘栈，不能写成
+   "块外留一半、指望材质补另一半"。
+3. **窗口失活时材质自己一个像素都不变**（激活/失活两张截图取样值逐位相同）。
+   所以"失活时把材质关掉"是**必需项而非优化**——系统不会替我们表达失活。
+   `-subdued` 与 `media-controls` 在同一背景上只差几个色阶，也担不起这个差事。
+
+#### 结构：三层门控，全是「进入条件」
+
+```css
+@supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {
+  @media (prefers-reduced-transparency: no-preference) {
+    :root:not([data-clam-blur]) <neutral 五条> {
+      background-color: transparent !important;   /* 给色处让位 */
+      backdrop-filter: none;                      /* 材质自己糊背景 */
+      -apple-visual-effect: -apple-system-glass-material-media-controls;
+      --clam-surface: inset 0 0 0 100px var(--clam-tint);   /* 只留交互态那一层 */
+      --clam-glass-drop: transparent;             /* 外投影一并交出去 */
+    }
+  }
+}
+```
+
+| 门 | 不成立时 | 落到哪 |
+|---|---|---|
+| `@supports` | 普通浏览器 / 壳侧 `useSystemAppearance` 没开 | 手绘四态，原样 |
+| `prefers-reduced-transparency` | 系统设置 → 辅助功能 → 显示 打开了"降低透明度" | 手绘 + 已有的不透明近似色 |
+| `:root:not([data-clam-blur])` | 窗口失活 | 手绘失活那两格（平色 + 描边 + `grayscale(1)`） |
+
+**计划里写的是"块内覆写 `-apple-visual-effect: none` 再让手绘层重新生效"，这里改成了
+进入条件。** 两者的计算值完全等价，代价差得远：覆写那条路要在块内把
+`--clam-surface` 整摞重新列一遍（还得分 plain / bordered 两组，只有前者带描边层），
+并按浅深两档复述一遍 `--clam-glass-drop` 的常量——等于给同一份真相开第二个抄本。
+而抄错抄漏的后果不是"少一层"：任何一条 `var()` 解析不出来会让**整条 `box-shadow`
+失效、玻璃表面直接消失、且静默无报错**（见「已知脆弱点」，这个形状踩过）。
+写成进入条件之后，失活态与降透明度态的计算值与加这段之前**逐字节相同**
+（`tools/dump-css.mjs` 的输出 diff 是纯新增），一条回滚规则都不需要。
+
+#### 四条设计裁决
+
+- **只留 tint 那一层，别的整摞退休。** 材质自带完整外观（模糊、提饱和、边缘一圈
+  高光描边——那圈高光是液态玻璃的造型语言，关不掉），8 层发光 + 描边 + 左右侧影
+  再叠上去就是两套边缘打架。**但 `--clam-tint` 必须留**：材质不提供任何交互态
+  （它连窗口失活都不变，更不会响应 hover / 按下），那两级层次只能由我们出。
+  按压那片跟着指针走的径向光走 `background-image`，不在 `--clam-surface` 里，原样保留。
+- **外投影也去掉**（`--clam-glass-drop: transparent`）。它本来是"让一块手绘的半透明白
+  在页面上站住"的拐杖；材质是真实合成层，接地关系是它自己的事，两份贴地阴影叠起来
+  只会脏。代价是 hover 少掉"浮起来"那一级（1px→2px→0 三档一起没了），**只剩 tint
+  一级层次**。真觉得反馈不够，把那一行删掉就整套回来，不牵动别的。
+- **`_primary` 不上材质。** 实色强调键，色由 dsh 自己画，背后糊什么都看不见——
+  和它本来就没有 `backdrop-filter` 是同一个理由。它的相对颜色高光（P1 那条
+  `oklch(from --dsw-alias-button-info-fill …)`）原样不动。
+- **材质直接挂在按钮自身上，没有 Raycast 那个空的 `.fx` 子元素。** 他们要那一层是为了
+  z-index 分层（材质 `z-index:-1` 压在内容之下、`pointer-events:none` 不吃指针），
+  而我们的按钮内容就是一行字加一个图标，材质走元素自己的背景层天然在内容之下。
+  代价是绘制次序没有实测过，见下面的待验证清单。
+- **玻璃不嵌套**（HIG + Raycast 实测：材质套材质出合并伪影）。白名单这几枚都直接浮在
+  页面上，没有一枚坐在另一块材质里，天然满足；**往 `SOLID_BUTTONS` 加按钮时要自己
+  确认这一条**。
+
+#### 待视觉验证（尚未在真 App 里看过）
+
+结构是推的，数值和观感一个都没验。按"先看有没有、再看对不对"的顺序：
+
+1. **材质到底生效了没有。** 控制台两句：
+   `CSS.supports('-apple-visual-effect','-apple-system-glass-material-media-controls')`
+   与 `matchMedia('(prefers-reduced-transparency: no-preference)').matches`——
+   两个都为真才可能进那个块。任一为假 = 走降级路径（观感与 P3 之前完全一致，
+   所以"看着没变"不等于"没生效"，必须这么查）。
+2. **绘制次序**：`--clam-tint`（inset box-shadow）与按压泛光（`background-image`）
+   在材质**之上**还是被它盖住？盖住的话 hover / 按下就没有反馈了，得改挂 `.fx` 子元素。
+3. **`SOLID_BORDERED` 那三枚的双描边**：dsh 自己给它们画着 `1px rgba(0,0,0,.1)`，
+   材质又自带一圈高光描边。我们手绘的描边层已经退休，但**dsh 那条不是我们的，没动**。
+   看着重就在块内补一句 `border-color: transparent`。
+4. **圆角**：材质跟不跟元素的 `border-radius`（`backdrop-filter` 是跟的，材质没验过）。
+   不跟的话胶囊会露出方角。
+5. **深浅两档**：材质认的是 `NSAppearance`。P4 之后 `NSApp.appearance` 跟着 dsh 的
+   `ui-theme` 走，所以 **dsh 深色 + 系统浅色**那一格要专门看一眼材质是不是深的。
+6. **hover / 按下的层次够不够**：投影三档没了，只剩 tint 的 `.035 / .070`（浅）与
+   `.113`（深）。不够就先恢复 `--clam-glass-drop`，别急着加回手绘层。
+7. **对照组**：把 `@supports` 那句条件改成一个必假的值（或壳侧关掉
+   `useSystemAppearance`）再截一张，确认降级路径完好——CLAUDE.md 的既定纪律，
+   每条视觉改动都要有对照组。
+8. **`-apple-system-vibrancy-label` 给按钮文字**（计划里的可选项）：本次没做。
+   dsh 控制着文字颜色，要不要交出去得先有并排截图。
+
+**`prefers-reduced-transparency: no-preference` 这个门有个静默失效方向**：UA 不认识
+这个特性时它是 false，于是材质永远不上，而观感与 P3 之前一模一样。失效方向安全，
+但排查时容易白花时间——所以第 1 条把它写成了必查项。
+
 ## 原生侧跟随 dsh 主题
 
 计划 `docs/native-feel-upgrade-plan.md` P4。缺口是**两套主题源互不知情**：
