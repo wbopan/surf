@@ -1,11 +1,11 @@
-# dash-layout
+# clam-layout
 
 窗口布局：接管壳的 `root` 槽，把 WKWebView 和 `sidebar` 槽摆好。
 
 ```
 root（本插件占）
 └─ NSSplitViewController
-   ├─ sidebar 槽（dash-sidebar 占；没人占就整个分栏项都不装）
+   ├─ sidebar 槽（clam-sidebar 占；没人占就整个分栏项都不装）
    └─ WKWebView（壳的那一个，从保管箱借用）
 ```
 
@@ -22,7 +22,7 @@ Liquid Glass）、分隔条、拖拽调宽、双击复位、宽度 autosave、�
 
 ## WebView 的归属
 
-WKWebView 实例归**壳**，放在保管箱（`DashObjects.Key.webView`）里，本插件只借用排版。
+WKWebView 实例归**壳**，放在保管箱（`ClamObjects.Key.webView`）里，本插件只借用排版。
 两个理由：
 
 1. 壳的终极逃生舱（本插件缺席时的全出血网页模式）要用同一个实例，页面才不重载；
@@ -33,15 +33,15 @@ WKWebView 实例归**壳**，放在保管箱（`DashObjects.Key.webView`）里�
 
 ## 导出给下游的东西
 
-- `public protocol DashConversationSurface` —— 会话展示面（选中会话 / 新建 / 打开设置）。
+- `public protocol ClamConversationSurface` —— 会话展示面（选中会话 / 新建 / 打开设置）。
   **接口住在消费者侧**（1×N 规则）：拥有 WebView 的是本插件，所以协议定义在这里，
-  随 `DashLayout.swiftmodule` 传给 dash-sidebar。SDK 只放内核词汇，生态词汇由插件自带。
-- 实例经保管箱的 `DashObjects.Key.conversationSurface` 传递。
+  随 `ClamLayout.swiftmodule` 传给 clam-sidebar。SDK 只放内核词汇，生态词汇由插件自带。
+- 实例经保管箱的 `ClamObjects.Key.conversationSurface` 传递。
 
 ## 工具栏
 
 归本插件（计划原本写"留壳"）：`NSTrackingSeparatorToolbarItem` 要 splitView，而 splitView
-在这儿。壳只留菜单——⌘, 走 EventBus 的 `dash.menu.command` 广播出来，本插件接住再调
+在这儿。壳只留菜单——⌘, 走 EventBus 的 `clam.menu.command` 广播出来，本插件接住再调
 会话展示面。壳喊话，有能力的插件干活。
 
 工具栏上的按钮**全部来自 `toolbar` 贡献槽**，本插件自己一颗都不放。
@@ -52,7 +52,7 @@ WKWebView 实例归**壳**，放在保管箱（`DashObjects.Key.webView`）里�
 | `label` | 标题 + 无障碍名 | 必填 |
 | `symbol` | `NSToolbarItem` + `isBordered`，玻璃观感白送 | 有 SF Symbol 就给 |
 | `menu` | `NSMenuToolbarItem` + 系统菜单（勾选态、键盘、溢出全白送） | 点开是一串开关 |
-| `event` | 点击广播的主题名（缺省 `dash.toolbar.activate`） | 走 `symbol` 那条时 |
+| `event` | 点击广播的主题名（缺省 `clam.toolbar.activate`） | 走 `symbol` 那条时 |
 
 `menu` 的类型必须是 `@convention(block) (NSMenu) -> Void`：它要装在 `[String: Any]` 里
 穿过 dylib 边界，ObjC block 是个货真价实的对象，装箱取箱都稳；裸 Swift 闭包的函数类型
@@ -62,5 +62,5 @@ WKWebView 实例归**壳**，放在保管箱（`DashObjects.Key.webView`）里�
 槽名与默认主题从 `public enum LayoutToolbar` 引（`LayoutSplitController` 自己是
 internal，它是实现细节）。
 
-**「新建会话」不在工具栏上**：那一格让给了 dash-sidebar 的「筛选」。
+**「新建会话」不在工具栏上**：那一格让给了 clam-sidebar 的「筛选」。
 `LayoutPlugin.newSessionTopic` 这条主题仍然在——⌘N 与第三方按钮都 emit 它。

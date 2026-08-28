@@ -4,7 +4,7 @@
  * 跑法（零依赖，node 内置 test runner）：
  *
  * ```sh
- * node --test dash-sidebar/test/*.test.js
+ * node --test clam-sidebar/test/*.test.js
  * ```
  *
  * （给 `--test` 一个目录会让 node 26 去 `require` 那个目录本身而不是遍历它，

@@ -1,6 +1,6 @@
 import Combine
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 
 /// 侧边栏模型：把 node 半边推下来的 `SidebarSnapshot` 适配成 SidebarView 需要的
@@ -23,17 +23,17 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     /// 于是换代时列表不闪；fresh 快照到了原样替换。
     @Published private(set) var snapshot: SidebarSnapshot
 
-    private let bridge: DashBridge
-    private let surface: DashConversationSurface
+    private let bridge: ClamBridge
+    private let surface: ClamConversationSurface
     /// 写一行进壳的日志（`host.log`）。
     private let log: (String) -> Void
     private var lastLoggedCount = -1
-    /// 选中会话变化时的回调（插件用它落 DashStore，热替换后能还原高亮）。
+    /// 选中会话变化时的回调（插件用它落 ClamStore，热替换后能还原高亮）。
     var onSelectionChange: ((String?) -> Void)?
 
     init(snapshot: SidebarSnapshot,
-         bridge: DashBridge,
-         surface: DashConversationSurface,
+         bridge: ClamBridge,
+         surface: ClamConversationSurface,
          log: @escaping (String) -> Void) {
         self.snapshot = snapshot
         self.bridge = bridge
@@ -104,7 +104,7 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     }
 
     /// **动作面不走桥**：切换会话是页面的事，一直是、也仍然是
-    /// dash-layout 的 `conversationSurface`（页内 `window.__clam`）。
+    /// clam-layout 的 `conversationSurface`（页内 `window.__clam`）。
     func activate(sessionId: String) {
         selectedSessionId = sessionId
         onSelectionChange?(sessionId)

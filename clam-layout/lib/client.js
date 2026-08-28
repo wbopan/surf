@@ -1,19 +1,19 @@
 /*
- * dash-layout，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
+ * clam-layout，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
- * **为什么住在 dash-layout**：这里的两件事都是「原生分栏接管排版」的网页对端，
+ * **为什么住在 clam-layout**：这里的两件事都是「原生分栏接管排版」的网页对端，
  * 而它们唯一的 Swift 调用方就是本包的 `WebViewConversationSurface`
  * （swift/ConversationSurface.swift）。协议两端同包 = 改一边必然看见另一边，
- * 与 `DashConversationSurface` 协议「住在消费者侧」是同一条 1×N 规则。
+ * 与 `ClamConversationSurface` 协议「住在消费者侧」是同一条 1×N 规则。
  *
  * 1. **页内动作桥 `window.__clam`**：selectSession / startSession / openSettings
  *    + 当前会话反向回报（window.webkit.messageHandlers.clam.postMessage）。
  * 2. **收起 web 侧边栏**：经 ui-layout 的公开服务 ctx.layout.toggleSidebar()
  *    把侧边栏收起，再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口
- *    左缘起排——原生侧边栏（dash-sidebar）占的就是那块地方。
+ *    左缘起排——原生侧边栏（clam-sidebar）占的就是那块地方。
  *
  * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
- * 那是 dash-nativeify 的事，它零服务依赖、要抢首帧。
+ * 那是 clam-nativeify 的事，它零服务依赖、要抢首帧。
  *
  * 门控：UA 含 "Clam/"（动作桥）之上，收起侧边栏再要求 URL 参数
  * clam-native-sidebar=1。终端 `dsh web` / 普通浏览器不受影响。
@@ -22,7 +22,7 @@
  * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中。
  */
 window.__ModuleLoader__.load({
-	id: "@wenbo/dash-layout",
+	id: "@wenbo/clam-layout",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({
 			try { return "dl" + Math.random().toString(36).slice(2, 10); } catch { return "dl0"; }
 		}
 
-		function insideDash() {
+		function insideClam() {
 			try {
 				return navigator.userAgent.includes("Clam/");
 			} catch {
@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
 		/** 原生侧边栏模式：UA 门控之上再要求 URL 查询参数 clam-native-sidebar=1。 */
 		function nativeSidebarMode() {
 			try {
-				return insideDash() && new URLSearchParams(window.location.search).get("clam-native-sidebar") === "1";
+				return insideClam() && new URLSearchParams(window.location.search).get("clam-native-sidebar") === "1";
 			} catch {
 				return false;
 			}
@@ -75,7 +75,7 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ------------------------------------------------------------------ *
-		 * 页内动作桥 window.__clam（仅 dash UA；防御式，绝不抛）。
+		 * 页内动作桥 window.__clam（仅 clam UA；防御式，绝不抛）。
 		 * ------------------------------------------------------------------ */
 
 		/**
@@ -132,7 +132,7 @@ window.__ModuleLoader__.load({
 								} catch { /* 读取失败静默 */ }
 							};
 							report();
-							sctx.effect(() => sessions.list.subscribe(report), "dash-layout: currentSession channel");
+							sctx.effect(() => sessions.list.subscribe(report), "clam-layout: currentSession channel");
 						}
 					} catch { /* 服务形状不符静默 */ }
 				});
@@ -327,7 +327,7 @@ window.__ModuleLoader__.load({
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 */
 		function apply(ctx) {
-			if (!insideDash()) return;
+			if (!insideClam()) return;
 			const native = nativeSidebarMode();
 			ctx.effect(() => {
 				const token = makeToken();
@@ -357,7 +357,7 @@ window.__ModuleLoader__.load({
 						// **例外：设置 modal**。dsh 把它渲染在侧边栏列**内部**
 						// （_sidebarCol > … > _settingsArea > _overlay > _panel），
 						// 不是 portal 到 body，所以整列隐形会把它一起带走——点得中、
-						// 挂载成功、就是看不见，且不报任何错。这是 ⌘, 在 dash-settings
+						// 挂载成功、就是看不见，且不报任何错。这是 ⌘, 在 clam-settings
 						// 缺席时唯一的逃生舱（原生窗口不在场时 layout 会回落到它），
 						// 死了就等于没有设置入口。overlay 是 position:fixed，
 						// 不受上面那条 frame 平移影响，所以只需把可见性与命中还回去。

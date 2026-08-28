@@ -13,7 +13,7 @@
  * while the process runs is visible immediately"），所以我们也不缓存——
  * 用户在外面新建一个预设目录，刷新一下就该看见。
  *
- * @module dash-settings/presets
+ * @module clam-settings/presets
  */
 
 /**
@@ -51,7 +51,7 @@ export function installPresets(api) {
 					})),
 				});
 			} catch (error) {
-				ctx.logger("dash-settings").warn(`预设列表失败：${String(error?.message ?? error)}`);
+				ctx.logger("clam-settings").warn(`预设列表失败：${String(error?.message ?? error)}`);
 				push("presets", { available: true, defaultId: null, presets: [], error: String(error?.message ?? error) });
 			}
 		};

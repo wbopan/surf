@@ -5,5 +5,5 @@
 #   ./dev --port 3080  想要固定端口时
 #   ./dev --help       其余选项
 #
-# 真正的逻辑都在伞包的 bin/dash.js 里——这里只是省掉敲路径。
-exec node "$(dirname "$0")/dash/bin/dash.js" "$@"
+# 真正的逻辑都在伞包的 bin/surfclam.js 里——这里只是省掉敲路径。
+exec node "$(dirname "$0")/surfclam/bin/surfclam.js" "$@"

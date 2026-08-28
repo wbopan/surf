@@ -1,5 +1,5 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import SwiftUI
 
 /// `toolbar` 贡献槽的**原生渲染路线**：把一条贡献翻译成真正的 `NSToolbarItem`
@@ -62,7 +62,7 @@ extension LayoutSplitController {
     ///
     /// 和 `requestTitlebarMetrics` 同一条纪律，只是方向反过来：那边是标识的
     /// 生产方问布局要厚度，这边是布局问生产方要标识。**本控制器换代时必须喊**
-    /// ——标识是"只在变化时推"的，而 dash-header 不会因为我们换代就重推一遍；
+    /// ——标识是"只在变化时推"的，而 clam-header 不会因为我们换代就重推一遍；
     /// 叠加 deinit 里那道"归还标识"的兜底，窗口会卡在没有标题的透明态，
     /// 直到用户碰巧切个会话才自愈。
     static let windowTitleRequestTopic = LayoutToolbar.windowTitleRequestTopic
@@ -77,7 +77,7 @@ extension LayoutSplitController {
     ///
     /// 缺省是**推断**而不是 `"view"`：给了 `symbol` 的老贡献自动算 `"button"`，
     /// 观感与行为一个字都不用改。
-    static func kind(of contribution: DashContributions.Contribution) -> String {
+    static func kind(of contribution: ClamContributions.Contribution) -> String {
         if let explicit = contribution.metadata["kind"] as? String,
            ["view", "button", "menu", "group"].contains(explicit) {
             return explicit
@@ -86,7 +86,7 @@ extension LayoutSplitController {
     }
 
     /// 窗口收窄时谁先让位。缺省 standard。
-    static func priority(of contribution: DashContributions.Contribution)
+    static func priority(of contribution: ClamContributions.Contribution)
         -> NSToolbarItem.VisibilityPriority {
         switch contribution.metadata["priority"] as? String {
         case "low": return .low
@@ -96,13 +96,13 @@ extension LayoutSplitController {
     }
 
     /// `group` 的分段 / `menu` 的初始菜单。元素是 `[String: Any]`。
-    static func items(of contribution: DashContributions.Contribution) -> [[String: Any]] {
+    static func items(of contribution: ClamContributions.Contribution) -> [[String: Any]] {
         contribution.metadata["items"] as? [[String: Any]] ?? []
     }
 
     /// 摘要，只用来判"要不要重建"。**必须把 items 折进去**：段控的分段数变了
     /// 而签名没变，就会出现"数据到了、控件纹丝不动"。
-    static func itemsDigest(of contribution: DashContributions.Contribution) -> String {
+    static func itemsDigest(of contribution: ClamContributions.Contribution) -> String {
         items(of: contribution).map { spec in
             "\(spec["id"] as? String ?? "")~\(spec["label"] as? String ?? "")"
                 + "~\(spec["symbol"] as? String ?? "")"
@@ -156,14 +156,14 @@ extension LayoutSplitController {
     /// 把一条贡献造成 `NSToolbarItem`。四条路线，`kind` 选。
     func makeContributionItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution
+        _ contribution: ClamContributions.Contribution
     ) -> NSToolbarItem {
         let state = toolbarStates[contribution.key] ?? ToolbarItemState()
         let label = state.label ?? contribution.metadata["label"] as? String ?? contribution.id
         let item: NSToolbarItem
 
         // **`menu` block 是另一条路线，优先于 `kind`**：贡献方自己现场建菜单
-        // （dash-sidebar 的筛选器走这条）。菜单每次弹出前重建，所以 block 里读
+        // （clam-sidebar 的筛选器走这条）。菜单每次弹出前重建，所以 block 里读
         // 什么状态都是当场的——勾选态不会停在上一次打开时的样子。
         // 数据路线（`kind: "menu"` + `items`）适合内容由投影决定的菜单，
         // block 路线适合内容由贡献方本地状态决定的菜单，两者不互相取代。
@@ -193,7 +193,7 @@ extension LayoutSplitController {
     /// `menu` block 路线：贡献方自己填菜单，本插件只负责给它一身系统皮。
     private func makeBlockMenuItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution,
+        _ contribution: ClamContributions.Contribution,
         build: @escaping @convention(block) (NSMenu) -> Void
     ) -> NSToolbarItem {
         let item = NSMenuToolbarItem(itemIdentifier: identifier)
@@ -215,7 +215,7 @@ extension LayoutSplitController {
     /// 交回给了系统（和用户的右键菜单）。用 `titles:` 会把它钉死成永远文字。
     private func makeGroupItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution,
+        _ contribution: ClamContributions.Contribution,
         state: ToolbarItemState
     ) -> NSToolbarItem {
         let specs = state.items ?? Self.items(of: contribution)
@@ -245,7 +245,7 @@ extension LayoutSplitController {
     /// 下拉菜单项。indicator（那个小箭头）、菜单定位、键盘导航全是 AppKit 的。
     private func makeMenuItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution,
+        _ contribution: ClamContributions.Contribution,
         state: ToolbarItemState
     ) -> NSToolbarItem {
         let item = NSMenuToolbarItem(itemIdentifier: identifier)
@@ -262,7 +262,7 @@ extension LayoutSplitController {
     /// 单个图标按钮。macOS 26 的圆形玻璃按钮、按下态、红绿灯对齐全是白送的。
     private func makeButtonItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution
+        _ contribution: ClamContributions.Contribution
     ) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         let label = contribution.metadata["label"] as? String ?? contribution.id
@@ -276,10 +276,10 @@ extension LayoutSplitController {
     }
 
     /// 兜底：托管贡献自己的 SwiftUI 视图。**只给真的没法用原生表达的东西用**
-    /// （dash-header 的面包屑就是——它挂着一棵可展开的子代理树，菜单表达不了）。
+    /// （clam-header 的面包屑就是——它挂着一棵可展开的子代理树，菜单表达不了）。
     private func makeViewItem(
         _ identifier: NSToolbarItem.Identifier,
-        _ contribution: DashContributions.Contribution
+        _ contribution: ClamContributions.Contribution
     ) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         let hosting = NSHostingView(rootView: contribution.make())
@@ -314,7 +314,7 @@ extension LayoutSplitController {
     /// 点中时翻译成一条广播——本控制器照例不知道任何菜单项"是干什么的"。
     /// - Parameter isRoot: 只有最外层那份菜单挂"将要打开"的钩子。子菜单是
     ///   同一次打开的一部分，再挂一遍只会把同一个预热重复发出去。
-    private func buildMenu(_ contribution: DashContributions.Contribution,
+    private func buildMenu(_ contribution: ClamContributions.Contribution,
                            specs: [[String: Any]],
                            isRoot: Bool = true) -> NSMenu {
         let menu = NSMenu()
@@ -404,7 +404,7 @@ final class ToolbarMenuOpenRelay: NSObject, NSMenuDelegate {
 extension LayoutSplitController {
     /// 订上活通道。**返回 disposable 由控制器自己持有**：控制器随世代走，
     /// 旧代释放时订阅一起没，不会留下一个对着死项发号施令的幽灵。
-    func installToolbarUpdates() -> DashDisposable {
+    func installToolbarUpdates() -> ClamDisposable {
         let updates = host.events.subscribe(Self.toolbarUpdateTopic) { [weak self] payload in
             guard let self,
                   let owner = payload["owner"] as? String,
@@ -425,7 +425,7 @@ extension LayoutSplitController {
                 MainActor.assumeIsolated { self?.publishTitlebarMetrics(force: true) }
             }
         }
-        return DashDisposable {
+        return ClamDisposable {
             updates.dispose()
             identity.dispose()
             metrics.dispose()
@@ -456,7 +456,7 @@ extension LayoutSplitController {
         // 它采得到，两个并排实测过），但那是 Mail 滚动时才出现的 scroll edge
         // effect，常驻着看就是一块发光的板子，比朴素的标题栏背景吵得多。
         // **"能做到"不等于"该做"**——工具栏天然有背景，缺的只是没把它打开。
-        // **标题栏一直保持透明**，那条带子由页面画（见 dash-header 的 client.js）。
+        // **标题栏一直保持透明**，那条带子由页面画（见 clam-header 的 client.js）。
         //
         // 原生这边三条路全试过了，没有一条能给出"纯模糊、无装饰"：
         // `titlebarAppearsTransparent = false` 给的是**不透明**背景，模糊就没了；

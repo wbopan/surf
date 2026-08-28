@@ -7,15 +7,15 @@ import Foundation
 ///
 /// 落盘位置 `<AppSupport>/native-plugins/store/<插件名>.json`。
 /// 插件真被卸载（不是换代）时由壳清空。
-public final class DashStore {
+public final class ClamStore {
     private let fileURL: URL
     private var cache: [String: String]
-    private let queue = DispatchQueue(label: "io.wenbo.dash.store")
+    private let queue = DispatchQueue(label: "io.wenbo.surfclam.store")
 
     public init(directory: URL, namespace: String) {
         let safe = namespace.replacingOccurrences(of: "/", with: "_")
         self.fileURL = directory.appendingPathComponent("\(safe).json")
-        self.cache = DashStore.load(fileURL)
+        self.cache = ClamStore.load(fileURL)
     }
 
     private static func load(_ url: URL) -> [String: String] {

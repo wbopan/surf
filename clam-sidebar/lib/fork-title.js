@@ -25,7 +25,7 @@
  *   标题是 `` `${title} (1)` ``，多出来的空格由这里补。
  * - 加一用 **BigInt**，没有上限。`Number` 在 2^53 之后会开始撒谎。
  *
- * @module dash-sidebar/fork-title
+ * @module clam-sidebar/fork-title
  */
 
 /** 半角优先、全角其次；两条都锚定行尾，所以只认最后一对括号。 */

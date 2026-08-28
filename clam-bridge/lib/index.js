@@ -1,9 +1,9 @@
 /**
- * dash-bridge —— 唯一的特权插件（阶段二计划 §5）。
+ * clam-bridge —— 唯一的特权插件（阶段二计划 §5）。
  *
  * 它做三件事，一件不多：
  *
- *   1. **Swift 载荷登记表**：`ctx.provide('dashBridge', api)`，各插件经
+ *   1. **Swift 载荷登记表**：`ctx.provide('clamBridge', api)`，各插件经
  *      `createSwiftPlugin`（见 `./plugin.js`）把自己的 `swift/` 目录登记进来。
  *   2. **一条 WebSocket**（`/clam/bridge`，与 dsh 同端口）：壳连上来拉 snapshot、
  *      回报编译结果、收发插件与其 TS 半身之间的信封消息。
@@ -20,7 +20,7 @@
  * 绝不往 session 日志写任何自定义事件（计划 §0.5-6：0.1.1-rc.2 会导致
  * SessionFormatUnsupportedError、会话再也读不回来）。桥的流量全走自己这条 WS。
  *
- * @module dash-bridge
+ * @module clam-bridge
  */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -28,13 +28,13 @@ import { join, relative, sep } from "node:path";
 import z from "@deepseek-ai/schemastery";
 import { WebSocketServer } from "ws";
 
-export const name = "dash-bridge";
+export const name = "clam-bridge";
 
 export const inject = ["webServer"];
 
 export const Config = z.object({
 	path: z.string().default("/clam/bridge")
-		.description("WebSocket 升级路径（与 dsh 同端口）。dash-app 经 dashBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"),
+		.description("WebSocket 升级路径（与 dsh 同端口）。clam-app 经 clamBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"),
 	pollIntervalMs: z.number().step(1).min(100).default(500)
 		.description("盯各插件 swift/ 目录的轮询间隔，与 dsh-client-hmr 同款做法。"),
 });
@@ -49,23 +49,23 @@ const SOURCE_EXTENSIONS = [".swift"];
 const SKIP_DIRS = new Set([".git", ".build", "build", "DerivedData", ".DS_Store", "node_modules"]);
 
 export function apply(ctx, config) {
-	const logger = reporter(ctx.logger("dash-bridge"));
+	const logger = reporter(ctx.logger("clam-bridge"));
 	/** @type {Map<string, Registration>} 插件名 → 登记项 */
 	const registry = new Map();
 	/** @type {Set<Client>} 已握手的壳客户端 */
 	const clients = new Set();
-	/** dash-app 登记的"壳请求重启自己"处理器（§7.5 v1）。 */
+	/** clam-app 登记的"壳请求重启自己"处理器（§7.5 v1）。 */
 	let appRestartHandler;
 	/** 登记表版本：全表 hash 的短前缀 + 单调计数，方便人眼比对。 */
 	let version = 0;
 	let tableHash = "";
 
 	// ---- 登记表 API（各插件经 createSwiftPlugin 调用） ----
-	ctx.provide("dashBridge", {
+	ctx.provide("clamBridge", {
 		protocolVersion: PROTOCOL_VERSION,
 		/**
 		 * 本桥实际挂载的 WS 路径。**这是该路径的唯一真相**——挂 WS 的是这里，
-		 * 而 `path` 又是用户可覆写的配置项。dash-app 取它写进 endpoint 发现文件
+		 * 而 `path` 又是用户可覆写的配置项。clam-app 取它写进 endpoint 发现文件
 		 * 与 `--clam-bridge-path`，壳因此永远连得上，不管用户把它改成什么。
 		 */
 		path: config.path,
@@ -105,7 +105,7 @@ export function apply(ctx, config) {
 		},
 
 		/**
-		 * dash-app 专用通道（§7.5 v1）。壳的构建不是插件热替换那个档位——
+		 * clam-app 专用通道（§7.5 v1）。壳的构建不是插件热替换那个档位——
 		 * 它要重启进程，所以走一条自己的帧，不混进 push/invoke 的插件信封。
 		 */
 		app: {
@@ -143,13 +143,13 @@ export function apply(ctx, config) {
 			}
 			wss.handleUpgrade(req, socket, head, (ws) => attach(ws));
 		},
-	}), "dash-bridge WebSocket 升级路由");
+	}), "clam-bridge WebSocket 升级路由");
 
 	ctx.effect(() => () => {
 		for (const client of clients) { try { client.ws.close(); } catch { /* 已断 */ } }
 		clients.clear();
 		wss.close();
-	}, "dash-bridge 关闭全部连接");
+	}, "clam-bridge 关闭全部连接");
 
 	function attach(ws) {
 		const client = { ws, id: undefined, ready: false };
@@ -208,12 +208,12 @@ export function apply(ctx, config) {
 			}
 
 			case "app-restart":
-				// 壳即将自己退出，让 dash-app 等它死透再拉起新产物（§7.5 v1）。
+				// 壳即将自己退出，让 clam-app 等它死透再拉起新产物（§7.5 v1）。
 				if (appRestartHandler === undefined) {
-					logger.warn("壳请求重启自己，但没有 dash-app 接管——它退出后不会被拉回来。");
+					logger.warn("壳请求重启自己，但没有 clam-app 接管——它退出后不会被拉回来。");
 					return;
 				}
-				logger.info("壳请求重启自己 —— 交给 dash-app 等待并重拉。");
+				logger.info("壳请求重启自己 —— 交给 clam-app 等待并重拉。");
 				Promise.resolve().then(() => appRestartHandler())
 					.catch((error) => logger.warn(`重拉壳失败：${errorText(error)}`));
 				break;
@@ -311,7 +311,7 @@ export function apply(ctx, config) {
 
 	const timer = setInterval(() => rescan("轮询"), config.pollIntervalMs);
 	timer.unref?.();
-	ctx.effect(() => () => clearInterval(timer), "dash-bridge swift/ 轮询");
+	ctx.effect(() => () => clearInterval(timer), "clam-bridge swift/ 轮询");
 
 	/**
 	 * 拓扑序（依赖在前）。它约束的是**编译顺序**与 **activate 顺序**——
@@ -342,7 +342,7 @@ export function apply(ctx, config) {
 
 // ---------------------------------------------------------------- 工具
 
-/** `dash-sidebar` → `DashSidebar`。Swift module 名的唯一出处。 */
+/** `clam-sidebar` → `ClamSidebar`。Swift module 名的唯一出处。 */
 function moduleName(plugin) {
 	return plugin.split(/[-_]/).filter(Boolean)
 		.map((part) => part[0].toUpperCase() + part.slice(1))
@@ -406,12 +406,12 @@ function isLoopbackRequest(req) {
 
 /**
  * cordis logger 在 `dsh web` 下没有 exporter（计划 §1.7），消息只进环形缓冲。
- * 桥的进度要给蹲在终端的人看，所以照 dash-app 的做法两边都喂。
+ * 桥的进度要给蹲在终端的人看，所以照 clam-app 的做法两边都喂。
  */
 function reporter(logger) {
 	const emit = (level, message) => {
 		logger[level](message);
-		process.stderr.write(`dash-bridge: ${message}\n`);
+		process.stderr.write(`clam-bridge: ${message}\n`);
 	};
 	return {
 		info: (message) => emit("info", message),

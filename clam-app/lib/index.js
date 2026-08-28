@@ -1,10 +1,10 @@
 /**
- * dash-app —— 壳源码与构建过程的插件化（阶段二计划 §7.5 v0）。
+ * clam-app —— 壳源码与构建过程的插件化（阶段二计划 §7.5 v0）。
  *
  * 启动方向反转后 dsh 先于 app 存在，于是它就是壳天然的 bootstrapper：
  * 本插件的载荷是 `host/` 里的整个 Xcode 工程，activate 时做三件事——
  *
- *   1. 写 endpoint 发现文件（`~/Library/Application Support/io.wenbo.dash/endpoint.json`），
+ *   1. 写 endpoint 发现文件（`~/Library/Application Support/io.wenbo.surfclam/endpoint.json`），
  *      让手动双击启动的 app 也能找到这个 dsh；fiber 卸载时删除。
  *   2. 源码 hash 变了或产物缺失 → xcodegen + xcodebuild（无 Xcode 则降级为只探测既有产物）。
  *   3. 产物存在且 app 尚未运行 → `open --args --clam-endpoint …` 拉起。
@@ -18,7 +18,7 @@
  * dsh 照常服务浏览器。首次构建失败不重试、不成环——防的是构建风暴；
  * 盯文件的重建则由"源码又变了"驱动，天然不会自己转圈。
  *
- * @module dash-app
+ * @module clam-app
  */
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -28,14 +28,14 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import z from "@deepseek-ai/schemastery";
 
-export const name = "dash-app";
+export const name = "clam-app";
 
 /** webServer 决定了 endpoint 里的 host/port，没有它这个插件无事可做。 */
 export const inject = ["webServer"];
 
 export const Config = z.object({
 	configuration: z.union([z.const("Debug"), z.const("Release")]).default("Debug")
-		.description("xcodebuild 配置。Debug 产物是 “dash Dev.app”，Release 是 “dash.app”。"),
+		.description("xcodebuild 配置。Debug 产物是 “Surfclam Dev.app”，Release 是 “Surfclam.app”。"),
 	build: z.boolean().default(true)
 		.description("源码 hash 变化或产物缺失时自动 xcodebuild；关掉则只探测既有产物。"),
 	launch: z.boolean().default(true)
@@ -48,11 +48,11 @@ export const Config = z.object({
 		.description("重建成功后不等用户点，直接让壳退出并重拉（开发期方便，会丢页面状态）。"),
 });
 
-/** 壳的 Application Support 根目录，与 Swift 侧 `DashPaths.appSupport` 必须一致。 */
-const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.dash");
+/** 壳的 Application Support 根目录，与 Swift 侧 `ClamPaths.appSupport` 必须一致。 */
+const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.surfclam");
 
 /**
- * endpoint 发现文件的目录；Swift 侧 `DashPaths.endpointsDir`。
+ * endpoint 发现文件的目录；Swift 侧 `ClamPaths.endpointsDir`。
  *
  * **一个 profile 一份**（`endpoints/<profile>.json`），不是全局单文件：
  * 一台机器上可以同时跑好几个 dsh——每个 git worktree 一套插件、一个 profile、
@@ -64,10 +64,10 @@ const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.
 const ENDPOINTS_DIR = join(APP_SUPPORT, "endpoints");
 
 /**
- * 桥路径的兜底值。**真相在 dash-bridge 的 config.path**——它才是挂 WS 的那一方，
- * 而且那是个用户可覆写的配置项。本插件经 `dashBridge.path` 取当前值（见 `apply`），
+ * 桥路径的兜底值。**真相在 clam-bridge 的 config.path**——它才是挂 WS 的那一方，
+ * 而且那是个用户可覆写的配置项。本插件经 `clamBridge.path` 取当前值（见 `apply`），
  * 只在桥缺席时用这个默认；写死一份自己的会让"改了桥的 path 壳就静默连不上"。
- * 与 Swift 侧 `DashEndpoint.defaultBridgePath` 是同一个默认。
+ * 与 Swift 侧 `ClamEndpoint.defaultBridgePath` 是同一个默认。
  */
 const DEFAULT_BRIDGE_PATH = "/clam/bridge";
 
@@ -75,8 +75,8 @@ const DEFAULT_BRIDGE_PATH = "/clam/bridge";
 const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
 
 /**
- * xcodegen 二进制。**被 .gitignore 挡在库外**（`/dash-app/host/tools/`），
- * 所以新克隆 / 新 worktree 里它不存在——`dash/bin/dash.js` 的 ensureXcodegen
+ * xcodegen 二进制。**被 .gitignore 挡在库外**（`/clam-app/host/tools/`），
+ * 所以新克隆 / 新 worktree 里它不存在——`surfclam/bin/surfclam.js` 的 ensureXcodegen
  * 会在 `./dev` 时从别的 worktree 或 PATH 拷一份补上。这里做一次显式存在性检查，
  * 是因为不做的话失败长成 `spawn …/tools/xcodegen ENOENT`：一句既不说明原因
  * 也不说明补法的话，还埋在构建日志里。
@@ -95,21 +95,21 @@ const HASH_SKIP_DIRS = new Set([".git", ".build", "build", "DerivedData", ".DS_S
 /** 产物落点由 xcodebuild 的 `-derivedDataPath build` 固定（见仓库 CLAUDE.md 硬约束）。 */
 const productPath = (configuration) =>
 	join(HOST_DIR, "build", "Build", "Products", configuration,
-		`${configuration === "Debug" ? "dash Dev" : "dash"}.app`);
+		`${configuration === "Debug" ? "Surfclam Dev" : "Surfclam"}.app`);
 
 /** 没有 Xcode 时的兜底产物：上次装到 /Applications 的 Release。 */
-const INSTALLED_RELEASE = "/Applications/dash.app";
+const INSTALLED_RELEASE = "/Applications/Surfclam.app";
 
 /** 上次构建时的源码 hash，与产物同处 build/ 下——产物被清掉时它一起消失，语义自洽。 */
 const hashMarkerPath = (configuration) =>
-	join(HOST_DIR, "build", `.dash-app-source-hash.${configuration}`);
+	join(HOST_DIR, "build", `.clam-app-source-hash.${configuration}`);
 
 export function apply(ctx, config) {
-	const logger = reporter(ctx.logger("dash-app"));
+	const logger = reporter(ctx.logger("clam-app"));
 	const httpBase = resolveHttpBase(ctx.webServer);
 
 	// 先登记服务名，让下游 inject 能等；产物定下来后再 set 值。
-	ctx.provide("dashApp", undefined);
+	ctx.provide("clamApp", undefined);
 
 	// 桥的当前状态。**可变引用，不是快照**：桥可以晚于本插件挂载、也可以中途卸载，
 	// 而 endpoint 文件与 `open --args` 都要用它此刻的值。
@@ -120,19 +120,19 @@ export function apply(ctx, config) {
 	ctx.effect(() => {
 		writeEndpointFile({ httpBase, bridgePath: bridge.path, logger });
 		return () => removeEndpointFile(logger);
-	}, "dash-app endpoint 发现文件");
+	}, "clam-app endpoint 发现文件");
 
 	// 与桥的全部往来收在这一处：路径、播报、重启请求。
 	// 仍是局部 inject 而非顶层依赖——桥缺席时壳照样该起来（WebView 全出血兜底），
 	// 只是没有任何原生插件。
-	ctx.inject(["dashBridge"], (scoped) => {
-		const app = scoped.dashBridge.app;
+	ctx.inject(["clamBridge"], (scoped) => {
+		const app = scoped.clamBridge.app;
 		scoped.effect(() => {
-			const path = typeof scoped.dashBridge.path === "string"
-				? scoped.dashBridge.path : DEFAULT_BRIDGE_PATH;
+			const path = typeof scoped.clamBridge.path === "string"
+				? scoped.clamBridge.path : DEFAULT_BRIDGE_PATH;
 			if (path !== bridge.path) {
 				bridge.path = path;
-				logger.info(`桥路径取自 dash-bridge 的配置：${path}`);
+				logger.info(`桥路径取自 clam-bridge 的配置：${path}`);
 				writeEndpointFile({ httpBase, bridgePath: path, logger });
 			}
 			bridge.announce = (status, detail) => app.announce(status, detail);
@@ -148,18 +148,18 @@ export function apply(ctx, config) {
 					writeEndpointFile({ httpBase, bridgePath: DEFAULT_BRIDGE_PATH, logger });
 				}
 			};
-		}, "dash-app ↔ dash-bridge");
+		}, "clam-app ↔ clam-bridge");
 	});
 
 	// 构建与拉起是长活，不能挂在 apply 的返回值上——那会把 dsh 的启动
 	// 一起拖住（首次构建分钟级，浏览器这段时间将无人应答）。
 	let disposed = false;
-	ctx.effect(() => () => { disposed = true; }, "dash-app 构建/拉起");
+	ctx.effect(() => () => { disposed = true; }, "clam-app 构建/拉起");
 
 	bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed: () => disposed })
 		.catch((error) => {
 			// 到这儿说明是意料之外的异常（预期内的失败都已在内部记过日志并返回）。
-			logger.warn(`dash-app 启动流程异常：${errorText(error)}`);
+			logger.warn(`clam-app 启动流程异常：${errorText(error)}`);
 		});
 }
 
@@ -171,7 +171,7 @@ export function apply(ctx, config) {
 function reporter(logger) {
 	const emit = (level, message) => {
 		logger[level](message);
-		process.stderr.write(`dash-app: ${message}\n`);
+		process.stderr.write(`clam-app: ${message}\n`);
 	};
 	return {
 		info: (message) => emit("info", message),
@@ -192,11 +192,11 @@ async function bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed }) 
 
 	if (built.appPath === undefined) {
 		logger.warn(`未找到可用的 ${configuration} 产物，${name} 优雅缺席——dsh 照常服务浏览器。`
-			+ ` 需要 macOS 壳的话，在仓库里手动跑一次 dash-app/host/scripts/dev.sh。`);
+			+ ` 需要 macOS 壳的话，在仓库里手动跑一次 clam-app/host/scripts/dev.sh。`);
 		return;
 	}
 
-	ctx.set("dashApp", {
+	ctx.set("clamApp", {
 		appPath: built.appPath,
 		freshness: built.freshness,
 		configuration,
@@ -220,7 +220,7 @@ async function bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed }) 
  * 盯壳源码（§7.5 v1）。与桥盯 `swift/` 同款的廉价轮询：先比 mtime/size 签名，
  * 签名变了才读内容算 hash——hash 才是"要不要重建"的判据（换 git 分支不算改过）。
  *
- * 播报走 `apply` 里那一处 `ctx.inject` 攒下的 `bridge.announce`：dash-bridge 在
+ * 播报走 `apply` 里那一处 `ctx.inject` 攒下的 `bridge.announce`：clam-bridge 在
  * 就播，不在就只写终端。壳没连上来时重建照做。
  */
 function watchSources({ ctx, config, logger, bridge, isDisposed, configuration }) {
@@ -250,7 +250,7 @@ function watchSources({ ctx, config, logger, bridge, isDisposed, configuration }
 			writeFileSync(hashMarkerPath(configuration), hash);
 			const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 			logger.info(`壳已重建（${seconds}s）。${config.restartOnRebuild
-				? "按配置立即重启壳。" : "重启 dash 生效——窗口里有提示。"}`);
+				? "按配置立即重启壳。" : "重启 surfclam 生效——窗口里有提示。"}`);
 			bridge.announce("ready", {
 				hash: hash.slice(0, 12),
 				durationMs: Date.now() - startedAt,
@@ -267,7 +267,7 @@ function watchSources({ ctx, config, logger, bridge, isDisposed, configuration }
 
 	const timer = setInterval(() => { tick().catch(() => {}); }, config.watchIntervalMs);
 	timer.unref?.();
-	ctx.effect(() => () => clearInterval(timer), "dash-app 壳源码轮询");
+	ctx.effect(() => () => clearInterval(timer), "clam-app 壳源码轮询");
 	logger.info(`盯着壳源码（每 ${config.watchIntervalMs}ms），改了会自动重建。`);
 }
 
@@ -357,8 +357,8 @@ async function runBuild({ configuration, logger, isDisposed }) {
 		// -derivedDataPath build 是硬约束：产物必须落在 build/Build/Products/，
 		// 换位置会造成"BUILD SUCCEEDED 但改动永不生效"。
 		const result = await run("xcodebuild", [
-			"-project", join(HOST_DIR, "dash.xcodeproj"),
-			"-scheme", "dash",
+			"-project", join(HOST_DIR, "surfclam.xcodeproj"),
+			"-scheme", "surfclam",
 			"-configuration", configuration,
 			"-derivedDataPath", "build",
 			"build",
@@ -374,7 +374,7 @@ async function runBuild({ configuration, logger, isDisposed }) {
 }
 
 /**
- * 构建日志的路径，**按 profile 分片**（`dash-app-build.<profile>.<配置>.log`）。
+ * 构建日志的路径，**按 profile 分片**（`clam-app-build.<profile>.<配置>.log`）。
  *
  * 多 worktree 并存时每个 worktree 一个 dsh，各构建各的壳；这份日志是**覆盖写**，
  * 共用一个文件名的话，邻居一构建就把你这份整个换掉——终端说"构建失败，完整日志见
@@ -383,7 +383,7 @@ async function runBuild({ configuration, logger, isDisposed }) {
  */
 function buildLogPath(configuration) {
 	const shard = resolveProfileName() ?? `pid-${process.pid}`;
-	return join(APP_SUPPORT, "logs", `dash-app-build.${shard}.${configuration}.log`);
+	return join(APP_SUPPORT, "logs", `clam-app-build.${shard}.${configuration}.log`);
 }
 
 /** 不构建时的产物探测：先本地 build/，再 /Applications 的 Release 安装。 */
@@ -401,16 +401,16 @@ function locateExistingProduct(configuration) {
  */
 async function launch({ appPath, httpBase, bridgePath, logger }) {
 	if (await isRunning(appPath)) {
-		logger.info(`dash 已在运行（${appPath}），跳过拉起；它会自己从发现文件接入。`);
+		logger.info(`surfclam 已在运行（${appPath}），跳过拉起；它会自己从发现文件接入。`);
 		return;
 	}
 	try {
 		await run("open", [appPath, "--args",
 			"--clam-endpoint", httpBase,
 			"--clam-bridge-path", bridgePath], HOST_DIR);
-		logger.info(`已拉起 dash：${appPath} → ${httpBase}`);
+		logger.info(`已拉起 surfclam：${appPath} → ${httpBase}`);
 	} catch (error) {
-		logger.error(`拉起 dash 失败（不重试）：${errorText(error)}`);
+		logger.error(`拉起 surfclam 失败（不重试）：${errorText(error)}`);
 	}
 }
 
@@ -423,7 +423,7 @@ function resolveHttpBase(webServer) {
 }
 
 /**
- * 本进程那一份发现文件的路径。文件名用 profile 名，因为它正是"这套 dash 是
+ * 本进程那一份发现文件的路径。文件名用 profile 名，因为它正是"这套 surfclam 是
  * 哪一套"的天然标识；取不到（不该发生，但 argv 毕竟是外部输入）时退回 pid，
  * 宁可留个不会被复用的文件名，也不要和别的 dsh 抢同一个。
  */
@@ -443,7 +443,7 @@ function writeEndpointFile({ httpBase, bridgePath, logger }) {
 		// 壳凭这个认出"哪一份是我这一套"：它自己的 bundle 就躺在
 		// `<hostDir>/build/Build/Products/<配置>/`，两边算出同一个绝对路径。
 		// 没有它，手动双击起来的壳只能按 startedAt 挑，多 worktree 时就会
-		// 连上邻居的 dsh、编译邻居的插件源码（见 Swift 侧 DashEndpoint.isOwn）。
+		// 连上邻居的 dsh、编译邻居的插件源码（见 Swift 侧 ClamEndpoint.isOwn）。
 		hostDir: HOST_DIR.replace(/\/$/, ""),
 	};
 	const file = endpointFilePath();

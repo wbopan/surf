@@ -1,4 +1,4 @@
-name: dash
+name: surfclam
 options:
   bundleIdPrefix: io.wenbo
   deploymentTarget:
@@ -14,28 +14,28 @@ settings:
   configs:
     # Debug 产物与 Release 区分：不同名字/bundle id/图标，两版本可并存。
     Debug:
-      PRODUCT_NAME: dash Dev
-      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash.dev
+      PRODUCT_NAME: Surfclam Dev
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.surfclam.dev
       APP_ICON_NAME: AppIconDev
     Release:
-      PRODUCT_NAME: dash
-      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.dash
+      PRODUCT_NAME: Surfclam
+      PRODUCT_BUNDLE_IDENTIFIER: io.wenbo.surfclam
       APP_ICON_NAME: AppIcon
-# 没有 SwiftPM 包了：DashSDK 由 scripts/build-modules.sh 编成共享 dylib 随 bundle
+# 没有 SwiftPM 包了：ClamSDK 由 scripts/build-modules.sh 编成共享 dylib 随 bundle
 # 分发（壳和插件链接同一份，类型身份才对得上）；DSHSidebarUI 随 M6 整体迁进
-# dash-sidebar/swift/，DSHKit 随 M10 整体退役（会话数据面搬进 node 半边）。
+# clam-sidebar/swift/，DSHKit 随 M10 整体退役（会话数据面搬进 node 半边）。
 targets:
-  dash:
+  surfclam:
     type: application
     platform: macOS
     sources:
       - path: Sources
         excludes:
           - "Info.plist"
-          - "dash.entitlements"
-          # DashSDK 单独编成共享 dylib（见 scripts/build-modules.sh），
+          - "surfclam.entitlements"
+          # ClamSDK 单独编成共享 dylib（见 scripts/build-modules.sh），
           # 不能同时被编进 app module，否则类型身份一分为二。
-          - "DashSDK"
+          - "ClamSDK"
     settings:
       base:
         INFOPLIST_FILE: Sources/Info.plist
@@ -47,10 +47,10 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "27.0"
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
-        # 共享 module（DashSDK）：编译期找 .swiftmodule，链接期找 dylib，
+        # 共享 module（ClamSDK）：编译期找 .swiftmodule，链接期找 dylib，
         # 运行期按 @rpath 落到 Contents/Frameworks/ 里 embed-modules.sh 摆好的那一份。
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/build-sdk"
-        OTHER_LDFLAGS: "$(inherited) -L$(SRCROOT)/build-sdk -lDashSDK"
+        OTHER_LDFLAGS: "$(inherited) -L$(SRCROOT)/build-sdk -lClamSDK"
         SWIFT_STRICT_CONCURRENCY: minimal
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
@@ -60,12 +60,12 @@ targets:
         name: Write build timestamp
       # 共享 module（源码没变则秒过）。必须早于壳源码编译。
       - script: scripts/build-modules.sh
-        name: Build shared modules (DashSDK)
+        name: Build shared modules (ClamSDK)
     postBuildScripts:
       # 把共享 module 摆进 bundle 并重新签名（拷贝晚于 Xcode 的签名步骤）。
       - script: scripts/embed-modules.sh
         name: Embed shared modules
     entitlements:
-      path: Sources/dash.entitlements
+      path: Sources/surfclam.entitlements
       properties:
         com.apple.security.app-sandbox: false

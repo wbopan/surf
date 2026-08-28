@@ -1,4 +1,4 @@
-# dash-notify
+# clam-notify
 
 macOS 桌面通知。**不占任何槽，也不贡献任何界面**——缺席时什么都不缺。
 
@@ -7,16 +7,16 @@ macOS 桌面通知。**不占任何槽，也不贡献任何界面**——缺席�
 你在别处时它才响；别人先答了它自己撤下去。
 
 它还是「有什么在等着你」这件事的**唯一真相**：侧边栏那枚「待处理」胶囊读的就是
-这里那份表（经 `dashPending` 服务）。
+这里那份表（经 `clamPending` 服务）。
 
 ## 两半各管什么
 
 | | 谁 | 干什么 |
 |---|---|---|
-| node 半边 | `lib/mux-source.js` + `lib/inbox.js` + `lib/index.js` | **数据面**：订 `ctx.apiProxy.events`，维护一份待办清单，经桥推 JSON、经 `dashPending` 供给侧边栏；把按钮翻回 wire 答给 dsh |
+| node 半边 | `lib/mux-source.js` + `lib/inbox.js` + `lib/index.js` | **数据面**：订 `ctx.apiProxy.events`，维护一份待办清单，经桥推 JSON、经 `clamPending` 供给侧边栏；把按钮翻回 wire 答给 dsh |
 | Swift 半边 | `swift/` | 发通知、收按钮、判"要不要打扰"、报"人在看哪个会话"。**零 wire 知识** |
 
-分层跟 dash-sidebar 同源同理由：wire 模型随 dsh 版本演进最快，而壳与共享 module
+分层跟 clam-sidebar 同源同理由：wire 模型随 dsh 版本演进最快，而壳与共享 module
 随 app bundle 冻结、用户改不了。**跟 dsh 打交道的代码全部关在 `lib/mux-source.js`
 一个文件里，dsh 升级后先核对它。**
 
@@ -50,12 +50,12 @@ macOS 桌面通知。**不占任何槽，也不贡献任何界面**——缺席�
 「待处理」胶囊里照样看得见它**——关的是打扰，不是事实。早先那版把开关写在收录
 这一侧，于是关掉通知连带把侧边栏也弄瞎了。
 
-## 供给侧边栏：`dashPending`
+## 供给侧边栏：`clamPending`
 
 ```js
-ctx.inject(["dashPending"], (scoped) => {
-    scoped.dashPending.snapshot();      // { [sessionId]: ["approval", "done", …] }
-    scoped.dashPending.subscribe(cb);   // 变了叫一声，返回退订函数
+ctx.inject(["clamPending"], (scoped) => {
+    scoped.clamPending.snapshot();      // { [sessionId]: ["approval", "done", …] }
+    scoped.clamPending.subscribe(cb);   // 变了叫一声，返回退订函数
 });
 ```
 
@@ -63,7 +63,7 @@ ctx.inject(["dashPending"], (scoped) => {
 就是"该画哪个指示器"。服务名里没有 "notify" 二字是故意的：它表达的是"有事等着你"
 这个事实，通知只是这个事实的一个消费者。
 
-消费方一律走**运行时嵌套 inject**——dash-notify 缺席时侧边栏退回它自己那份
+消费方一律走**运行时嵌套 inject**——clam-notify 缺席时侧边栏退回它自己那份
 approval-only 的状态点，不能不挂载。
 
 ## 「看一眼就完」的两类怎么消失
@@ -76,8 +76,8 @@ node 把那两类从待办里删掉。
 它跑完了——那一刻当前会话一个字都没变。早先把发送写在"切换会话"那条路径上，
 于是这个最常见的场景永远清不掉。
 
-配套的一条在壳那边：`dash.page.currentSession` 是**粘性事件**
-（`DashEventBus.emitSticky`）。插件是运行时装载的，必然晚于页面第一次报告状态；
+配套的一条在壳那边：`clam.page.currentSession` 是**粘性事件**
+（`ClamEventBus.emitSticky`）。插件是运行时装载的，必然晚于页面第一次报告状态；
 不粘的话它得等到用户下一次切会话才知道"现在在哪"，而如果用户打开 app 之后就一直
 待在同一个会话里，它就永远不知道。
 
@@ -93,7 +93,7 @@ node 把那两类从待办里删掉。
 去重按**身份**，不按时间——同一个 rpcId 再来一次就是同一条，不会叠出两条通知。
 `dismissAll()` **绝不清掉仍然 pending 的批准与提问**：那两类清掉了就再也没有入口。
 
-系统通知的 identifier 前缀是 `dash.<instanceTag>.`，`instanceTag` 是 bundle 路径的
+系统通知的 identifier 前缀是 `clam.<instanceTag>.`，`instanceTag` 是 bundle 路径的
 djb2 哈希——多 worktree 并存时两个实例的 bundle id 相同，不分片的话互相撤对方的通知。
 
 ## 打扰政策
@@ -149,7 +149,7 @@ Apple 文档那句 "assign before your app finishes launching" 是硬约束，�
 
 解法**不是**往 SDK 里塞通知词汇，而是加了一张通用的应答钩子表：
 
-- `DashSDK/DashHooks.swift`——`handle(hook:owner:version:_:)` 登记、`dispatch` 派发，
+- `ClamSDK/ClamHooks.swift`——`handle(hook:owner:version:_:)` 登记、`dispatch` 派发，
   **整个文件里没有一个通知相关的词**。
 - `Native/SystemDelegateRelay.swift`——壳在 `applicationDidFinishLaunching` 的第一句
   就占住系统 delegate，把回调拍平成字典，经钩子问一遍插件，再把答案翻回系统要的形状。
@@ -161,7 +161,7 @@ Services、NSUserActivity——**以后不用再改 SDK 一行**。这是这个�
 
 ### 2. 不占槽的插件没有生命周期锚
 
-dash-sidebar 那样占槽的插件，registry → 视图闭包 → model 有一条天然的强引用链。
+clam-sidebar 那样占槽的插件，registry → 视图闭包 → model 有一条天然的强引用链。
 这个插件不占槽：`activate` 里 new 出来的 presenter **没有任何人持有**，函数一返回就被
 ARC 回收，所有 `[weak self]` 的异步回调静默变成 nil。症状极其误导——"通知线上线"
 照常打印，然后什么都不发生，像是数据没来。
@@ -169,7 +169,7 @@ ARC 回收，所有 `[weak self]` 的异步回调静默变成 nil。症状极其
 `activate` 因此**返回 presenter 而不是 handle**（presenter 自己持有 handle）：
 
 ```swift
-func activate(host: DashHost) -> AnyObject? {
+func activate(host: ClamHost) -> AnyObject? {
     let presenter = NotifyPresenter(host: host, surface: ...)
     presenter.start()
     return presenter          // ← 壳按住这个返回值，它就是生命周期锚
@@ -188,7 +188,7 @@ func activate(host: DashHost) -> AnyObject? {
 
 ## 设置
 
-注册在 `dash-notify` 这个 ns 下，九个开关，全部 `applies: "live"`（改完立刻生效，
+注册在 `clam-notify` 这个 ns 下，九个开关，全部 `applies: "live"`（改完立刻生效，
 新值随下一次 inbox 推给 Swift）：
 
 | 键 | 默认 | 管什么 |
@@ -206,14 +206,14 @@ func activate(host: DashHost) -> AnyObject? {
 ## 自测
 
 ```sh
-DASH_NOTIFY_SELFTEST=1 ./dev
+CLAM_NOTIFY_SELFTEST=1 ./dev
 ```
 
 启动 3 秒后塞两条假待办（一条批准、一条带输入框的提问），用来看版式与按钮。
 假 rpcId 在 `act` 时会被上游判成 `not-pending`——**那条路径同样是真的**，
 翻牌与撤通知的行为跟真件逐字相同。
 
-不想动 UI 也能验：桥的 `invoke` 帧可以直接发（`{type:"invoke", plugin:"dash-notify",
+不想动 UI 也能验：桥的 `invoke` 帧可以直接发（`{type:"invoke", plugin:"clam-notify",
 action:"act", payload:{id, actionId, text?}}`），桥支持多客户端，不影响正在跑的壳。
 
 ## 已知边界

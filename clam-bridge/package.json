@@ -1,7 +1,7 @@
 {
-	"name": "@wenbo/dash-bridge",
+	"name": "@wenbo/clam-bridge",
 	"version": "0.1.0",
-	"description": "dash 原生插件的唯一特权插件：Swift 载荷登记表 + /dash/bridge WebSocket + snapshot/changed 广播",
+	"description": "clam 原生插件的唯一特权插件：Swift 载荷登记表 + /clam/bridge WebSocket + snapshot/changed 广播",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

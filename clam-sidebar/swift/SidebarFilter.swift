@@ -16,8 +16,8 @@ final class SidebarFilterState: ObservableObject {
     /// 列表的组织轴。`pending` 只是个过滤器，仍按工作区分组。
     ///
     /// 「待处理」筛的是 `SidebarSessionStatus.needsAttention`——待批准、待回答、
-    /// 出错、跑完了都算。**不只是待批准**：后三样来自 dash-notify 供出来的
-    /// `dashPending`（它缺席时这枚胶囊就退回只有待批准，仍然可用）。
+    /// 出错、跑完了都算。**不只是待批准**：后三样来自 clam-notify 供出来的
+    /// `clamPending`（它缺席时这枚胶囊就退回只有待批准，仍然可用）。
     enum Mode: String, CaseIterable {
         case all
         case time

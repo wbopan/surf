@@ -1,9 +1,9 @@
 import AppKit
-import DashLayout
+import ClamLayout
 import SwiftUI
 
 // 原生侧边栏。骨架仍然交给系统：`List(selection:)` + `.listStyle(.sidebar)` 给的是
-// 原生 hover、键盘上下键导航、分组缩进；dash-layout 把本视图装进
+// 原生 hover、键盘上下键导航、分组缩进；clam-layout 把本视图装进
 // `NSSplitViewItem(sidebarWithViewController:)`，材质、分隔条、拖拽调宽、收起动画、
 // 宽度记忆全部白送。自绘的只有三样：会话行、分组头、筛选胶囊。
 //
@@ -160,7 +160,7 @@ struct GroupHeader: View {
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
-    let surface: DashConversationSurface
+    let surface: ClamConversationSurface
 
     @State private var hovering = false
 
@@ -263,7 +263,7 @@ struct GroupHeader: View {
 struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
     @ObservedObject var filter: SidebarFilterState
-    let surface: DashConversationSurface
+    let surface: ClamConversationSurface
 
     /// 收起的分组（默认全部展开；搜索时强制展开命中组）。
     /// 逗号拼接持久化（组 id 无逗号）。
@@ -312,7 +312,7 @@ struct SidebarView<Model: SidebarModel>: View {
         let rows: [(session: SidebarSession, workspace: String)]
     }
 
-    init(model: Model, filter: SidebarFilterState, surface: DashConversationSurface) {
+    init(model: Model, filter: SidebarFilterState, surface: ClamConversationSurface) {
         self.model = model
         self.filter = filter
         self.surface = surface

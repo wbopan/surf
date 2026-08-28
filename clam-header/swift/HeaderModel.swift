@@ -1,5 +1,5 @@
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 import Observation
 import WebKit
@@ -17,7 +17,7 @@ import WebKit
 /// 工具栏那几格是一个整体，拆成两个 model 会让它们各自换代、各自迟到，
 /// 出现"段控已经跟上、面包屑还停在上一个会话"的错位。
 ///
-/// 线程约定：**只在主线程使用**（同 `DashRegistry` / `DashContributions`）。
+/// 线程约定：**只在主线程使用**（同 `ClamRegistry` / `ClamContributions`）。
 @Observable
 final class HeaderModel {
     // MARK: - 页内桥那半
@@ -71,17 +71,17 @@ final class HeaderModel {
 
     /// WKWebView 归壳所有，这里只借来发 JS。
     @ObservationIgnored private weak var webView: WKWebView?
-    /// 切会话走 dash-layout 的会话展示面（与侧边栏点一行是同一条通道）。
-    @ObservationIgnored private let surface: DashConversationSurface
-    @ObservationIgnored private let bridge: DashBridge
+    /// 切会话走 clam-layout 的会话展示面（与侧边栏点一行是同一条通道）。
+    @ObservationIgnored private let surface: ClamConversationSurface
+    @ObservationIgnored private let bridge: ClamBridge
     @ObservationIgnored private let log: (String) -> Void
     /// full 模式下补给正文的顶部留白，实测窗口的 `contentLayoutGuide` 得来。
     @ObservationIgnored var contentTopInset: CGFloat = 0
     /// 本插件这一代的世代号。页面据此分辨"谁在喊"（见 `confirmNative` / `dismissNative`）。
     @ObservationIgnored private let generation: Int
 
-    init(webView: WKWebView?, surface: DashConversationSurface,
-         bridge: DashBridge, generation: Int, log: @escaping (String) -> Void) {
+    init(webView: WKWebView?, surface: ClamConversationSurface,
+         bridge: ClamBridge, generation: Int, log: @escaping (String) -> Void) {
         self.webView = webView
         self.surface = surface
         self.bridge = bridge
@@ -237,7 +237,7 @@ final class HeaderModel {
     }
 
     /// JS 字符串字面量转义（反斜杠、引号、控制字符），防注入。
-    /// 与 dash-layout 的 `jsStringLiteral` 同一份逻辑——会话 id 是外来字符串，
+    /// 与 clam-layout 的 `jsStringLiteral` 同一份逻辑——会话 id 是外来字符串，
     /// 直接拼进脚本是真实的注入面。
     static func jsStringLiteral(_ raw: String) -> String {
         var out = "\""
@@ -260,7 +260,7 @@ final class HeaderModel {
     }
 
     /// 调 `window.__clamHeader.*`。桥不在（普通浏览器、页面还没加载完、
-    /// client 半边这一代还没起）时静默失败——不弹窗不报错，与 dash-layout
+    /// client 半边这一代还没起）时静默失败——不弹窗不报错，与 clam-layout
     /// 的 `WebViewConversationSurface` 同一条纪律。
     private func call(_ fn: String, _ args: String = "", receipt: Bool = false) {
         guard let webView else { return }

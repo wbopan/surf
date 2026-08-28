@@ -1,18 +1,18 @@
-# dash-nativeify
+# clam-nativeify
 
-dash（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
+clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
 
-- `dsh.bundle`（`cordis.patch.yml`）：安装进 profile 后自动加入 `dsh.profile.bundles`，patch 层插入自己的浏览器插件 row（`ui-dash-nativeify`），无需手改 profile 的 `cordis.patch.yml`。
-- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/dash-nativeify/client.js` 送达页面。
+- `dsh.bundle`（`cordis.patch.yml`）：安装进 profile 后自动加入 `dsh.profile.bundles`，patch 层插入自己的浏览器插件 row（`ui-clam-nativeify`），无需手改 profile 的 `cordis.patch.yml`。
+- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/clam-nativeify/client.js` 送达页面。
 
 ## 职责边界
 
 **只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事**，实现基本是注入一段 CSS
-（外加一段十行的 JS 把窗口焦点态映射到 `<html data-dash-blur>`，见「四态」一节），
+（外加一段十行的 JS 把窗口焦点态映射到 `<html data-clam-blur>`，见「四态」一节），
 零跨插件契约。**唯一的设置项是对话区字号**，见下面「字体」一节；除它之外没有配置，
 服务依赖也只有那一个可选的 `settings` / `settingsScope`（缺席即退到默认值，见同一节）。
 门控只有一条：`navigator.userAgent` 含
-`Dash/`（带斜杠，防普通子串误命中；壳经 `applicationNameForUserAgent` 声明）。
+`Clam/`（带斜杠，防普通子串误命中；壳经 `applicationNameForUserAgent` 声明）。
 终端 `dsh web` / 普通浏览器共用同一 web profile 时零影响。
 
 功能：
@@ -31,8 +31,8 @@ dash（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
    > **窗口激活 ↔ 失活必须是瞬时的。** 系统换焦点是重绘不是动画；而按钮上挂着
    > `box-shadow` / `background-color` / `filter` 的过渡（给 hover 和按下用的），
    > 焦点一变就会顺带把整摞玻璃层做成 160ms 淡入淡出，一眼假。`watchWindowFocus()`
-   > 里用的是经典跳过法：挂 `data-dash-nofx`（配套 CSS `transition: none !important`）
-   > → 改 `data-dash-blur` → **读一次 `offsetHeight` 强制刷新样式** → 摘掉标记。
+   > 里用的是经典跳过法：挂 `data-clam-nofx`（配套 CSS `transition: none !important`）
+   > → 改 `data-clam-blur` → **读一次 `offsetHeight` 强制刷新样式** → 摘掉标记。
    > 那次读取是关键，删了等于没加 —— 不强制刷新，浏览器会把加标记、改值、摘标记
    > 合成一次样式计算，过渡照旧发生。
 
@@ -42,7 +42,7 @@ dash（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
    > 按下去像被捏了一把，不是被按下去。已删除。
 
    另加**按压亮光**：按下时手指底下泛起一块光，松手摊开淡掉。位置由
-   `watchPressPoint()` 写成 `--dash-px/--dash-py`（本插件的第二段、也是最后一段 JS）。
+   `watchPressPoint()` 写成 `--clam-px/--clam-py`（本插件的第二段、也是最后一段 JS）。
    三件事值得记：
 
    - **定稿只让不透明度变**：半径两态都是 150%，整面泛光而不收拢成一小块，
@@ -56,7 +56,7 @@ dash（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
      `background-color` 之上、内容之下，文字纹丝不动。必须带 `!important`：
      `background` 简写会把 `background-image` 一起清掉，而且是静默的。
 
-   **亮光只留在深色档**（`--dash-press-glow`：深 `rgba(255,255,255,.17)`、浅 `transparent`）。
+   **亮光只留在深色档**（`--clam-press-glow`：深 `rgba(255,255,255,.17)`、浅 `transparent`）。
    浅色档取消了，两条理由都站得住：系统实测浅色按下就是整体压暗、一点白光都没有；
    而且浅色玻璃本体已经 248/255，头顶只剩 7 级，白光实测只抬得动 **+1 级**
    （深色档同一个值抬 +31）——物理上就做不出来。浅色的按下反馈改由下面那套
@@ -74,13 +74,13 @@ macOS 27 的按钮反馈是**两级、且深浅两档方向相反**。下面这�
 | `.glassProminent` 浅色 | (0,131,255) | **零变化** | (0,110,241) |
 | `.glassProminent` 深色 | (0,135,255) | **零变化** | (0,155,255) |
 
-据此落成 `--dash-tint-hover` / `--dash-tint-press`，做成 `--dash-surface` 里的一层整片
+据此落成 `--clam-tint-hover` / `--clam-tint-press`，做成 `--clam-surface` 里的一层整片
 inset。三条是从数据直接读出来的、别凭手感改回去：
 
 - **浅色变暗、深色提亮。** alpha 直接由 Δ 除以底色算：8.6/248.1 = .035、
   17.3/248.1 = .070（黑）；深色 21.9/(255−61.1) = .113（白）。
-- **深色的按下不再加码。** 系统那一档 hover 就到顶了，`--dash-tint-press` 与
-  `--dash-tint-hover` 同值。深色档多出来的层次由按压亮光提供（那是自己要的第三级，
+- **深色的按下不再加码。** 系统那一档 hover 就到顶了，`--clam-tint-press` 与
+  `--clam-tint-hover` 同值。深色档多出来的层次由按压亮光提供（那是自己要的第三级，
   系统只有两级）。
 - **实心强调键（发送键）不参与 hover。** `.glassProminent` 悬停零变化是实测结论，
   不是取样点没找准 —— 探针上挂了 `.onHover` 指示灯，截图里能看见它变绿，
@@ -92,7 +92,7 @@ inset。三条是从数据直接读出来的、别凭手感改回去：
 
 - **着色层放在高光层之下。** 上下那两道高光是镜面反射，不该被"鼠标移上去"改掉；
   系统那组 Δ 也是量按钮腰部得来的，所以 alpha 也只该按腰部算。
-- `--dash-tint` **必须 `@property` 注册**（`<color>`，initial `transparent`）：
+- `--clam-tint` **必须 `@property` 注册**（`<color>`，initial `transparent`）：
   闲时它解析不出来会让**整条 `box-shadow` 失效**，玻璃表面直接消失，而且是静默的。
 
 4. **字体收到 macOS 原生度量**：控件 13px/18px、对话正文 15px/21px（dsh 原本
@@ -136,15 +136,15 @@ inset。三条是从数据直接读出来的、别凭手感改回去：
 
 #### `BODY` 是一个真正的设置项，`CONTROL` 不是
 
-`BODY` 由设置命名空间 `dash-nativeify` 的 `bodyFontSize` 驱动（设置 → 插件 →
+`BODY` 由设置命名空间 `clam-nativeify` 的 `bodyFontSize` 驱动（设置 → 插件 →
 原生观感 → 对话区字号，滑杆）。**`CONTROL` 不给调，这是有意的**：13 是
 `NSFont.systemFontSize`，它不是口味而是"像原生"这件事的定义本身；调它等于让
 WebView 那半边和壳的原生侧边栏用两套字，本插件存在的理由当场作废。阅读列不一样
 ——那是长文，字号是纯口味。
 
-布线两句话：node 半边 `ctx.settings.register("dash-nativeify", …)` 注册 ns，
+布线两句话：node 半边 `ctx.settings.register("clam-nativeify", …)` 注册 ns，
 浏览器半边 `ctx.settingsScope.bind({namespace})` 订阅它，值一变就重写字体那张 style。
-注册一个 ns 就同时点亮了两个界面（dash-settings 那扇原生窗口、dsh 页内设置对话框），
+注册一个 ns 就同时点亮了两个界面（clam-settings 那扇原生窗口、dsh 页内设置对话框），
 两边都不用改一行——它们把 `describe()` 里的每个 ns 一视同仁地列出来。
 
 **两处都是可选依赖，走运行时嵌套 `ctx.inject` 而不是静态声明**：静态依赖会让服务
@@ -159,7 +159,7 @@ WebView 那半边和壳的原生侧边栏用两套字，本插件存在的理由
 要放宽范围先补测行高。client 半边另有一道 `clampBody()`：设置文档是用户能拿编辑器
 手改的文本文件，越界值宁可默默夹住。
 
-**字体那一层是单独一张 `<style id="dash-nativeify-font">`**，与其余 CSS 分开。合在
+**字体那一层是单独一张 `<style id="clam-nativeify-font">`**，与其余 CSS 分开。合在
 一起也能工作，代价是改一次字号要把整摞玻璃 CSS 连带重建——`@property` 重新注册会让
 已注册的自定义属性瞬时回到 `initial-value`，按钮表面在那一帧塌掉。
 
@@ -282,10 +282,10 @@ backdrop-filter: blur(13px) saturate(1.95);
 - **系统的模糊在线性光里做**，CSS 的在 sRGB 里做。这条复刻不了，代价是过渡带
   比系统略暗。在 sRGB 码值上直接量会把 σ 高估约 2%，要先解码回线性光。
 - **底色的合成确实在 sRGB 里**：黑白两点定出的直线预测中灰 199.3、实测 199.2。
-  所以 `--dash-glass-fill` 用普通 alpha 合成就对。（那两点解出的是
+  所以 `--clam-glass-fill` 用普通 alpha 合成就对。（那两点解出的是
   `rgba(253,253,253,0.5725)`，比定稿的 `0.5272` 略实；两者在白底上等价，
   只在深色背景上分得出。）
-- `saturate` 只给 `--dash-glass-fill` 那一组，**不给 `_primary`**：强调键是实色，
+- `saturate` 只给 `--clam-glass-fill` 那一组，**不给 `_primary`**：强调键是实色，
   背后糊什么都看不见，给它上 `backdrop-filter` 只是白白多一个合成层。
 
 **深色档沿用同一组数**，没有单独实测——材质是同一个 `.glassEffect(.regular)`，
@@ -338,19 +338,19 @@ refs 探针加 `--hold` 反复抢回 key，并把 `NSApp.isActive` / `isKeyWindo
 描边          inset 0 0 0 var(--edge-w)     仅无 border 那组
 上发光 ×4     inset 0 kpx 0                 k = 1..4
 下发光 ×4     inset 0 -kpx 0
-hover/按下着色 inset 0 0 0 100px            --dash-tint，闲时 transparent
+hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
 左内侧阴影    inset 12px 0 8px -15px
 右内侧阴影    inset -12px 0 8px -15px
-────────────  以上是 --dash-surface  ────────────
-底色          background-color              --dash-glass-fill，**唯一的给色处**
-外投影        0 1px 2px                     非 inset，在 --dash-surface 之外
+────────────  以上是 --clam-surface  ────────────
+底色          background-color              --clam-glass-fill，**唯一的给色处**
+外投影        0 1px 2px                     非 inset，在 --clam-surface 之外
 ```
 
 ### 给色只能有一处，那一处是 `background-color`
 
 底色**不是阴影层**。这条是被一个真 bug 换来的：
 
-底色以前是一层 `inset 0 0 0 100px var(--dash-glass-body)`，理由写在注释里 ——
+底色以前是一层 `inset 0 0 0 100px var(--clam-glass-body)`，理由写在注释里 ——
 「不碰 `background`，dsh 自己的底色照常生效」。听着像优点，实际后果是
 **同时存在两个给色的地方**：dsh 给发送键 `_primary` 画的强调蓝，加上我们这层
 半透明白（浅色 `.5272`）。两者叠起来把饱和蓝洗成 (138,195,253) 那种藕荷色 ——
@@ -394,9 +394,9 @@ hover/按下着色 inset 0 0 0 100px            --dash-tint，闲时 transparent
 
 | 变量 | 管什么 | 浅色 | 深色 |
 |---|---|---|---|
-| `--dash-glass-glow-t` | 上缘最外一像素的峰值 | .55 | .012 |
-| `--dash-glass-glow-b` | 下缘峰值 | .55 | .025 |
-| `--dash-glass-glow-d` | 每向内一像素乘的衰减，越小掉得越快 | .45 | .45 |
+| `--clam-glass-glow-t` | 上缘最外一像素的峰值 | .55 | .012 |
+| `--clam-glass-glow-b` | 下缘峰值 | .55 | .025 |
+| `--clam-glass-glow-d` | 每向内一像素乘的衰减，越小掉得越快 | .45 | .45 |
 
 实测剖面（相对各自本体）：
 
@@ -470,7 +470,7 @@ WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 **二、边缘的高光不是白色，是同色系更亮的一档。** 蓝键本体 `#0092FF`、峰值 `#00C0FF` ——
 **R 通道从头到尾是 0**。白色叠加无论 alpha 多少都会把 R 拉起来，对不上。红键同理
 （本体 `#FF2038` → 峰值 `#FF5762`，G 和 B 的推算 alpha 差着 16%，也不是同一次白色叠加）。
-所以发光的颜色抽成了 `--dash-glass-glow-c`，默认白，带色时要换掉。
+所以发光的颜色抽成了 `--clam-glass-glow-c`，默认白，带色时要换掉。
 
 | | 描边行 | 峰值 | 本体 |
 |---|---|---|---|
@@ -493,14 +493,14 @@ WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 这四档（蓝/红 × 浅/深 × 激活/失活）的系统参考图已经嵌进校准台，可以直接对着调。
 
 **焦点态怎么来的**：`watchWindowFocus()` 监听 `window` 的 focus/blur，把结果 toggle 成
-`<html data-dash-blur>`。WKWebView 会把承载窗口的激活/失活转成页面的 focus/blur
+`<html data-clam-blur>`。WKWebView 会把承载窗口的激活/失活转成页面的 focus/blur
 （Safari 里切 app 也是同一套）。这是本插件唯一一段 JS。
 
-**刻意不走「让壳注入」那条路**：壳的窗口通知要经 dash-layout 的 Swift 半边才够得着
-WebView，那会给 dash-nativeify 添一条跨插件契约。收不到事件的后果只是永远停在激活态
+**刻意不走「让壳注入」那条路**：壳的窗口通知要经 clam-layout 的 Swift 半边才够得着
+WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的后果只是永远停在激活态
 那套值 = 加这段之前的行为，无害，所以宁可要零依赖。
 
-特异性靠 `:root[data-dash-blur] body`（0,2,2）稳压 `body[data-ds-dark-theme]`（0,1,1），
+特异性靠 `:root[data-clam-blur] body`（0,2,2）稳压 `body[data-ds-dark-theme]`（0,1,1），
 深色失活再多一个属性选择器压住浅色失活。
 
 **一处没解决的矛盾**：定稿的浅色激活态描边比系统浓 2.5 倍（−40.6 对 −16.0，肉眼调的
@@ -519,8 +519,8 @@ WebView，那会给 dash-nativeify 添一条跨插件契约。收不到事件的
 
 ## 不在这里的
 
-- **`window.__dash` 动作桥、收起 web 侧边栏、rail 轨道抵消**：那些是原生分栏接管
-  排版的一部分，住在 dash-layout 的 client 半边（协议两端同包：Swift 侧
+- **`window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消**：那些是原生分栏接管
+  排版的一部分，住在 clam-layout 的 client 半边（协议两端同包：Swift 侧
   `WebViewConversationSurface` 是它们唯一的调用方）。
 - **网页侧边栏的任何外观调整**（顶部让位 `topInset`、把 `sidebarCol` 刷成透明
   以透出壳的 `NSGlassEffectView`）。这是「网页侧边栏坐在原生玻璃上」那个旧世界的
@@ -528,7 +528,7 @@ WebView，那会给 dash-nativeify 添一条跨插件契约。收不到事件的
 
   | 形态 | 谁在画侧边栏 | WebView 位置 |
   |---|---|---|
-  | 原生侧边栏（常态） | dash-sidebar 占 sidebar 槽 | `NSSplitViewItem` 右侧，够不着侧边栏那一栏 |
+  | 原生侧边栏（常态） | clam-sidebar 占 sidebar 槽 | `NSSplitViewItem` 右侧，够不着侧边栏那一栏 |
   | 完整网页模式（逃生舱） | dsh 自己 | 全出血铺满窗口，**原样展示，不修** |
 
   「用网页侧边栏、但把它打扮成原生」这个中间态不存在，别再往回加。
@@ -537,12 +537,12 @@ WebView，那会给 dash-nativeify 添一条跨插件契约。收不到事件的
 
 ```bash
 # 装了 pnpm 的话，用官方入口（自动 reconcile 进 bundles）：
-dsh plugin --profile web add link:~/.dsh/profiles/plugins/dash-nativeify
+dsh plugin --profile web add link:~/.dsh/profiles/plugins/clam-nativeify
 
 # 没有 pnpm：在 profile 目录手动等价操作
 cd ~/.dsh/profiles/web
-npx pnpm add link:~/.dsh/profiles/plugins/dash-nativeify
-# 然后把 "dash-nativeify" 追加进 package.json 的 dsh.profile.bundles
+npx pnpm add link:~/.dsh/profiles/plugins/clam-nativeify
+# 然后把 "clam-nativeify" 追加进 package.json 的 dsh.profile.bundles
 ```
 
 装/删/改后重启 harness（壳应用菜单 ⌘⇧R）。
@@ -550,8 +550,8 @@ npx pnpm add link:~/.dsh/profiles/plugins/dash-nativeify
 ## 看真正注入的那段 CSS
 
 ```bash
-node dash-nativeify/tools/dump-css.mjs              # 全量
-node dash-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规则块
+node clam-nativeify/tools/dump-css.mjs              # 全量
+node clam-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规则块
 ```
 
 整段样式是**拼字符串**拼出来的，`node --check` 只看 JS 语法，看不出 CSS 括号有没有
@@ -575,4 +575,4 @@ node dash-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规
   `font` 简写、五个长手零引用，
   插件两者都写，就是防它哪天改用长手时一半新一半旧地分裂。
 - 完整网页模式（逃生舱）下红绿灯会压在网页侧边栏顶部——**这是刻意接受的**：
-  逃生舱的定位是「dash-layout 挂了也还能用」的降级路径，不为它做外观修补。
+  逃生舱的定位是「clam-layout 挂了也还能用」的降级路径，不为它做外观修补。

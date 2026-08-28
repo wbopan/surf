@@ -1,4 +1,4 @@
-# dash-header
+# clam-header
 
 把 dsh 主内容区顶上那条 web header 搬进原生：会话标识走窗口标题，动作走工具栏，
 网页那条就地折叠。插件退休页面自动还原。
@@ -48,7 +48,7 @@ node 半边订宿主服务与事件，投影经桥推 JSON；Swift 只管画和�
 和 fork 的轮次边界，而 `apiProxy` 就是 `/api` 那套方法的同进程实现本体。
 
 **拓扑与流量分家**：`metadata` 一变就重建整条工具栏，所以徽标数字、菜单内容、
-段控选中态、显隐都走活通道 `dash.toolbar.update`，不走 metadata。
+段控选中态、显隐都走活通道 `clam.toolbar.update`，不走 metadata。
 
 ## 子代理 catalog 是唯一入口
 

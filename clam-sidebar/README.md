@@ -1,6 +1,6 @@
-# dash-sidebar
+# clam-sidebar
 
-原生会话侧边栏。占 dash-layout 的 `sidebar` 槽；dash-layout 不在则整个插件不挂载
+原生会话侧边栏。占 clam-layout 的 `sidebar` 槽；clam-layout 不在则整个插件不挂载
 （cordis 的 `inject` 会让它安静地等着）。
 
 ## 两半各管什么
@@ -29,7 +29,7 @@ registry 上根本没有 rename……），四条实测理由写在那个文件�
 Swift 半边每代把收到的最后一份 snapshot 原样存进保管箱：
 
 ```swift
-host.objects.setObject("dash.sidebar.snapshot", payload as NSDictionary)
+host.objects.setObject("clam.sidebar.snapshot", payload as NSDictionary)
 ```
 
 下一代 activate 时先拿它渲染，同时发 `snapshot` 动作要一份 fresh 全量，到了再替换。
@@ -93,7 +93,7 @@ v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 n
 - `showArchived`：同一张菜单里的开关。
 - `query`：搜索框内容，**不持久化**（重启后还留着上次的搜索词只会让人以为会话丢了）。
 
-工具栏那枚「筛选」是本插件往 dash-layout 的 `toolbar` 槽投的一条贡献，
+工具栏那枚「筛选」是本插件往 clam-layout 的 `toolbar` 槽投的一条贡献，
 走 `menu` 路线拿的是 `NSMenuToolbarItem`。设计稿画的是 NSPopover，落地改成菜单：
 贡献槽递不出锚点视图，而"一串带勾的开关"本来就是菜单的母语。
 
@@ -140,7 +140,7 @@ NSViewRepresentable 每轮 update 都会把环境的 `controlSize`（默认 `.re
 ## 从壳迁进插件时踩到的坑
 
 - **`#if DEBUG` 在插件里永远不成立**：插件由壳在运行时用命令行 swiftc 编译，没有 `-DDEBUG`。
-  插件里要判 Dev 只能看壳的 bundle id 后缀（`io.wenbo.dash.dev`）。
+  插件里要判 Dev 只能看壳的 bundle id 后缀（`io.wenbo.surfclam.dev`）。
 - 选中高亮活过热替换靠 `host.store` 存 `selectedSessionId`。它只是"页面把 `currentSession`
   报回来之前先亮哪一行"的装饰状态，丢了不心疼——真相在 dsh 侧。
 - **分叉标题的序号递增必须自己复刻**（`lib/fork-title.js`，用例在 `test/`）：上游把它
@@ -155,22 +155,22 @@ NSViewRepresentable 每轮 update 都会把环境的 `controlSize`（默认 `.re
 |---|---|---|
 | `running` | 系统 spinner | 本插件（`session.list` 的 `running`） |
 | `pendingApproval` | 橙色感叹号 | 两处都有；本插件订 `approval/asked｜decided` 兜底 |
-| `pendingQuestion` | 紫色问号 | **dash-notify**（`dashPending`） |
-| `failed` | 红色叉 | **dash-notify** |
-| `done` | 空心对勾 | **dash-notify** |
+| `pendingQuestion` | 紫色问号 | **clam-notify**（`clamPending`） |
+| `failed` | 红色叉 | **clam-notify** |
+| `done` | 空心对勾 | **clam-notify** |
 
 后三样这一侧**推不出来**：`ask_user_question` 在 node 侧既不发 cordis 事件也不落
 session log，唯一的观察位 `userQuestions.registerProvider` 是**独占**的，apiproxy
 已经占着——抢过来等于把 web UI 的问答面板掐了。正路是订
-`ctx.apiProxy.events.mux()`，而 dash-notify 为了发通知**已经养着那条帧流**，
+`ctx.apiProxy.events.mux()`，而 clam-notify 为了发通知**已经养着那条帧流**，
 还维护着一份权威的待办表。真相只该有一份，所以这边订它（`lib/index.js` 的
 `withPending`），不再自己推一遍。
 
 合并规则是**只升不降**：两边看到的都是真事实，取更该管的那一个（`STATUS_RANK`）。
-dash-notify 缺席时整段跳过，退回 `running` / `pendingApproval` / `idle` 三个老取值
+clam-notify 缺席时整段跳过，退回 `running` / `pendingApproval` / `idle` 三个老取值
 ——那条路径必须存在，它是侧边栏的独立性。
 
-「跑完了」和「出错」**看一眼就消失**（点开那个会话即可），因为 dash-notify 那边
+「跑完了」和「出错」**看一眼就消失**（点开那个会话即可），因为 clam-notify 那边
 收到 Swift 报的 `focus` 就把它们从待办里删了。
 
 ## 已知缺口
@@ -181,7 +181,7 @@ dash-notify 缺席时整段跳过，退回 `running` / `pendingApproval` / `idle
 ## 测试
 
 ```sh
-node --test dash-sidebar/test/*.test.js
+node --test clam-sidebar/test/*.test.js
 ```
 
 零依赖、约 2s。给 `--test` 一个目录在 node 26 上会 `MODULE_NOT_FOUND`，写通配符。

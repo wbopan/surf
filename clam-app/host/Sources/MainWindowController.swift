@@ -1,5 +1,5 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import SwiftUI
 import WebKit
 
@@ -33,12 +33,12 @@ private final class WKScriptMessageHandlerProxy: NSObject, WKScriptMessageHandle
 }
 
 /// 主窗口。M5 起壳只剩窗口与 root 槽：
-/// 布局、分栏、侧边栏装配全部搬进 dash-layout 插件，这里负责
+/// 布局、分栏、侧边栏装配全部搬进 clam-layout 插件，这里负责
 /// "定位 dsh、连桥、把 root 槽的视图挂上去、没人占 root 时兜底全出血 WebView"。
 @MainActor
 final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWindowDelegate {
 
-    /// 窗口最小宽度。sidebar 的自适应折叠归 dash-layout 管，
+    /// 窗口最小宽度。sidebar 的自适应折叠归 clam-layout 管，
     /// 这里只兜住"折叠之后窗口还能多窄"。
     static let contentMinWidth: CGFloat = 432
 
@@ -56,7 +56,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private var launchWindowFrame: NSRect = .zero
 
     /// 当前连上的 dsh。nil = 没找到/已断开（引导页在场）。
-    private var endpoint: DashEndpoint?
+    private var endpoint: ClamEndpoint?
     /// 定位/健康轮询。壳已不是 dsh 的父进程，拿不到退出信号，
     /// 只能靠周期性 GET 发现它走了、也靠它发现它回来了。
     private var connectTimer: Timer?
@@ -79,7 +79,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
     // 只管拖拽，不再与网页内容对齐：原生分栏接管排版后，WebView 装在分栏右侧，
-    // 网页侧边栏够不着标题栏区域（旧的 dash-nativeify topInset 让位已随之删除）。
+    // 网页侧边栏够不着标题栏区域（旧的 clam-nativeify topInset 让位已随之删除）。
     static let titleBarHeight: CGFloat = 40
 
     private let titleBarDragView = WindowDragRegionView() // 顶部可拖拽条
@@ -93,7 +93,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private var diagnosticsPanel: DiagnosticsPanel?
 
-    /// 壳有新版时右上角那条浮动提示（dash-app v1 播报，§7.5）。
+    /// 壳有新版时右上角那条浮动提示（clam-app v1 播报，§7.5）。
     /// 用户点"稍后"就收起，直到下一次播报——不缠人。
     private var updateBanner: ShellUpdateBanner?
 
@@ -126,7 +126,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
         // UA 追加 "Clam/<version>"（带斜杠，防 "clam" 作为普通子串误命中）：
-        // dash-nativeify / dash-layout 的 client 半边以此判断页面运行在壳内（终端 dsh web /
+        // clam-nativeify / clam-layout 的 client 半边以此判断页面运行在壳内（终端 dsh web /
         // 普通浏览器共用同一 profile，不受影响）。
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         config.applicationNameForUserAgent = "Clam/\(shortVersion)"
@@ -154,7 +154,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         setupMenus()
         // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
-        nativeHost.objects.setObject(DashObjects.Key.webView, webView)
+        nativeHost.objects.setObject(ClamObjects.Key.webView, webView)
         nativeHost.onUpdate = { [weak self] in self?.syncNativeSidebarGate() }
         nativeHost.onAppBuild = { [weak self] state in self?.applyAppBuild(state) }
     }
@@ -270,7 +270,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 把一次探测结果落到界面上。四种去向：稳定（什么都不做）、
     /// 接入、换端点重接、断开。
-    private func apply(_ found: DashEndpoint?) {
+    private func apply(_ found: ClamEndpoint?) {
         guard let found else {
             if endpoint != nil {
                 enterDisconnected()
@@ -283,9 +283,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let isReconnect = endpoint != nil
         endpoint = found
         Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)",
-                  to: DashPaths.logURL, tag: "endpoint")
+                  to: ClamPaths.logURL, tag: "endpoint")
         if isReconnect {
-            Log.write("端点变化，插件将随重连的桥重新对齐", to: DashPaths.logURL, tag: "endpoint")
+            Log.write("端点变化，插件将随重连的桥重新对齐", to: ClamPaths.logURL, tag: "endpoint")
         }
         enterRunning()
     }
@@ -302,7 +302,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// dsh 回来时轮询自动把页面重新载上，用户不必重开 App。
     private func enterDisconnected() {
         guard endpoint != nil else { return }
-        Log.write("与 dsh 断开连接", to: DashPaths.logURL, tag: "endpoint")
+        Log.write("与 dsh 断开连接", to: ClamPaths.logURL, tag: "endpoint")
         endpoint = nil
         nativeHost.disconnect()
         webView.stopLoading()
@@ -323,7 +323,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
               var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
         components.path = "/"
         // 插件门控参数：带上它则网页侧边栏隐藏，由原生 sidebar 槽接管；
-        // 不带则完整网页模式（dash-sidebar 缺席时的样子）。
+        // 不带则完整网页模式（clam-sidebar 缺席时的样子）。
         let native = Self.rememberedNativeSidebar
         nativeSidebarParamInUse = native
         components.queryItems = native
@@ -340,7 +340,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.bridgeReady else { return }
             Log.write("桥 ready 超时（\(Int(self.bridgeReadyTimeout))s）——插件疑似失效，currentSession 同步将不可用",
-                      to: DashPaths.logURL, tag: "bridge")
+                      to: ClamPaths.logURL, tag: "bridge")
         }
         bridgeWarnWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + bridgeReadyTimeout, execute: work)
@@ -386,7 +386,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let actual = nativeHost.registry.isOccupied("sidebar")
         guard actual != nativeSidebarParamInUse else { return }
         Log.write("原生侧边栏门控变化：\(nativeSidebarParamInUse) → \(actual)，重载页面",
-                  to: DashPaths.logURL, tag: "layout")
+                  to: ClamPaths.logURL, tag: "layout")
         Self.rememberedNativeSidebar = actual
         loadWebUI()
     }
@@ -440,10 +440,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         bootstrapVC = nil
     }
 
-    // MARK: - 壳自身的构建（dash-app v1）
+    // MARK: - 壳自身的构建（clam-app v1）
 
     /// 壳重建不是插件热替换那个档位：它要重启进程、丢页面状态。所以默认只提示，
-    /// 动手归用户（dash-app 配了 `restartOnRebuild` 才自动走）。
+    /// 动手归用户（clam-app 配了 `restartOnRebuild` 才自动走）。
     private func applyAppBuild(_ state: AppBuildState) {
         // 引导页在场 = 此刻连 dsh 都没有，"壳有新版"不是当下该操心的事。
         guard bootstrapVC == nil else { return }
@@ -452,7 +452,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             mountUpdateBanner().show(.building)
         case "ready":
             guard !state.autoRestart else {
-                Log.write("壳有新版且配置了自动重启，立即重启", to: DashPaths.logURL, tag: "app-build")
+                Log.write("壳有新版且配置了自动重启，立即重启", to: ClamPaths.logURL, tag: "app-build")
                 nativeHost.requestRestartApp()
                 return
             }
@@ -477,7 +477,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                     self.dismissUpdateBanner()
                     self.nativeHost.requestRestartApp()
                 case .failed:
-                    NSWorkspace.shared.open(DashPaths.logsDir)
+                    NSWorkspace.shared.open(ClamPaths.logsDir)
                 case .building:
                     break
                 }
@@ -609,7 +609,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// ⌘,：壳只负责喊一声，谁有能力谁去做（layout 拥有会话展示面）。
     @objc private func openSettings() {
-        nativeHost.events.emit(DashEventBus.Topic.menuCommand, ["command": "openSettings"])
+        nativeHost.events.emit(ClamEventBus.Topic.menuCommand, ["command": "openSettings"])
     }
 
     @objc private func reconnectNow() {
@@ -621,7 +621,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     @objc private func openLogs() {
-        NSWorkspace.shared.open(DashPaths.logsDir)
+        NSWorkspace.shared.open(ClamPaths.logsDir)
     }
 
     /// ⌥⌘D：把壳此刻的全部认知摊平成一屏可拷贝的文本。
@@ -671,15 +671,15 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 lines.append(contentsOf: log.split(separator: "\n").map { "  \($0)" })
             }
         } else {
-            lines.append("本次连接期间没有重建过（dash-app 没播报过 app-build）")
+            lines.append("本次连接期间没有重建过（clam-app 没播报过 app-build）")
         }
         lines.append("")
         lines.append("── 路径 ──")
         // 日志一个实例一份，写全路径而不是目录——多 worktree 时"我该看哪个文件"
         // 正是最容易搞错的一步。
-        lines.append("日志：\(DashPaths.logURL.path)")
-        lines.append("发现文件：\(DashPaths.endpointsDir.path)")
-        // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 dash 在跑"。
+        lines.append("日志：\(ClamPaths.logURL.path)")
+        lines.append("发现文件：\(ClamPaths.endpointsDir.path)")
+        // 一个 profile 一份，所以这一行同时回答了"这台机器上现在有几套 surfclam 在跑"。
         let discovered = EndpointLocator.discoveredEndpoints()
         let discoveredText = discovered.isEmpty
             ? "无"
@@ -707,17 +707,17 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 if let d = body["diag"] as? [String: Any] {
                     diag = " diag=\(d)"
                 }
-                Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: DashPaths.logURL, tag: "bridge")
-                nativeHost.events.emit(DashEventBus.Topic.pageReady, ["capabilities": caps])
+                Log.write("页内桥就绪：\(caps.joined(separator: ", "))\(diag)", to: ClamPaths.logURL, tag: "bridge")
+                nativeHost.events.emit(ClamEventBus.Topic.pageReady, ["capabilities": caps])
             case "currentSession":
                 if let id = body["id"] as? String {
                     // **粘性**：插件装载晚于页面，不粘的话它拿不到"现在在哪个会话"
-                    // ——而这恰恰是它最需要的那个输入（见 DashEventBus.emitSticky）。
-                    nativeHost.events.emitSticky(DashEventBus.Topic.pageCurrentSession,
+                    // ——而这恰恰是它最需要的那个输入（见 ClamEventBus.emitSticky）。
+                    nativeHost.events.emitSticky(ClamEventBus.Topic.pageCurrentSession,
                                                  ["id": id])
                 }
             case "debug":
-                Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
+                Log.write("页内诊断：\(body["msg"] ?? "?")", to: ClamPaths.logURL, tag: "bridge")
             default:
                 // 去白名单：壳不认得的 type 一律原样广播成 `clam.page.<type>`。
                 // 上面三条留特化分支是因为壳自己也要用（ready 关掉超时警告、
@@ -725,7 +725,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 // 第三方插件接一条新页内消息 = 页面 postMessage + 插件 subscribe，
                 // 壳与 SDK 一个字都不用改（壳是预编译产物，第三方改不了它）。
                 // 防御式仍在：body 不是字典、type 不是字符串，上面两个 guard 已经拦掉。
-                nativeHost.events.emit(DashEventBus.Topic.pagePrefix + type, body)
+                nativeHost.events.emit(ClamEventBus.Topic.pagePrefix + type, body)
             }
 
         default:
@@ -787,7 +787,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: DashPaths.logURL, tag: "web")
+        Log.write("WebView 加载完成：\(webView.url?.absoluteString ?? "?")", to: ClamPaths.logURL, tag: "web")
         // 页面就绪后把键盘焦点交给 WebView，快捷键/输入立即可用
         if let window, window.firstResponder === window || window.firstResponder === window.contentView {
             window.makeFirstResponder(webView)
@@ -795,11 +795,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 导航失败：\(error.localizedDescription)", to: DashPaths.logURL, tag: "web")
+        Log.write("WebView 导航失败：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "web")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        Log.write("WebView 加载失败：\(error.localizedDescription)", to: DashPaths.logURL, tag: "web")
+        Log.write("WebView 加载失败：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "web")
         // dsh 可能正在换端口或还没起完：催一次探测。端点没变就是真加载失败，
         // 延迟重载一次；端点变了/没了，apply 会接管（重装或盖引导页）。
         let before = endpoint

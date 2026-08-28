@@ -1,5 +1,5 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import SwiftUI
 import WebKit
 
@@ -21,7 +21,7 @@ final class LayoutSplitController: NSSplitViewController {
     /// 分隔条宽度的 autosave key（系统级记忆；改默认宽度时换 key 才对已有用户生效）。
     private static let sidebarAutosaveName = "ClamMainSidebar.v2"
 
-    let host: DashHost
+    let host: ClamHost
     private let webView: WKWebView
 
     private var sidebarItem: NSSplitViewItem?
@@ -36,7 +36,7 @@ final class LayoutSplitController: NSSplitViewController {
 
     /// 工具栏贡献的当前快照。工具栏委托只读它，不读 registry——
     /// NSToolbar 会在任意时刻回调委托要项，读快照才能保证一轮重建里前后一致。
-    var toolbarContributions: [DashContributions.Contribution] = []
+    var toolbarContributions: [ClamContributions.Contribution] = []
     /// 每条贡献的"流量"状态（徽标 / 选中 / 菜单 / 显隐）。**跟着 key 记账**：
     /// 项会被重造，状态得比项活得久，否则热替换一次徽标就没了。
     /// 见 `ToolbarContribution.swift`。
@@ -44,7 +44,7 @@ final class LayoutSplitController: NSSplitViewController {
     /// 菜单打开钩子的强持有者（`NSMenu.delegate` 是 weak）。键同贡献的 key。
     var menuOpenRelays: [String: ToolbarMenuOpenRelay] = [:]
     /// 活通道的订阅句柄。随控制器（也就是随世代）走。
-    private var toolbarUpdates: DashDisposable?
+    private var toolbarUpdates: ClamDisposable?
     /// 标题栏拖动的接管钩子（见 `installTitlebarDrag`）。
     private var titlebarDragMonitor: Any?
     /// 上一次广播出去的标题栏厚度。只在变了时才 emit。
@@ -57,7 +57,7 @@ final class LayoutSplitController: NSSplitViewController {
     /// 不在这儿留一份强引用就会在下一次弹出时野指针崩掉。键是贡献的 `key`。
     var toolbarMenuDelegates: [String: ContributionMenuDelegate] = [:]
 
-    init(host: DashHost, webView: WKWebView) {
+    init(host: ClamHost, webView: WKWebView) {
         self.host = host
         self.webView = webView
         super.init(nibName: nil, bundle: nil)
@@ -384,7 +384,7 @@ final class LayoutSplitController: NSSplitViewController {
 
     func contribution(
         for identifier: NSToolbarItem.Identifier
-    ) -> DashContributions.Contribution? {
+    ) -> ClamContributions.Contribution? {
         guard identifier.rawValue.hasPrefix(Self.contributionPrefix) else { return nil }
         let key = String(identifier.rawValue.dropFirst(Self.contributionPrefix.count))
         return toolbarContributions.first { $0.key == key }
@@ -443,12 +443,12 @@ extension LayoutSplitController {
     static let toolbarActivateTopic = LayoutToolbar.activateTopic
 
     /// 贡献落在分隔线的哪一侧。缺省 `sidebar`——**老贡献一个字都不用改**。
-    static func region(of contribution: DashContributions.Contribution) -> String {
+    static func region(of contribution: ClamContributions.Contribution) -> String {
         (contribution.metadata["region"] as? String) == "content" ? "content" : "sidebar"
     }
 
     /// 兜底视图路线的尺寸策略。缺省 `fixed`（当场冻死，见 `makeContributionItem`）。
-    static func sizing(of contribution: DashContributions.Contribution) -> String {
+    static func sizing(of contribution: ClamContributions.Contribution) -> String {
         (contribution.metadata["sizing"] as? String) == "dynamic" ? "dynamic" : "fixed"
     }
 
@@ -457,7 +457,7 @@ extension LayoutSplitController {
     /// 只有 `content` 区认这个键：`leading` 与 `trailing` 之间夹一个
     /// `.flexibleSpace`，于是 trailing 那组被推到窗口右缘、位置钉死。
     /// 中间那段空白是设计的一部分（会话正文列的正中不放东西），不是没排满。
-    static func align(of contribution: DashContributions.Contribution) -> String {
+    static func align(of contribution: ClamContributions.Contribution) -> String {
         (contribution.metadata["align"] as? String) == "trailing" ? "trailing" : "leading"
     }
 
@@ -465,7 +465,7 @@ extension LayoutSplitController {
     ///
     /// **这就是分组语法**：macOS 26 把相邻的工具栏项合成一枚玻璃胶囊，
     /// 一个 `.space` 就把胶囊断开成两枚。想让自己这一项单独成一枚就打开它。
-    static func spaced(of contribution: DashContributions.Contribution) -> Bool {
+    static func spaced(of contribution: ClamContributions.Contribution) -> Bool {
         (contribution.metadata["spaced"] as? Bool) == true
     }
 }
@@ -536,7 +536,7 @@ extension LayoutSplitController {
 ///
 /// ```swift
 /// host.events.emit("clam.toolbar.update", [
-///     "owner": "dash-header", "id": "jobs",   // 认人，必填
+///     "owner": "clam-header", "id": "jobs",   // 认人，必填
 ///     "hidden": false, "badge": 3,            // 以下都是选填，没提到的原样保留
 ///     "enabled": true, "selectedIndex": 1,
 ///     "label": "标准模式", "tooltip": "...",
@@ -634,7 +634,7 @@ extension LayoutSplitController: NSToolbarDelegate {
 
 /// sidebar 槽的容器视图：谁占了就画谁，`.id(version)` 让它随占用者换代整棵重建。
 struct SidebarSlotView: View {
-    let registry: DashRegistry
+    let registry: ClamRegistry
 
     var body: some View {
         if let view = registry.view(for: "sidebar") {

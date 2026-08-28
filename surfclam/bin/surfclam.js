@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * dash 的安装器与开发启动器——一条命令把 profile 备齐并跑起来。
+ * surfclam 的安装器与开发启动器——一条命令把 profile 备齐并跑起来。
  *
  * 两种模式，靠"伞包的兄弟目录里有没有插件源码"自动判别，不需要 flag：
  *
  *   registry 模式（发布后的用户）
- *     npx @wenbo/dash
- *     伞包躺在 npx 缓存里，没有兄弟目录 → 从 registry 装 @wenbo/dash，
- *     它的 dependencies 由 pnpm 一并装进 profile。profile 名 `dash`。
+ *     npx @wenbo/surfclam
+ *     伞包躺在 npx 缓存里，没有兄弟目录 → 从 registry 装 @wenbo/surfclam，
+ *     它的 dependencies 由 pnpm 一并装进 profile。profile 名 `surfclam`。
  *
  *   link 模式（本仓库开发）
- *     node dash/bin/dash.js        （或仓库根的 ./dev）
- *     兄弟目录里有 dash-app/ 等 → 把本 worktree 的各插件 + 伞包全部 link
+ *     node surfclam/bin/surfclam.js    （或仓库根的 ./dev）
+ *     兄弟目录里有 clam-app/ 等 → 把本 worktree 的各插件 + 伞包全部 link
  *     进 profile。改一行存盘即生效，不必发布任何东西。
  *
  * **为什么 link 模式要单独 link 那些插件**：pnpm 对 `link:` 依赖不会去装
@@ -21,12 +21,12 @@
  * 各插件都已摘掉 dsh.bundle 声明，reconcile 不会把它们加进 bundles，
  * 编排权只在伞包那张表上。
  *
- * **worktree**：profile 名随 worktree 走（主 worktree = `dash`，其余 =
- * `dash-<目录名>`），端口默认 `--port 0` 让 OS 挑。于是每个 worktree 各有
+ * **worktree**：profile 名随 worktree 走（主 worktree = `surfclam`，其余 =
+ * `surfclam-<目录名>`），端口默认 `--port 0` 让 OS 挑。于是每个 worktree 各有
  * 一套插件、一个 dsh、一个 App 实例（App 产物路径本就随 worktree 不同），
  * 互不打扰。
  *
- * @module @wenbo/dash/bin
+ * @module @wenbo/surfclam/bin
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -38,13 +38,13 @@ import { fileURLToPath } from "node:url";
 const UMBRELLA_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** 伞包自己的包名——profile 的 bundles 里认的就是它。 */
-const UMBRELLA = "@wenbo/dash";
+const UMBRELLA = "@wenbo/surfclam";
 
 /**
- * xcodegen 二进制在仓库里的位置（相对仓库根）。dash-app/lib/index.js 与
- * `dash-app/host/scripts/{dev,build}.sh` 都写死这条路径，改它要三处一起改。
+ * xcodegen 二进制在仓库里的位置（相对仓库根）。clam-app/lib/index.js 与
+ * `clam-app/host/scripts/{dev,build}.sh` 都写死这条路径，改它要三处一起改。
  */
-const XCODEGEN_REL = "dash-app/host/tools/xcodegen";
+const XCODEGEN_REL = "clam-app/host/tools/xcodegen";
 
 /** 必须在 bundles 里、且必须排在最前的三层 patch。dsh 自带的两个不用装。 */
 const REQUIRED_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", UMBRELLA];
@@ -93,26 +93,26 @@ function detectRepoRoot(pluginNames) {
 	return existsSync(join(parent, dirOf(anyPlugin), "package.json")) ? parent : undefined;
 }
 
-/** `@wenbo/dash-app` → `dash-app`：包名去掉 scope 就是仓库里的目录名。 */
+/** `@wenbo/clam-app` → `clam-app`：包名去掉 scope 就是仓库里的目录名。 */
 function dirOf(packageName) {
 	return packageName.startsWith("@") ? packageName.split("/")[1] : packageName;
 }
 
 /**
- * profile 名。主 worktree 用 `dash`，其余 worktree 用 `dash-<目录名>`——
+ * profile 名。主 worktree 用 `surfclam`，其余 worktree 用 `surfclam-<目录名>`——
  * 于是"一个 worktree 一行命令起一套自己的东西"不需要任何额外记忆。
- * @param repoRoot - 仓库根；undefined（registry 模式）时固定为 `dash`。
+ * @param repoRoot - 仓库根；undefined（registry 模式）时固定为 `surfclam`。
  */
 function defaultProfile(repoRoot) {
-	if (repoRoot === undefined) return "dash";
+	if (repoRoot === undefined) return "surfclam";
 	try {
 		const gitDir = git(repoRoot, ["rev-parse", "--absolute-git-dir"]);
 		const common = git(repoRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-		if (gitDir === common) return "dash";
-		return `dash-${basename(repoRoot)}`;
+		if (gitDir === common) return "surfclam";
+		return `surfclam-${basename(repoRoot)}`;
 	} catch {
 		// 不是 git 仓库（或 git 不可用）：按目录名区分，仍然满足"各 worktree 各一套"。
-		return `dash-${basename(repoRoot)}`;
+		return `surfclam-${basename(repoRoot)}`;
 	}
 }
 
@@ -220,10 +220,10 @@ function ensureModuleResolution(repoRoot) {
 }
 
 /**
- * 保证本 worktree 有 `dash-app/host/tools/xcodegen`。
+ * 保证本 worktree 有 `clam-app/host/tools/xcodegen`。
  *
  * 那个二进制**被 .gitignore 挡在库外**（二进制不该入库，规则本身是对的），
- * 于是任何新克隆 / 新 worktree 里它都不存在，而 dash-app 和两个构建脚本都直接
+ * 于是任何新克隆 / 新 worktree 里它都不存在，而 clam-app 和两个构建脚本都直接
  * spawn 它。失败模式极不友好：dsh 照常起、HTTP 200，只是壳静默缺席
  * （`spawn …/tools/xcodegen ENOENT` 埋在构建日志里），而 CLAUDE.md 承诺的是
  * "在任意 worktree 里跑 ./dev 即可"。所以这里和上面那条 node_modules 链接一样，
@@ -231,7 +231,7 @@ function ensureModuleResolution(repoRoot) {
  *
  * 取件顺序：同仓库的其它 worktree（版本必然一致）→ PATH 上的 xcodegen。
  * 一律**拷贝**而不是链接：14MB 一次性开销换"主 worktree 被删掉也不会突然
- * 变回 ENOENT"，而且 dash-app 的 HASHED_ROOTS 明确把 `tools/` 排除在源码 hash
+ * 变回 ENOENT"，而且 clam-app 的 HASHED_ROOTS 明确把 `tools/` 排除在源码 hash
  * 之外，多这个文件不会触发壳的全量重建。
  *
  * 找不到时**只警告不中止**：没装 Xcode 的机器本来就该优雅缺席，
@@ -243,7 +243,7 @@ function ensureXcodegen(repoRoot) {
 
 	const source = findXcodegen(repoRoot);
 	if (source === undefined) {
-		say(`⚠ 缺 ${XCODEGEN_REL}——壳构建会失败，dash-app 优雅缺席（只有浏览器，没有 App）。`);
+		say(`⚠ 缺 ${XCODEGEN_REL}——壳构建会失败，clam-app 优雅缺席（只有浏览器，没有 App）。`);
 		say(`  补法（二选一，然后重跑本命令）：`);
 		say(`    brew install xcodegen`);
 		say(`    从 https://github.com/yonaskolb/XcodeGen/releases 下载 xcodegen.zip，`);
@@ -304,7 +304,7 @@ function realpath(path) {
  * 前台跑 dsh，把终端整个让给它（Ctrl-C 直达 dsh）。
  *
  * 端口默认 `0`：OS 挑一个空闲的。多 worktree 并行时这是唯一不用协调的做法，
- * 而 App 那边不受影响——dash-app 把实际端口写进 endpoint 文件、也用
+ * 而 App 那边不受影响——clam-app 把实际端口写进 endpoint 文件、也用
  * `--clam-endpoint` 直接递给它拉起的壳。
  */
 function start(profile, opts) {
@@ -333,14 +333,14 @@ function parseArgs(argv) {
 }
 
 function usage() {
-	process.stdout.write(`dash —— 安装并启动一套 dash（dsh + macOS 原生壳）
+	process.stdout.write(`surfclam —— 安装并启动一套 surfclam（dsh + macOS 原生壳）
 
-  npx @wenbo/dash                 装到 profile 'dash' 并启动
-  node dash/bin/dash.js           本仓库开发：link 本 worktree 的源码
+  npx @wenbo/surfclam             装到 profile 'surfclam' 并启动
+  node surfclam/bin/surfclam.js   本仓库开发：link 本 worktree 的源码
 
 选项
-  --profile <name>   覆盖 profile 名（默认：主 worktree 用 dash，
-                     其他 worktree 用 dash-<目录名>）
+  --profile <name>   覆盖 profile 名（默认：主 worktree 用 surfclam，
+                     其他 worktree 用 surfclam-<目录名>）
   --port <n>         监听端口，默认 0（让 OS 挑，多 worktree 不会撞）
   --install-only     只装不启动
   -- <args...>       其余参数透传给 dsh
@@ -356,11 +356,11 @@ function readJson(path) {
 }
 
 function say(message) {
-	process.stderr.write(`dash: ${message}\n`);
+	process.stderr.write(`surfclam: ${message}\n`);
 }
 
 function fail(message) {
-	process.stderr.write(`dash: ${message}\n`);
+	process.stderr.write(`surfclam: ${message}\n`);
 	process.exit(1);
 }
 

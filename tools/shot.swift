@@ -21,7 +21,7 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
     exit(code)
 }
 
-var needle = "dash Dev"
+var needle = "Surfclam Dev"
 var outPath: String?
 var scale = 1.0
 var listOnly = false
@@ -42,7 +42,7 @@ while let arg = argv.first {
         usage: tools/shot.sh [--app <name-substring>] [--scale <n>] [out.png]
                tools/shot.sh --list
 
-          --app    窗口所属 App 名 / bundle id / 标题 / **pid** 的子串，默认 "dash Dev"
+          --app    窗口所属 App 名 / bundle id / 标题 / **pid** 的子串，默认 "Surfclam Dev"
                    （匹配到多个时取面积最大的那个，也就是主窗口）
           --scale  相对窗口点尺寸的倍数，默认 1（Retina 原生是 2，给模型看用 1 就够）
           --list   列出当前可截的窗口
@@ -97,7 +97,7 @@ let lowered = needle.lowercased()
 guard let win = visible.first(where: { w in
     let app = w.owningApplication
     // pid 也算进干草堆：多 worktree 并存时窗口名与尺寸一模一样，
-    // **只有 pid 分得开**（`pgrep -af "dash Dev.app/Contents/MacOS"` 取号）。
+    // **只有 pid 分得开**（`pgrep -af "Surfclam Dev.app/Contents/MacOS"` 取号）。
     let hay = [app?.applicationName, app?.bundleIdentifier, w.title,
                app.map { String($0.processID) }]
         .compactMap { $0 }.joined(separator: " ").lowercased()

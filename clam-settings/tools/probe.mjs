@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dash-settings 的桥探针：不开窗口、不碰屏幕，直接当一个"壳"连上 `/clam/bridge`，
+ * clam-settings 的桥探针：不开窗口、不碰屏幕，直接当一个"壳"连上 `/clam/bridge`，
  * 把 node 半边的数据面从头验一遍。
  *
  * **为什么需要它**：设置的数据面（快照形状、单字段写入、乐观锁、redact）全都跑在
@@ -11,20 +11,20 @@
  * **它只读不写，除非你让它写**：`--set` 才会真的改配置，而且改完立刻改回去。
  *
  * 用法：
- *   node dash-settings/tools/probe.mjs                  # 快照概览
- *   node dash-settings/tools/probe.mjs --ns shell       # 某个 ns 的详情
- *   node dash-settings/tools/probe.mjs --set            # 跑一遍写入/回滚/冲突用例
- *   node dash-settings/tools/probe.mjs --providers      # 模型页的数据
- *   node dash-settings/tools/probe.mjs --set-value ui-theme preference system
+ *   node clam-settings/tools/probe.mjs                  # 快照概览
+ *   node clam-settings/tools/probe.mjs --ns shell       # 某个 ns 的详情
+ *   node clam-settings/tools/probe.mjs --set            # 跑一遍写入/回滚/冲突用例
+ *   node clam-settings/tools/probe.mjs --providers      # 模型页的数据
+ *   node clam-settings/tools/probe.mjs --set-value ui-theme preference system
  *
- * 端点自动从 dash-app 的发现文件里找（`<AppSupport>/io.wenbo.dash/endpoints/`）。
+ * 端点自动从 clam-app 的发现文件里找（`<AppSupport>/io.wenbo.surfclam/endpoints/`）。
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 
-const ENDPOINT_DIR = join(homedir(), "Library/Application Support/io.wenbo.dash/endpoints");
+const ENDPOINT_DIR = join(homedir(), "Library/Application Support/io.wenbo.surfclam/endpoints");
 
 const args = process.argv.slice(2);
 const wantNs = valueOf("--ns");
@@ -83,7 +83,7 @@ function invoke(action, payload = {}) {
 			if (acks.delete(id)) reject(new Error(`${action} 超时`));
 		}, 8000);
 		ws.send(JSON.stringify({
-			type: "invoke", plugin: "dash-settings", action, payload: { ...payload, id },
+			type: "invoke", plugin: "clam-settings", action, payload: { ...payload, id },
 		}));
 	});
 }
@@ -106,13 +106,13 @@ const waiters = [];
 let settingsSeq = 0;
 
 ws.on("open", () => {
-	ws.send(JSON.stringify({ type: "hello", clientId: "dash-settings-probe", protocolVersion: 1 }));
+	ws.send(JSON.stringify({ type: "hello", clientId: "clam-settings-probe", protocolVersion: 1 }));
 });
 
 ws.on("message", (data) => {
 	let frame;
 	try { frame = JSON.parse(String(data)); } catch { return; }
-	if (frame.type !== "push" || frame.plugin !== "dash-settings") return;
+	if (frame.type !== "push" || frame.plugin !== "clam-settings") return;
 	if (frame.channel === "settings") { settings = frame.payload; settingsSeq += 1; }
 	if (frame.channel === "providers") providers = frame.payload;
 	if (frame.channel === "ack") {

@@ -3,7 +3,7 @@
  * 不需要跑 dsh、不需要网络、零依赖。
  *
  * ```sh
- * node --test dash-sidebar/test/*.test.js
+ * node --test clam-sidebar/test/*.test.js
  * ```
  *
  * 它钉住的是**我们自己的那部分逻辑**——分组、归一化、去抖、就地翻牌、错误翻译。

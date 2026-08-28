@@ -13,7 +13,7 @@ import WebKit
 ///
 /// **为什么归壳而不归插件**：WKWebView 归壳所有（LayoutSplitController 里
 /// 已把 navigationDelegate/uiDelegate 的归属写死，避开跨代重设的时序问题），
-/// 而且下载与外链是**逃生舱也得有**的能力——dash-layout 缺席、全出血网页兜底时，
+/// 而且下载与外链是**逃生舱也得有**的能力——clam-layout 缺席、全出血网页兜底时，
 /// 导出 ZIP 照样要能下来。
 ///
 /// **一条安全边界**：页面里的链接大多是 LLM 生成的内容，等同不可信输入。所以
@@ -34,7 +34,7 @@ final class WebPolicy: NSObject {
     }
 
     /// 当前连着的 dsh。**每次现取**：壳会重连、会换端口，同源判定不能吃快照。
-    private let currentEndpoint: () -> DashEndpoint?
+    private let currentEndpoint: () -> ClamEndpoint?
     private let presentToast: (ShellToast.Content) -> Void
 
     /// `target="_blank"` 开出来的次级窗口，按其 WKWebView 索引。
@@ -42,7 +42,7 @@ final class WebPolicy: NSObject {
     /// 每个在途下载的落点（完成时要拿它去访达里高亮）。
     private var destinations: [ObjectIdentifier: URL] = [:]
 
-    init(currentEndpoint: @escaping () -> DashEndpoint?,
+    init(currentEndpoint: @escaping () -> ClamEndpoint?,
          presentToast: @escaping (ShellToast.Content) -> Void) {
         self.currentEndpoint = currentEndpoint
         self.presentToast = presentToast
@@ -68,7 +68,7 @@ final class WebPolicy: NSObject {
             closeAuxIfBlank(webView)
             return .cancel
         case .blocked(let reason):
-            Log.write("拦下导航 \(url.absoluteString)：\(reason)", to: DashPaths.logURL, tag: "web")
+            Log.write("拦下导航 \(url.absoluteString)：\(reason)", to: ClamPaths.logURL, tag: "web")
             closeAuxIfBlank(webView)
             return .cancel
         }
@@ -123,7 +123,7 @@ final class WebPolicy: NSObject {
     }
 
     private func openExternally(_ url: URL) {
-        Log.write("外链交给系统：\(url.absoluteString)", to: DashPaths.logURL, tag: "web")
+        Log.write("外链交给系统：\(url.absoluteString)", to: ClamPaths.logURL, tag: "web")
         NSWorkspace.shared.open(url)
     }
 
@@ -215,7 +215,7 @@ extension WebPolicy: WKUIDelegate {
                 openExternally(target)
                 return nil
             case .blocked(let reason):
-                Log.write("拦下新窗口 \(url.absoluteString)：\(reason)", to: DashPaths.logURL, tag: "web")
+                Log.write("拦下新窗口 \(url.absoluteString)：\(reason)", to: ClamPaths.logURL, tag: "web")
                 return nil
             case .inPlace:
                 break
@@ -306,13 +306,13 @@ extension WebPolicy: WKDownloadDelegate {
                   completionHandler: @escaping (URL?) -> Void) {
         let url = destination(for: suggestedFilename)
         destinations[ObjectIdentifier(download)] = url
-        Log.write("开始下载 → \(url.path)", to: DashPaths.logURL, tag: "download")
+        Log.write("开始下载 → \(url.path)", to: ClamPaths.logURL, tag: "download")
         completionHandler(url)
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         guard let url = destinations.removeValue(forKey: ObjectIdentifier(download)) else { return }
-        Log.write("下载完成 \(url.path)", to: DashPaths.logURL, tag: "download")
+        Log.write("下载完成 \(url.path)", to: ClamPaths.logURL, tag: "download")
         // Dock 的下载堆栈靠这条分布式通知弹跳——系统下载体验的那一半，
         // 不发的话文件是到了，但看起来像什么都没发生。
         DistributedNotificationCenter.default().postNotificationName(
@@ -329,7 +329,7 @@ extension WebPolicy: WKDownloadDelegate {
         // 用户自己取消的不必再提醒一次。
         if (error as NSError).code == NSURLErrorCancelled { return }
         let name = url?.lastPathComponent ?? "文件"
-        Log.write("下载失败 \(name)：\(error.localizedDescription)", to: DashPaths.logURL, tag: "download")
+        Log.write("下载失败 \(name)：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "download")
         presentToast(ShellToast.Content(text: "下载失败：\(name)", actionTitle: nil, action: nil))
     }
 }
@@ -339,7 +339,7 @@ extension WebPolicy: WKDownloadDelegate {
 /// `target="_blank"` / `window.open` 开出来的普通窗口。
 ///
 /// 刻意朴素：标准标题栏、⌘W 可关、内容就是一个铺满的 WKWebView。它承载的是
-/// "看一眼就关掉"的东西（一张图、一份 raw 文本），不该长得像第二个 dash。
+/// "看一眼就关掉"的东西（一张图、一份 raw 文本），不该长得像第二个 surfclam。
 @MainActor
 private final class AuxWebWindow: NSObject, NSWindowDelegate {
     let webView: WKWebView

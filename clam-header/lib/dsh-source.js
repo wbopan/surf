@@ -2,7 +2,7 @@
  * header 数据源 —— 本插件与 dsh 内部 API 唯一接触的地方。
  *
  * **dsh 升级后先核对这一个文件。** 上游服务名、方法签名、事件名的所有假设都写在
- * 这里，别的文件一处不碰 dsh。（与 dash-sidebar 的 `dsh-source.js` 同一条纪律，
+ * 这里，别的文件一处不碰 dsh。（与 clam-sidebar 的 `dsh-source.js` 同一条纪律，
  * 那份文件里关于「为什么走 ctx.apiProxy 而不是 ctx.sessions」的长篇论证同样适用，
  * 不在这里重复。）
  *
@@ -31,7 +31,7 @@
  * 会把"零往返"这个唯一的优势赔光。要补就后台补、别挡在渲染前面。
  *
  * **没有单会话 RPC**：`session.*` 域只有 `list`，所以拿一条会话的标题也得取全量。
- * dash-sidebar 也在取同一份，两个插件各取一次确实是重复的 I/O——缓解办法是
+ * clam-sidebar 也在取同一份，两个插件各取一次确实是重复的 I/O——缓解办法是
  * 本文件**只在焦点会话及其祖先相关的事件上重取**（`isWatched`），而不是任何
  * `session/event` 都重取。一轮 agent turn 能刷出上百条事件，绝大多数与
  * header 无关。
@@ -45,7 +45,7 @@
  * | `agent/status` | 同上；running 不进 header，但 preset 的可改性跟着 blank 走 |
  * | `jobs.onJobsChanged` | 不是 cordis 事件，是 jobs 服务自己的回调 |
  *
- * @module dash-header/dsh-source
+ * @module clam-header/dsh-source
  */
 import { randomUUID } from "node:crypto";
 
@@ -57,7 +57,7 @@ import { randomUUID } from "node:crypto";
  */
 export const SOURCE_SERVICES = ["apiProxy"];
 
-/** 结构类变化的合并窗口（毫秒）。比 dash-sidebar 的 400 长一点：header 只有一行，
+/** 结构类变化的合并窗口（毫秒）。比 clam-sidebar 的 400 长一点：header 只有一行，
  * 晚半拍没人看得出来，而每次重取都是一轮全量 `session.list`。 */
 const REFETCH_DEBOUNCE_MS = 600;
 
@@ -390,7 +390,7 @@ export function createHeaderSource(ctx, log) {
 	}
 
 	/** wire 上 subagent 行带 `origin:"subagent"`；`parentSessionId` 在场也算
-	 * （与 dash-sidebar 的判据一致，宁可多认不可漏认）。 */
+	 * （与 clam-sidebar 的判据一致，宁可多认不可漏认）。 */
 	function isSubagent(row) {
 		return row.origin === "subagent" || typeof row.parentSessionId === "string";
 	}
@@ -490,7 +490,7 @@ export function createHeaderSource(ctx, log) {
 
 /**
  * 上游的 session id 规范形是 `session-<uuid>`，但 subagent 行在 `session.list`
- * 里可能是**光的 uuid**（dash-sidebar 那边对着活服务点过）。两边都归一化。
+ * 里可能是**光的 uuid**（clam-sidebar 那边对着活服务点过）。两边都归一化。
  */
 function normalizeSessionId(raw) {
 	const id = String(raw);

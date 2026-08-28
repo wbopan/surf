@@ -1,10 +1,10 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import Foundation
 import UserNotifications
 
 /// 系统 delegate 的中转站 —— 壳替插件占住那些**必须在 app 完成启动前就位**的
-/// objc delegate，把回调原样拍平成字典，经 `DashHooks` 交给接手的插件。
+/// objc delegate，把回调原样拍平成字典，经 `ClamHooks` 交给接手的插件。
 ///
 /// ## 为什么这件事非壳不可
 ///
@@ -45,16 +45,16 @@ final class SystemDelegateRelay: NSObject, UNUserNotificationCenterDelegate {
         static let notificationResponse = "system.notification.response"
     }
 
-    private let hooks: DashHooks
+    private let hooks: ClamHooks
 
-    init(hooks: DashHooks = .shared) {
+    init(hooks: ClamHooks = .shared) {
         self.hooks = hooks
     }
 
     /// **必须在 `applicationDidFinishLaunching` 里调用。**
     func install() {
         UNUserNotificationCenter.current().delegate = self
-        Log.write("系统 delegate 中转站已就位（UNUserNotificationCenter）", to: DashPaths.logURL, tag: "relay")
+        Log.write("系统 delegate 中转站已就位（UNUserNotificationCenter）", to: ClamPaths.logURL, tag: "relay")
     }
 
     // MARK: - UNUserNotificationCenterDelegate

@@ -1,5 +1,5 @@
 /*
- * dash-nativeify，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
+ * clam-nativeify，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
  * **职责边界**：只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事，
  * 全部实现是注入一段 CSS，零服务依赖、零跨插件契约：禁掉 document 橡皮筋、
@@ -9,11 +9,11 @@
  *
  * **不在这里的**：
  * - `window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消——那些是原生分栏
- *   接管排版的一部分，住在 dash-layout 的 client 半边（协议两端同包：Swift 侧
+ *   接管排版的一部分，住在 clam-layout 的 client 半边（协议两端同包：Swift 侧
  *   `WebViewConversationSurface` 是它们唯一的调用方）。
  * - 网页侧边栏的任何外观调整（顶部让位、背景透明化以透出原生玻璃）。这些是
  *   「网页侧边栏坐在壳的 NSGlassEffectView 上」那个旧世界的产物，已随 M6 作废：
- *   现在只有两种形态——原生侧边栏（dash-layout 占 root 槽，WebView 装在分栏右侧，
+ *   现在只有两种形态——原生侧边栏（clam-layout 占 root 槽，WebView 装在分栏右侧，
  *   够不着侧边栏那一栏）或完整网页模式（全出血逃生舱，原样展示 dsh UI，不修）。
  *   「用网页侧边栏但把它打扮成原生」这个中间态不存在，别再往回加。
  *
@@ -25,7 +25,7 @@
  * 升级 dsh 后若失效，优先核对该语义名。
  */
 window.__ModuleLoader__.load({
-	id: "@wenbo/dash-nativeify",
+	id: "@wenbo/clam-nativeify",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -161,14 +161,14 @@ window.__ModuleLoader__.load({
 		/** 取原生行高；表里没有的字号直接抛，逼着补测而不是随手算个倍数。 */
 		const lh = (size) => {
 			const v = NATIVE_LINE_HEIGHT[size];
-			if (!v) throw new Error(`dash-nativeify: ${size}px 没有实测行高，先补测再用`);
+			if (!v) throw new Error(`clam-nativeify: ${size}px 没有实测行高，先补测再用`);
 			return v;
 		};
 
 		const CONTROL = 13;   // NSFont.systemFontSize：控件 / 工具调用行 / 次级标签
 
 		/**
-		 * 对话阅读列的字号——**唯一可配置的旋钮**（设置 → 插件 → dash-nativeify →
+		 * 对话阅读列的字号——**唯一可配置的旋钮**（设置 → 插件 → clam-nativeify →
 		 * 对话区字号）。其余全部派生，包括标题阶梯、行内代码、代码块、表格、
 		 * 用户气泡与 composer。
 		 *
@@ -383,7 +383,7 @@ window.__ModuleLoader__.load({
 				`html body [class*="_card"]:has(textarea) { font-size: ${BODY}px; line-height: ${lh(BODY)}px; }`,
 		];
 
-		function insideDash() {
+		function insideClam() {
 			try {
 				return navigator.userAgent.includes("Clam/");
 			} catch {
@@ -402,8 +402,8 @@ window.__ModuleLoader__.load({
 		 * 转成页面的 focus/blur 事件（Safari 里切 app 也是同一套）。这是本插件
 		 * 唯一一段 JS —— 其余全是 CSS。
 		 *
-		 * **刻意不走"让壳注入"那条路**：壳的窗口通知要经 dash-layout 的 Swift
-		 * 半边才够得着 WebView，那会给 dash-nativeify 添一条跨插件契约。收不到
+		 * **刻意不走"让壳注入"那条路**：壳的窗口通知要经 clam-layout 的 Swift
+		 * 半边才够得着 WebView，那会给 clam-nativeify 添一条跨插件契约。收不到
 		 * 事件的后果只是永远停在激活态那套值 = 今天的行为，无害，所以宁可要
 		 * 零依赖。（普通浏览器里 focus/blur 照常工作，效果同样合理。）
 		 */
@@ -491,7 +491,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function apply(ctx) {
-			if (!insideDash()) return;
+			if (!insideClam()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
 
@@ -970,7 +970,7 @@ window.__ModuleLoader__.load({
 				};
 			});
 
-			// 设置面：`dash-nativeify` 这个命名空间由本包的 node 半边注册，
+			// 设置面：`clam-nativeify` 这个命名空间由本包的 node 半边注册，
 			// 原生设置窗口与 dsh 页内设置都会自动列出它（一个都不用改）。
 			//
 			// **运行时嵌套 inject，不是 `exports.inject`**：静态依赖会把上面那两张
@@ -978,7 +978,7 @@ window.__ModuleLoader__.load({
 			// 首帧闪动。缺席（远程浏览器的设置 RPC 只走 loopback，那边永远缺席）
 			// 时字号就一直是默认值——退化，不是故障。
 			ctx.inject(["settingsScope"], (scoped) => {
-				const scope = scoped.settingsScope.bind({ namespace: "dash-nativeify" });
+				const scope = scoped.settingsScope.bind({ namespace: "clam-nativeify" });
 				const sync = () => {
 					const snap = scope.getSnapshot();
 					// `loading` / `unavailable` 时 value 还没有意义，退到默认值。

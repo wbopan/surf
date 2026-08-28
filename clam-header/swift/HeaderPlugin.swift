@@ -1,16 +1,16 @@
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 import SwiftUI
 import WebKit
 
 /// 插件入口。壳按 image handle `dlsym` 取这个符号。
-@_cdecl("dash_plugin_entry")
-public func dash_plugin_entry() -> UnsafeMutableRawPointer {
+@_cdecl("clam_plugin_entry")
+public func clam_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(HeaderPlugin()).toOpaque()
 }
 
-/// dash-header 的 Swift 半身：往 dash-layout 的 `toolbar` 贡献槽的**内容侧**
+/// clam-header 的 Swift 半身：往 clam-layout 的 `toolbar` 贡献槽的**内容侧**
 /// 放五格，网页那条 header 由 client 半边就地折叠。
 ///
 /// 排布是「标识靠左、其余靠右、正中留空」：
@@ -22,7 +22,7 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 /// 留白不是没排满——正文列的正中不放东西，视线从标题落下去一路无遮挡。
 /// 靠右那三枚胶囊由 `spaced` 断开（空隙就是 AppKit 的分组语法）。
 ///
-/// **本插件是 `toolbar` 槽的普通贡献者**，和 dash-layout 自己的"新建会话"
+/// **本插件是 `toolbar` 槽的普通贡献者**，和 clam-layout 自己的"新建会话"
 /// 完全同级——消费方（LayoutSplitController）不认得这几格，也不认得
 /// `Chat`/`Trajectory`/`agentPreset` 是什么，它只负责把贡献摆到分隔线右边。
 ///
@@ -40,34 +40,34 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 /// 两条通道各自把最后一份原样（`NSDictionary`，系统类型跨代安全）存进保管箱，
 /// 下一代先拿它们开局，再各自要一份新的。**箱里绝不放本 module 定义的类型**
 /// ——新旧两代的同名类型互不认识，取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
-final class HeaderPlugin: DashPlugin {
+final class HeaderPlugin: ClamPlugin {
     /// 保管箱里那份最后的 tabs 投影（页内桥那条）。
     private static let tabsKey = "clam.header.tabs"
     /// 保管箱里那份最后的 header 投影（数据桥那条）。
     private static let snapshotKey = "clam.header.snapshot"
-    /// dash-layout 的工具栏贡献槽名。**槽名是插件之间约定的字符串**，
+    /// clam-layout 的工具栏贡献槽名。**槽名是插件之间约定的字符串**，
     /// 壳一个都不认得，所以这里就该硬写而不是去 import 一个常量。
     private static let toolbarSlot = "toolbar"
 
-    func activate(host: DashHost) -> AnyObject? {
+    func activate(host: ClamHost) -> AnyObject? {
         // WKWebView 归壳所有；它不在说明壳还没造好窗口，这时不该装配。
-        guard let webView = host.objects.object(DashObjects.Key.webView, as: WKWebView.self) else {
+        guard let webView = host.objects.object(ClamObjects.Key.webView, as: WKWebView.self) else {
             host.log("保管箱里没有 WKWebView，header 缺席（网页那条 header 原样留着）")
             return nil
         }
-        // 面包屑要能切会话，走的是 dash-layout 的会话展示面（与侧边栏同一条通道）。
-        guard let surface = host.objects.object(DashObjects.Key.conversationSurface)
-                as? DashConversationSurface else {
-            host.log("保管箱里没有会话展示面，header 缺席（dash-layout 没装配？）")
+        // 面包屑要能切会话，走的是 clam-layout 的会话展示面（与侧边栏同一条通道）。
+        guard let surface = host.objects.object(ClamObjects.Key.conversationSurface)
+                as? ClamConversationSurface else {
+            host.log("保管箱里没有会话展示面，header 缺席（clam-layout 没装配？）")
             return nil
         }
 
-        let handle = DashPluginHandle()
+        let handle = ClamPluginHandle()
         let model = HeaderModel(webView: webView, surface: surface, bridge: host.bridge,
                                 generation: host.generation, log: { host.log($0) })
         // full 模式下正文要让开标题栏那条带子。实测窗口的 contentLayoutGuide，
         // 硬编码会在工具栏样式或系统版本变化时错位。
-        // 开局自己量一次：dash-layout 的首帧广播可能早于本插件装配，
+        // 开局自己量一次：clam-layout 的首帧广播可能早于本插件装配，
         // 而它只在**变化时**才发，等不来第二次。之后由 titlebarMetrics 接管。
         model.contentTopInset = Self.titlebarInset(of: webView)
 
@@ -84,7 +84,7 @@ final class HeaderPlugin: DashPlugin {
 
         // client 半边报上来的 tabs 投影。壳对未知 type 一律广播成
         // `clam.page.<type>`（去白名单后的通用转发），这条通道不需要改壳。
-        host.events.subscribe(DashEventBus.Topic.pagePrefix + "headerTabs") { payload in
+        host.events.subscribe(ClamEventBus.Topic.pagePrefix + "headerTabs") { payload in
             host.objects.setObject(Self.tabsKey, payload as NSDictionary) // 先落箱再上屏
             Self.applyTabs(payload, to: model)
         }.kept(by: handle)
@@ -92,21 +92,21 @@ final class HeaderPlugin: DashPlugin {
         // client 半边这一代起来了（页面刷新、client HMR）：重新握手。
         // 与 activate 末尾那次是**同一件事的两个时序**——谁后到谁生效，幂等，
         // 覆盖"原生先起"和"页面先起"两种顺序。
-        host.events.subscribe(DashEventBus.Topic.pagePrefix + "headerReady") { _ in
+        host.events.subscribe(ClamEventBus.Topic.pagePrefix + "headerReady") { _ in
             model.confirmNative()
         }.kept(by: handle)
 
         // client 半边的异步诊断（导航这类"用户刚点过"的动作失败时）。
         // 它没有控制台可写，而 evaluateJavaScript 的回执只能带回**同步**结果
         // ——异步那段只能经页内桥说话。
-        host.events.subscribe(DashEventBus.Topic.pagePrefix + "headerDiag") { payload in
+        host.events.subscribe(ClamEventBus.Topic.pagePrefix + "headerDiag") { payload in
             if let text = payload["text"] as? String { host.log("页面诊断：\(text)") }
         }.kept(by: handle)
 
-        // 焦点会话：页内桥的公共通道（dash-layout 的 client 半边在报）。
+        // 焦点会话：页内桥的公共通道（clam-layout 的 client 半边在报）。
         // node 侧自己是不知道的——「哪个会话正被看着」是浏览器的 UI 状态，
         // 不是 dsh 的领域事实。
-        host.events.subscribe(DashEventBus.Topic.pageCurrentSession) { payload in
+        host.events.subscribe(ClamEventBus.Topic.pageCurrentSession) { payload in
             model.focus(sessionId: payload["id"] as? String)
         }.kept(by: handle)
 
@@ -156,7 +156,7 @@ final class HeaderPlugin: DashPlugin {
         // **子代理会话不进侧边栏，这是它们唯一的入口。**
         //
         // 放右组而不是紧挨标题：`window.title` 是贪心的，会把 content·leading
-        // 的项顶走（见 dash-layout 那条注释）。而且 Mail / Notes 本来就不在
+        // 的项顶走（见 clam-layout 那条注释）。而且 Mail / Notes 本来就不在
         // 标题右边放按钮——标题一侧只有文字，动作全在另一头。
         contribute(host, handle, id: "subagents", order: 0, label: "子代理",
                    align: "trailing", kind: "menu", symbol: "arrow.triangle.branch",
@@ -235,7 +235,7 @@ final class HeaderPlugin: DashPlugin {
         // ---- 标题栏厚度 ----
         //
         // **不是装配时量一次的常量**：用户右键把工具栏改成 Icon and Text，
-        // 那条带子会高一截，正文的顶部留白得跟着走。dash-layout 盯着自己的
+        // 那条带子会高一截，正文的顶部留白得跟着走。clam-layout 盯着自己的
         // 布局，变了就广播一次。
         host.events.subscribe(LayoutToolbar.titlebarMetricsTopic) { payload in
             guard let inset = payload["inset"] as? Double else { return }
@@ -245,7 +245,7 @@ final class HeaderPlugin: DashPlugin {
             model.confirmNative() // 把新的留白值推给页面
         }.kept(by: handle)
 
-        // 现在就要一份厚度。**每代都要问**：dash-layout 只在厚度**变化**时才
+        // 现在就要一份厚度。**每代都要问**：clam-layout 只在厚度**变化**时才
         // 广播，而本插件多半是在它广播完之后才上线的——不问就永远等不到，
         // 症状是"用户把工具栏改成 Icon and Text 之后正文被标签盖住"。
         host.events.emit(LayoutToolbar.titlebarMetricsRequestTopic)
@@ -265,7 +265,7 @@ final class HeaderPlugin: DashPlugin {
         // 下线时把页面上的折叠撤掉。**不撤销 = 网页 header 永久隐藏**，
         // 用户得刷新页面才找得回来。闭包捕着 model，所以它活到这一刻。
         // 换代时旧一代也会走这里，页面靠世代号认出那是过气的一代（见 dismissNative）。
-        DashDisposable { model.dismissNative() }.kept(by: handle)
+        ClamDisposable { model.dismissNative() }.kept(by: handle)
 
         host.log("header 上线 g\(host.generation)（工具栏 4 格 + 窗口标识，"
                  + "顶部留白 \(Int(model.contentTopInset))pt）")
@@ -276,7 +276,7 @@ final class HeaderPlugin: DashPlugin {
     ///
     /// `make` 缺省给一个空视图：原生路线（group / menu / button）根本不看它，
     /// 但槽的签名要求有一个视图工厂——那是给 `view` 路线用的。
-    private func contribute(_ host: DashHost, _ handle: DashPluginHandle,
+    private func contribute(_ host: ClamHost, _ handle: ClamPluginHandle,
                             id: String, order: Double, label: String,
                             align: String = "leading", spaced: Bool = false,
                             kind: String = "view", symbol: String? = nil,

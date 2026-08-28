@@ -1,5 +1,5 @@
 /*
- * dash-header，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
+ * clam-header，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
  * 干三件事，全部围绕**内置 header 那条 tabs 行**：
  *
@@ -39,10 +39,10 @@
  * （插件编译失败、壳是旧版、根本没装）的退化结果是**网页 header 原样露出**，
  * 而不是标题栏和页面各画一半。
  *
- * 门控：UA 含 "Clam/" 且 URL 带 clam-native-sidebar=1，与 dash-layout 同款。
+ * 门控：UA 含 "Clam/" 且 URL 带 clam-native-sidebar=1，与 clam-layout 同款。
  */
 window.__ModuleLoader__.load({
-	id: "@wenbo/dash-header",
+	id: "@wenbo/clam-header",
 	factory: () => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
 		const INSET_VAR = "--clam-header-inset";
 		/** header 槽 outlet 的选择器。槽名是槽系统的一等身份，不会随 CSS 改。 */
 		const HEADER_SEAT = '[data-slot="conversation.session.header"]';
-		/** 巡检周期。与 dash-layout 的守护同一个节奏。 */
+		/** 巡检周期。与 clam-layout 的守护同一个节奏。 */
 		const PATROL_MS = 500;
 
 		/**
@@ -69,13 +69,13 @@ window.__ModuleLoader__.load({
 			try { return "dh" + Math.random().toString(36).slice(2, 10); } catch { return "dh0"; }
 		}
 
-		function insideDash() {
+		function insideClam() {
 			try { return navigator.userAgent.includes("Clam/"); } catch { return false; }
 		}
 
 		function nativeMode() {
 			try {
-				return insideDash()
+				return insideClam()
 					&& new URLSearchParams(window.location.search).get("clam-native-sidebar") === "1";
 			} catch { return false; }
 		}
@@ -168,7 +168,7 @@ window.__ModuleLoader__.load({
 		 *
 		 * **observer 必须常驻并每轮比对节点身份**：header 是 React 组件，
 		 * root entry 重注册会把它整个换成新节点，绑死旧节点的 observer 就此
-		 * 永久失效（与 dash-layout 的 forceSidebarCollapsed 同一个坑）。
+		 * 永久失效（与 clam-layout 的 forceSidebarCollapsed 同一个坑）。
 		 * @returns {{stop: () => void, resync: () => void}} 停止与强制重报
 		 */
 		function trackTabs() {
@@ -200,7 +200,7 @@ window.__ModuleLoader__.load({
 			return {
 				stop: () => { clearInterval(timer); observer?.disconnect(); },
 				// 强制重报：Swift 半身**每装一代**都要一份开局投影，而它换代时
-				// client 这边可能早就报完、去抖住了。与 dash-sidebar 的 `snapshot`
+				// client 这边可能早就报完、去抖住了。与 clam-sidebar 的 `snapshot`
 				// 动作同一条纪律——**不给新世代补发，由请求方自己要**。
 				resync: () => { last = undefined; sync(); },
 			};
@@ -333,7 +333,7 @@ window.__ModuleLoader__.load({
 				/**
 				 * `sessions` 服务，**导航专用**（见下面 openSubagent）。
 				 *
-				 * 三件事照 dash-layout 的 `installBridge` 办，每一条都是踩过的：
+				 * 三件事照 clam-layout 的 `installBridge` 办，每一条都是踩过的：
 				 *
 				 * 1. **走作用域 `ctx.inject` 而不是 `exports.inject`**：顶层 inject
 				 *    会让整个插件在服务缺席时不挂载，而缺 `sessions` 只该让"点

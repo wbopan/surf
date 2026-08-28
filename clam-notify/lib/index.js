@@ -1,5 +1,5 @@
 /**
- * dash-notify —— 可交互桌面通知（计划 `docs/dash-notify-plan.md`）。
+ * clam-notify —— 可交互桌面通知（计划 `docs/clam-notify-plan.md`）。
  *
  * 把 dsh 里「需要人」的四件事变成 macOS 原生通知：点一下跳到那个会话，
  * 通知上的按钮**直接把它办了**，人在 app 里看到之后通知自己消失。
@@ -35,12 +35,12 @@
  * | `dismissAll` | `{}` | 同上，批量（**待办不会被抹掉**，见 inbox.js） |
  * | `focus` | `{sessionId}` | 用户此刻在看这个会话——清掉它的「回合结束」「出错」 |
  *
- * `open`（打开查看）不上行：跳转是纯 Swift 侧动作，走 `DashConversationSurface`。
+ * `open`（打开查看）不上行：跳转是纯 Swift 侧动作，走 `ClamConversationSurface`。
  *
- * @module dash-notify
+ * @module clam-notify
  */
 import z from "@deepseek-ai/schemastery";
-import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
+import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
 import { createInbox } from "./inbox.js";
 import { SOURCE_SERVICES, createMuxSource } from "./mux-source.js";
 
@@ -54,15 +54,15 @@ const COALESCE_MS = 30;
 const SCHEMA_VERSION = 1;
 
 /**
- * `dashPending` 里原因的重要性次序（越靠前越该管）。
+ * `clamPending` 里原因的重要性次序（越靠前越该管）。
  *
  * 「等你批准」「等你回答」是**欠着的事**，不办就卡在那儿；「出错」「跑完了」
  * 是**已经发生的事**，看一眼就过去了——所以前两者永远排在前面。
  */
 const PENDING_ORDER = ["approval", "question", "error", "done"];
 
-/** 设置命名空间。注册一次同时点亮 dash-settings 的原生窗口与 dsh 页内设置对话框。 */
-const SETTINGS_NS = "dash-notify";
+/** 设置命名空间。注册一次同时点亮 clam-settings 的原生窗口与 dsh 页内设置对话框。 */
+const SETTINGS_NS = "clam-notify";
 
 /** 设置缺席时的取值（`settings` 服务不在也要能正常发通知）。 */
 const SETTINGS_DEFAULTS = {
@@ -79,23 +79,23 @@ const SETTINGS_DEFAULTS = {
 
 const ACTIONS = ["inbox", "act", "dismiss", "dismissAll", "focus"];
 
-/** 插件实例 → 动作实现（照 dash-sidebar：`expose` 表在模块求值时就要定好）。 */
+/** 插件实例 → 动作实现（照 clam-sidebar：`expose` 表在模块求值时就要定好）。 */
 const RUNTIME = new WeakMap();
 
 export default createSwiftPlugin({
-	name: "dash-notify",
-	provide: "dash-notify",
-	inject: ["dash-layout"],
+	name: "clam-notify",
+	provide: "clam-notify",
+	inject: ["clam-layout"],
 	swiftDir: new URL("../swift/", import.meta.url),
-	swiftDeps: ["dash-layout"],
+	swiftDeps: ["clam-layout"],
 	schemaVersion: SCHEMA_VERSION,
 
 	subscribe: (api) => {
 		const { ctx, push } = api;
-		const log = reporter(ctx.logger("dash-notify"));
+		const log = reporter(ctx.logger("clam-notify"));
 		let version = 0;
 		let timer;
-		/** `dashPending` 的订阅者（跨插件，见下面 provide 那段）。 */
+		/** `clamPending` 的订阅者（跨插件，见下面 provide 那段）。 */
 		const watchers = new Set();
 		/** 当前设置。`settings` 服务缺席时永远是这一份默认值。 */
 		let settings = { ...SETTINGS_DEFAULTS };
@@ -104,7 +104,7 @@ export default createSwiftPlugin({
 		/** @type {ReturnType<typeof createMuxSource>|undefined} */
 		let source;
 
-		// ---- 供出去的一笔：`dashPending` ----
+		// ---- 供出去的一笔：`clamPending` ----
 		//
 		// 侧边栏那枚「待处理」胶囊要列的东西，跟通知要说的是同一件事：
 		// **有什么在等着你**。真相只该有一份，所以由这里供出去，而不是让侧边栏
@@ -113,8 +113,8 @@ export default createSwiftPlugin({
 		//
 		// 服务名里没有 "notify" 二字是故意的：它表达的是"有事等着你"这个事实，
 		// 通知只是这个事实的一个消费者。消费方一律走**运行时嵌套 inject**
-		// ——dash-notify 缺席时侧边栏退回自己那份 approval-only，不能不挂载。
-		ctx.provide("dashPending", {
+		// ——clam-notify 缺席时侧边栏退回自己那份 approval-only，不能不挂载。
+		ctx.provide("clamPending", {
 			/**
 			 * `sessionId` → 原因数组，**按重要性排好序**（第一个最该管）。
 			 * 优先级只定义在这一处，消费方取 `[0]` 就是"该画哪个指示器"。
@@ -140,7 +140,7 @@ export default createSwiftPlugin({
 
 		// 设置走**运行时嵌套 inject**，不写进插件顶层的 `inject`：写上去就是硬依赖，
 		// dsh 哪天没挂 settings 会让整条通知线安静地不挂载。缺席时退到默认值，
-		// 其余一切照旧（与 dash-nativeify 同一条纪律）。
+		// 其余一切照旧（与 clam-nativeify 同一条纪律）。
 		ctx.inject(["settings"], (scoped) => {
 			const scope = scoped.settings.register(SETTINGS_NS, z.object({
 				enabled: z.boolean().default(true)
@@ -173,7 +173,7 @@ export default createSwiftPlugin({
 				settings = { ...SETTINGS_DEFAULTS, ...(next ?? {}) };
 				inbox?.refresh();
 				schedulePush(true);
-			}), "dash-notify 设置订阅");
+			}), "clam-notify 设置订阅");
 		});
 
 		// 宿主服务同样走作用域 inject：最坏情况是一条通知都没有 + 终端一行 warn，
@@ -204,7 +204,7 @@ export default createSwiftPlugin({
 				source?.dispose();
 				source = undefined;
 				inbox = undefined;
-			}, "dash-notify 事件源");
+			}, "clam-notify 事件源");
 		});
 
 		// 开发用的自测钩子：`CLAM_NOTIFY_SELFTEST=1 ./dev` 会在挂载 3 秒后塞两条
@@ -232,7 +232,7 @@ export default createSwiftPlugin({
 				});
 			}, 3000);
 			timer.unref?.();
-			ctx.effect(() => () => clearTimeout(timer), "dash-notify 自测钩子");
+			ctx.effect(() => () => clearTimeout(timer), "clam-notify 自测钩子");
 		}
 
 		// 服务名对不上时不会有任何异常，只是回调永远不跑——主动查一次哨。
@@ -242,7 +242,7 @@ export default createSwiftPlugin({
 				+ "通知线静默（dsh 版本变动改了服务名？核对 lib/mux-source.js）");
 		}, 10_000);
 		sentinel.unref?.();
-		ctx.effect(() => () => clearTimeout(sentinel), "dash-notify 数据面守望");
+		ctx.effect(() => () => clearTimeout(sentinel), "clam-notify 数据面守望");
 
 		function buildActions() {
 			return {
@@ -302,13 +302,13 @@ export default createSwiftPlugin({
 				items: inbox?.list() ?? [],
 				settings,
 			});
-			// 同一拍里叫醒 `dashPending` 的订阅者。一个订阅者抛错不该带塌别人，
+			// 同一拍里叫醒 `clamPending` 的订阅者。一个订阅者抛错不该带塌别人，
 			// 更不该带塌通知线本身。
 			for (const watcher of watchers) {
 				try {
 					watcher();
 				} catch (error) {
-					log.warn(`dashPending 订阅者抛错：${errorText(error)}`);
+					log.warn(`clamPending 订阅者抛错：${errorText(error)}`);
 				}
 			}
 		}
@@ -326,8 +326,8 @@ export default createSwiftPlugin({
 			await handler(payload ?? {});
 		} catch (error) {
 			const message = errorText(error);
-			api.ctx.logger("dash-notify").warn(`${action} 失败：${message}`);
-			process.stderr.write(`dash-notify: ${action} 失败：${message}\n`);
+			api.ctx.logger("clam-notify").warn(`${action} 失败：${message}`);
+			process.stderr.write(`clam-notify: ${action} 失败：${message}\n`);
 			api.push("error", { action, message });
 		}
 	}])),
@@ -389,12 +389,12 @@ function translate(item, actionId, text) {
 
 /**
  * cordis logger 在 `dsh web` 下没有 exporter：消息只进环形缓冲，终端一个字看不见。
- * 要给蹲终端的人看的东西必须自己写 stderr（与 dash-bridge / dash-sidebar 同款）。
+ * 要给蹲终端的人看的东西必须自己写 stderr（与 clam-bridge / clam-sidebar 同款）。
  */
 function reporter(logger) {
 	const emit = (level, message) => {
 		logger[level](message);
-		process.stderr.write(`dash-notify: ${message}\n`);
+		process.stderr.write(`clam-notify: ${message}\n`);
 	};
 	return {
 		info: (message) => emit("info", message),

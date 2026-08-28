@@ -1,16 +1,16 @@
 import AppKit
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 import SwiftUI
 
 /// 插件入口。壳按 image handle `dlsym` 取这个符号。
-@_cdecl("dash_plugin_entry")
-public func dash_plugin_entry() -> UnsafeMutableRawPointer {
+@_cdecl("clam_plugin_entry")
+public func clam_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(SidebarPlugin()).toOpaque()
 }
 
-/// dash-sidebar 的 Swift 半身：占 dash-layout 的 `sidebar` 槽。
+/// clam-sidebar 的 Swift 半身：占 clam-layout 的 `sidebar` 槽。
 ///
 /// **数据面住在 node 半边**（M10）：会话与工作区的镜像、写操作、事件订阅全在
 /// `lib/index.js`，经桥推 JSON 下来。这半边只做三件事——把投影渲染成列表、
@@ -24,18 +24,18 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 /// 系统类型跨代安全）存进保管箱；下一代 activate 时先拿它渲染，再请求 fresh
 /// 全量，到了就替换。**箱里绝不放本 module 定义的类型**——新旧两代的同名类型
 /// 互不认识，取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
-final class SidebarPlugin: DashPlugin {
+final class SidebarPlugin: ClamPlugin {
     /// 保管箱里那份最后的快照（`NSDictionary`）。
     private static let snapshotKey = "clam.sidebar.snapshot"
 
-    func activate(host: DashHost) -> AnyObject? {
-        guard let surface = host.objects.object(DashObjects.Key.conversationSurface)
-                as? DashConversationSurface else {
-            host.log("保管箱里没有会话展示面，sidebar 缺席（dash-layout 没装配？）")
+    func activate(host: ClamHost) -> AnyObject? {
+        guard let surface = host.objects.object(ClamObjects.Key.conversationSurface)
+                as? ClamConversationSurface else {
+            host.log("保管箱里没有会话展示面，sidebar 缺席（clam-layout 没装配？）")
             return nil
         }
 
-        let handle = DashPluginHandle()
+        let handle = ClamPluginHandle()
 
         // 先用上一代留下的快照开局（没有就是空列表），换代时列表不闪。
         let seed = host.objects.object(Self.snapshotKey, as: NSDictionary.self)
@@ -77,7 +77,7 @@ final class SidebarPlugin: DashPlugin {
         }.kept(by: handle)
 
         // 页内桥上报的当前会话（壳收到 WKScriptMessage 后转成 EventBus 事件）。
-        host.events.subscribe(DashEventBus.Topic.pageCurrentSession) { payload in
+        host.events.subscribe(ClamEventBus.Topic.pageCurrentSession) { payload in
             guard let id = payload["id"] as? String else { return }
             model.pageDidSelect(sessionId: id)
         }.kept(by: handle)
@@ -89,7 +89,7 @@ final class SidebarPlugin: DashPlugin {
             AnyView(SidebarView(model: model, filter: filter, surface: surface))
         }.kept(by: handle)
 
-        // 工具栏的「筛选」。**dash-layout 那格原本是「新建会话」**——新建的入口
+        // 工具栏的「筛选」。**clam-layout 那格原本是「新建会话」**——新建的入口
         // 还有三个（⌘N、分组头的加号、页面自己的按钮），而"哪些工作区显示、
         // 归档要不要露出来"没有别的地方可放，这一格给了它更值。
         //

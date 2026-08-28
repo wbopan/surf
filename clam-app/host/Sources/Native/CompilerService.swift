@@ -2,16 +2,16 @@ import Foundation
 
 /// 桥递下来的一份 Swift 载荷源码。
 struct PluginSource {
-    /// 插件名，如 `dash-sidebar`。
+    /// 插件名，如 `clam-sidebar`。
     let name: String
-    /// 基础 module 名，如 `DashSidebar`（桥算，壳只用）。
+    /// 基础 module 名，如 `ClamSidebar`（桥算，壳只用）。
     let module: String
     /// 相对路径 → utf8 源码。
     let files: [String: String]
     /// Swift module 依赖（插件名），按拓扑序已排在本插件之前。
     let deps: [String]
     /// 本插件声明用到的共享 module（桥已排序去重；DSHKit 退役后暂无住户，机制保留）。
-    /// **不含 `DashSDK`**——那是无条件的 ABI，见 `CompilerService`。
+    /// **不含 `ClamSDK`**——那是无条件的 ABI，见 `CompilerService`。
     let sharedModules: [String]
     /// 桥算的内容 hash（**已折进依赖的 hash**，级联重编靠它）。
     let bridgeHash: String
@@ -21,7 +21,7 @@ struct PluginSource {
 /// 一次编译的产物。
 struct CompiledPlugin {
     let name: String
-    /// 带世代后缀的实际 module 名，如 `DashSidebar_h9f31c0aa12b4`。
+    /// 带世代后缀的实际 module 名，如 `ClamSidebar_h9f31c0aa12b4`。
     /// 后缀取自 contentHash：内容一样就是同一个 module，内容一变就是新 module
     /// ——世代隔离与内容寻址缓存由同一个事实提供。
     let module: String
@@ -48,7 +48,7 @@ enum CompileError: Error {
 actor CompilerService {
     /// ABI module：每个插件无条件链接、变了所有插件都必须重编的那一个。
     /// 其余共享 module 一律按 `PluginSource.sharedModules` 声明处理。
-    static let abiModule = "DashSDK"
+    static let abiModule = "ClamSDK"
 
     /// 共享 module 的 `.swiftmodule`/`.swiftinterface`（bundle 内）。
     private let modulesDir: URL
@@ -72,9 +72,9 @@ actor CompilerService {
     /// 完整内容 hash = 桥的 hash（源码 + 依赖 + 共享 module 声明）
     /// + 本机工具链基线 + **本插件声明用到的**共享 module 的接口摘要。
     ///
-    /// 换 Xcode 或重编 DashSDK 之后必须全量重编，否则 `.swiftmodule` 会对不上。
+    /// 换 Xcode 或重编 ClamSDK 之后必须全量重编，否则 `.swiftmodule` 会对不上。
     /// 但重编某个共享 module 只该波及 import 它的插件——所以共享 module 的摘要
-    /// 按声明逐个折进来，而不是把 `DashModules/` 里的东西一股脑算成一个数。
+    /// 按声明逐个折进来，而不是把 `ClamModules/` 里的东西一股脑算成一个数。
     func contentHash(for source: PluginSource) async -> String {
         var hasher = SHA256Hasher()
         hasher.update(source.module)
@@ -132,7 +132,7 @@ actor CompilerService {
                  dir.appendingPathComponent("\(module).swiftmodule").path]
         // 共享 module：编译期 -I 找 .swiftmodule，链接期 -L 找 bundle 里的 dylib，
         // 运行期靠 -rpath 落到同一个文件上（同一份 image = 类型身份一致）。
-        // DashSDK 无条件（它是 ABI 本身）；其余按插件声明加，没声明的不链接
+        // ClamSDK 无条件（它是 ABI 本身）；其余按插件声明加，没声明的不链接
         // ——import 了共享 module 却忘了声明 sharedModules，swiftc 会带行号报错，
         // 比默认全给更早暴露问题。
         args += ["-I", modulesDir.path, "-L", frameworksDir.path, "-l\(Self.abiModule)"]
@@ -140,7 +140,7 @@ actor CompilerService {
             args += ["-l\(module)"]
         }
         args += ["-Xlinker", "-rpath", "-Xlinker", frameworksDir.path]
-        // 插件间依赖：源码里写 `import DashLayout`，这里用 -module-alias 绑到
+        // 插件间依赖：源码里写 `import ClamLayout`，这里用 -module-alias 绑到
         // 具体世代，世代号对插件作者完全透明（M2 §2 定稿）。
         for dep in source.deps {
             guard let compiled = resolved[dep] else { continue }
@@ -167,12 +167,12 @@ actor CompilerService {
 
         Log.write(String(format: "编译 %@ 完成 %.2fs → %@", source.name,
                          Date().timeIntervalSince(started), module),
-                  to: DashPaths.logURL, tag: "compile")
+                  to: ClamPaths.logURL, tag: "compile")
         return CompiledPlugin(name: source.name, module: module, directory: dir,
                               dylibURL: dylib, contentHash: hash, fromCache: false)
     }
 
-    /// `DashLayout_h9f31c0aa12b4` → `DashLayout`（-module-alias 的左边）。
+    /// `ClamLayout_h9f31c0aa12b4` → `ClamLayout`（-module-alias 的左边）。
     private func baseModule(_ module: String) -> String {
         guard let range = module.range(of: "_h", options: .backwards) else { return module }
         return String(module[module.startIndex..<range.lowerBound])
@@ -180,7 +180,7 @@ actor CompilerService {
 
     // MARK: - 工具链
 
-    /// 目标三元组直接从 DashSDK 的 `.swiftinterface` 头里抄——那是共享 module
+    /// 目标三元组直接从 ClamSDK 的 `.swiftinterface` 头里抄——那是共享 module
     /// 实际用的那个，抄它就不可能对不上（写死常量迟早会与 build-modules.sh 漂移）。
     private func targetTriple() async -> String {
         if let cached = targetTripleCache { return cached }
@@ -202,16 +202,16 @@ actor CompilerService {
         return fallback
     }
 
-    /// **所有**插件共享的编译基线：ABI 版本 + swiftc 版本 + DashSDK 的接口。
+    /// **所有**插件共享的编译基线：ABI 版本 + swiftc 版本 + ClamSDK 的接口。
     ///
-    /// 只有 DashSDK 在这里。它是壳↔插件的 ABI 本身，每个插件都链接它，变了谁都得重编。
+    /// 只有 ClamSDK 在这里。它是壳↔插件的 ABI 本身，每个插件都链接它，变了谁都得重编。
     /// 其余共享 module 按插件声明单独折进 `contentHash`
-    /// ——把整个 `DashModules/` 一股脑算进来，就等于让改一行共享 module 把从不
+    /// ——把整个 `ClamModules/` 一股脑算进来，就等于让改一行共享 module 把从不
     /// import 它的插件也全量重编一遍。
     private func toolchainFingerprint() async -> String {
         if let cached = toolchainFingerprintCache { return cached }
         var hasher = SHA256Hasher()
-        hasher.update(String(dashABIVersionForFingerprint))
+        hasher.update(String(clamABIVersionForFingerprint))
         if let version = try? runSwiftc(["--version"]).output { hasher.update(version) }
         hasher.update(sharedModuleFingerprint(Self.abiModule))
         let value = hasher.finalizeHex()
@@ -259,5 +259,5 @@ actor CompilerService {
 }
 
 /// 编译指纹里带上 ABI 版本：SDK 语义变了就全量重编。
-/// （直接引用 `dashABIVersion` 会把 DashSDK 拖进本文件的 import，没必要。）
-private let dashABIVersionForFingerprint = 1
+/// （直接引用 `clamABIVersion` 会把 ClamSDK 拖进本文件的 import，没必要。）
+private let clamABIVersionForFingerprint = 1

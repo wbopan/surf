@@ -1,10 +1,10 @@
 import AppKit
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 import Observation
 
-/// 把 `HeaderModel` 的状态推成 dash-layout 认得的工具栏 patch。
+/// 把 `HeaderModel` 的状态推成 clam-layout 认得的工具栏 patch。
 ///
 /// ## 为什么需要这么一层
 ///
@@ -27,14 +27,14 @@ import Observation
 /// 叠在一起，段控就会在每次投影到来时闪一下。
 @MainActor
 final class HeaderToolbarSync {
-    private let host: DashHost
+    private let host: ClamHost
     private let model: HeaderModel
     /// 上一次发出去的 patch 摘要，按贡献 id 记。
     private var sent: [String: String] = [:]
     /// 停了就别再续期（插件退休后 model 还活着，但没人该再听它了）。
     private var stopped = false
 
-    init(host: DashHost, model: HeaderModel) {
+    init(host: ClamHost, model: HeaderModel) {
         self.host = host
         self.model = model
     }
@@ -49,7 +49,7 @@ final class HeaderToolbarSync {
     /// 而日志里"header 上线 5 格"写得清清楚楚。
     ///
     /// 不构成循环：handle → disposable → sync，sync 不持有 handle。
-    func start() -> DashDisposable {
+    func start() -> ClamDisposable {
         arm()
         // 布局那边换代重装工具栏时会喊一声要标识。**必须把去重账擦掉再推**，
         // 否则摘要一样就被当成"没变化"给吞了——而窗口那头其实已经空了。
@@ -60,7 +60,7 @@ final class HeaderToolbarSync {
                 self.pushWindowIdentity()
             }
         }
-        return DashDisposable {
+        return ClamDisposable {
             self.stopped = true
             request.dispose()
         }

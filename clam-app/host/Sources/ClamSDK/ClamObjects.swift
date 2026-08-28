@@ -8,9 +8,9 @@ import Foundation
 ///
 /// **禁止放插件自己定义的类型**：新一代 module 里的同名类型与旧一代互不认识，
 /// 取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
-/// 线程约定同 `DashRegistry`：**只在主线程使用**，不加 `@MainActor`
+/// 线程约定同 `ClamRegistry`：**只在主线程使用**，不加 `@MainActor`
 /// （M2 没有覆盖跨 dylib 的 actor 边界，少一个未验证的变量比多一层静态保证划算）。
-public final class DashObjects {
+public final class ClamObjects {
     private var storage: [String: AnyObject] = [:]
 
     public init() {}
@@ -38,12 +38,12 @@ public final class DashObjects {
         public static let webView = "clam.webView"
         /// 当前 dsh 的 HTTP base，`NSURL`。壳在接入/换端点时更新。
         public static let endpoint = "clam.endpoint"
-        /// 会话展示面。协议由 dash-layout 定义（`DashConversationSurface`），
-        /// 消费者需 `import DashLayout` 后转型。
+        /// 会话展示面。协议由 clam-layout 定义（`ClamConversationSurface`），
+        /// 消费者需 `import ClamLayout` 后转型。
         public static let conversationSurface = "clam.conversationSurface"
         /// 设置面板的主人。**取值只看在不在**，所以放一个光秃秃的 `NSObject` 就够
         /// ——正因为只看在不在，它可以是系统类型，不违反"禁止放插件自己定义的类型"。
-        /// dash-settings 在场时占住它，dash-layout 见有主就不再用页内 modal 响应 ⌘,；
+        /// clam-settings 在场时占住它，clam-layout 见有主就不再用页内 modal 响应 ⌘,；
         /// 它不在场时页内 modal 是唯一的设置入口，逃生舱模式也得能改设置。
         public static let settingsOwner = "clam.settingsOwner"
     }

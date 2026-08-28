@@ -17,7 +17,7 @@
  * plugin/status 事件已经在维护 Entry.fiber，再加一层缓存只是多一份要同步的真相）。
  * 上游 Web 是"每次打开设置读一次"，我们跟着来——`refresh` 时重推一次就够。
  *
- * @module dash-settings/inventory
+ * @module clam-settings/inventory
  */
 
 /**
@@ -49,7 +49,7 @@ export function installInventory(api) {
 				});
 			} catch (error) {
 				const message = String(error?.message ?? error);
-				ctx.logger("dash-settings").warn(`插件列表失败：${message}`);
+				ctx.logger("clam-settings").warn(`插件列表失败：${message}`);
 				push("inventory", { available: true, entries: [], error: message });
 			}
 		};

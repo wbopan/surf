@@ -68,7 +68,7 @@
  * 一个不会变的列表。所以：结构类变化去抖 400ms 重取一次（沿用 DSHKit 的窗口），
  * 状态类变化（running / 待审批）直接改缓存里那一行、立刻推。
  *
- * @module dash-sidebar/dsh-source
+ * @module clam-sidebar/dsh-source
  */
 import { randomUUID } from "node:crypto";
 

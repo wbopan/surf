@@ -2,21 +2,21 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// 贡献槽：**多占用**注册表。`DashRegistry` 的孪生兄弟，区别只在基数。
+/// 贡献槽：**多占用**注册表。`ClamRegistry` 的孪生兄弟，区别只在基数。
 ///
-/// - `DashRegistry` 是"替换槽"：一槽一主，后来者覆盖前者。适合 root / sidebar
+/// - `ClamRegistry` 是"替换槽"：一槽一主，后来者覆盖前者。适合 root / sidebar
 ///   这种独占表面——两个插件同时画侧边栏是没有意义的。
-/// - `DashContributions` 是"贡献槽"：一槽 N 条，各家追加、互不影响。适合工具栏
+/// - `ClamContributions` 是"贡献槽"：一槽 N 条，各家追加、互不影响。适合工具栏
 ///   按钮、状态栏指示器、菜单项这种"谁都可以来一条"的表面。
 ///
-/// **为什么单独一个类而不是给 DashRegistry 加个数组**：两种槽的撤销语义不一样
+/// **为什么单独一个类而不是给 ClamRegistry 加个数组**：两种槽的撤销语义不一样
 /// （替换槽的撤销是"如果还是我就摘掉"，贡献槽的撤销是"只摘我这一条"），
 /// 消费方的观察粒度也不一样。混在一个类型里，两边的 API 都会变得要看注释才敢用。
 ///
-/// **只放拓扑，不放流量**（同 DashRegistry）：这里每次变动都会驱动消费方重建。
+/// **只放拓扑，不放流量**（同 ClamRegistry）：这里每次变动都会驱动消费方重建。
 ///
 /// 全进程一份，住在 SDK dylib 里，因此类型身份跨插件、跨世代稳定。
-/// 线程约定：**只在主线程使用**。这里不加 `@MainActor`，理由同 `DashRegistry`
+/// 线程约定：**只在主线程使用**。这里不加 `@MainActor`，理由同 `ClamRegistry`
 /// 顶部注释——M2 没有覆盖跨 dylib 的 actor 边界，少一个未验证的变量更划算。
 ///
 /// ## 这里只有容器，没有词汇
@@ -25,21 +25,21 @@ import SwiftUI
 /// 冻进 ABI，而壳是预编译产物、第三方改不了它。载荷只有两样东西——
 /// 一个视图工厂，一份 `metadata: [String: Any]`（约定只放 JSON 能表达的值）。
 /// 每个槽的 metadata 键名由**占用该槽的消费方**定义并写在自己家里
-/// （如 `toolbar` 槽的约定写在 dash-layout 的 LayoutSplitController 里），
+/// （如 `toolbar` 槽的约定写在 clam-layout 的 LayoutSplitController 里），
 /// 就像槽名本身也是插件之间自行约定的一样。
 @Observable
-public final class DashContributions {
+public final class ClamContributions {
     /// 进程级默认实例。
     ///
     /// SDK dylib 全进程只有一份（随 app bundle 分发，壳与所有插件都链接它），
-    /// 所以这个 static 天然就是进程级单例——和 `DashRegistry` 由壳持有再注入
+    /// 所以这个 static 天然就是进程级单例——和 `ClamRegistry` 由壳持有再注入
     /// 是同一个效果，只是少了一条穿过壳的接线。壳日后想自己持有，
-    /// 给 `DashHost.init` 传 `contributions:` 覆盖即可。
-    public static let shared = DashContributions()
+    /// 给 `ClamHost.init` 传 `contributions:` 覆盖即可。
+    public static let shared = ClamContributions()
 
     /// 一条贡献。
     public struct Contribution {
-        /// 贡献者插件名（诊断用，如 `dash-layout`）。
+        /// 贡献者插件名（诊断用，如 `clam-layout`）。
         public let owner: String
         /// 贡献者自定的条目 id。`(owner, id)` 是这条贡献的身份。
         public let id: String
@@ -79,7 +79,7 @@ public final class DashContributions {
     ///
     /// - Parameters:
     ///   - slot: 槽名。壳一个都不认得，全部由插件之间自行约定
-    ///     （如 dash-layout 认得 `toolbar`）。
+    ///     （如 clam-layout 认得 `toolbar`）。
     ///   - owner: 贡献者插件名。
     ///   - id: 贡献者自定的条目 id，在自己名下唯一即可。
     ///   - order: 排序权重，小的在前。
@@ -99,7 +99,7 @@ public final class DashContributions {
                          order: Double = 0,
                          version: Int = 0,
                          metadata: [String: Any] = [:],
-                         make: @escaping () -> AnyView) -> DashDisposable {
+                         make: @escaping () -> AnyView) -> ClamDisposable {
         let token = UUID()
         var list = entries[slot] ?? []
         let existing = list.firstIndex { $0.owner == owner && $0.id == id }
@@ -120,7 +120,7 @@ public final class DashContributions {
         entries[slot] = list
         revision &+= 1
 
-        return DashDisposable { [weak self] in
+        return ClamDisposable { [weak self] in
             guard let self else { return }
             guard var list = self.entries[slot],
                   let index = list.firstIndex(where: { $0.token == token }) else { return }

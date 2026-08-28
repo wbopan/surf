@@ -1,22 +1,22 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import Foundation
 
-/// dash-app 播报的壳构建状态（`app-build` 帧，计划 §5.4/§7.5）。
+/// clam-app 播报的壳构建状态（`app-build` 帧，计划 §5.4/§7.5）。
 struct AppBuildState {
     /// `building` / `ready` / `failed`；未知值一律当作"没什么可说的"。
     let status: String
     /// 新产物的源码 hash 短前缀，纯给人看。
     let hash: String?
     let durationMs: Int?
-    /// dash-app 配了 `restartOnRebuild`：不必问用户，直接重启。
+    /// clam-app 配了 `restartOnRebuild`：不必问用户，直接重启。
     let autoRestart: Bool
     /// 失败时的日志尾巴。
     let log: String?
 }
 
 /// 插件 dylib 的 C 入口签名（M2 定稿，见 `docs/native-abi.md` §1）。
-private typealias DashPluginEntry = @convention(c) () -> UnsafeMutableRawPointer
+private typealias ClamPluginEntry = @convention(c) () -> UnsafeMutableRawPointer
 
 /// 一个在役的插件世代。
 private struct LoadedPlugin {
@@ -30,8 +30,8 @@ private struct LoadedPlugin {
     /// 它析构时把 activate 期间攒下的注册与订阅一并撤销。
     let handle: AnyObject?
     /// 插件对象本身。与 handle 一起释放。
-    let plugin: DashPlugin
-    let host: DashHost
+    let plugin: ClamPlugin
+    let host: ClamHost
     /// dlopen 的 image。**永不 dlclose**——对 Swift 不安全（类型元数据仍被引用）；
     /// 代码页泄漏式退休，实例由 ARC 正常回收（M2 断言 3b）。
     let image: UnsafeMutableRawPointer
@@ -43,14 +43,14 @@ private struct LoadedPlugin {
 /// `root` 槽的视图，以及一句"boot 门控过了没有"。
 @MainActor
 final class NativePluginHost {
-    // 共享给所有插件、跨世代稳定的三件套（住在 DashSDK dylib 里）。
-    let registry = DashRegistry()
-    let objects = DashObjects()
-    let events = DashEventBus()
+    // 共享给所有插件、跨世代稳定的三件套（住在 ClamSDK dylib 里）。
+    let registry = ClamRegistry()
+    let objects = ClamObjects()
+    let events = ClamEventBus()
 
     /// 首次 snapshot 处理完毕（成功或失败都算）。boot 门控等的就是它。
     private(set) var didSettle = false
-    /// 壳自身的构建状态（dash-app v1 经桥播报，§7.5）。壳自己看，不给插件。
+    /// 壳自身的构建状态（clam-app v1 经桥播报，§7.5）。壳自己看，不给插件。
     private(set) var appBuild: AppBuildState?
     /// 壳构建状态有变时调用。与 `onUpdate` 分开：这条线跟 registry 没关系。
     var onAppBuild: ((AppBuildState) -> Void)?
@@ -69,12 +69,12 @@ final class NativePluginHost {
     private var lastVersion = -1
 
     init() {
-        let base = DashPaths.appSupport.appendingPathComponent("native-plugins", isDirectory: true)
+        let base = ClamPaths.appSupport.appendingPathComponent("native-plugins", isDirectory: true)
         storeDir = base.appendingPathComponent("store", isDirectory: true)
         try? FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
         compiler = CompilerService(
             modulesDir: Bundle.main.bundleURL
-                .appendingPathComponent("Contents/Resources/DashModules", isDirectory: true),
+                .appendingPathComponent("Contents/Resources/ClamModules", isDirectory: true),
             frameworksDir: Bundle.main.bundleURL
                 .appendingPathComponent("Contents/Frameworks", isDirectory: true),
             generationsDir: base.appendingPathComponent("generations", isDirectory: true))
@@ -84,11 +84,11 @@ final class NativePluginHost {
         bridge.onConnected = { [weak self] connected in
             guard let self else { return }
             if connected {
-                Log.write("桥已握手，拉取 snapshot", to: DashPaths.logURL, tag: "bridge")
+                Log.write("桥已握手，拉取 snapshot", to: ClamPaths.logURL, tag: "bridge")
                 self.bridge.send(["type": "snapshot"])
             } else {
                 // 断桥不动 registry：UI 保持最后状态，重连后重新拉全量即可。
-                Log.write("桥断开（registry 保持不动）", to: DashPaths.logURL, tag: "bridge")
+                Log.write("桥断开（registry 保持不动）", to: ClamPaths.logURL, tag: "bridge")
             }
             self.onUpdate?()
         }
@@ -99,8 +99,8 @@ final class NativePluginHost {
     // MARK: - 生命周期
 
     func connect(baseURL: URL, bridgePath: String) {
-        objects.setObject(DashObjects.Key.endpoint, baseURL as NSURL)
-        events.emit(DashEventBus.Topic.endpointChanged, ["httpBase": baseURL.absoluteString])
+        objects.setObject(ClamObjects.Key.endpoint, baseURL as NSURL)
+        events.emit(ClamEventBus.Topic.endpointChanged, ["httpBase": baseURL.absoluteString])
         bridge.stop()
         bridge.start(baseURL: baseURL, path: bridgePath)
     }
@@ -118,12 +118,12 @@ final class NativePluginHost {
     /// 情形（补发、串台、时序意外）最多多转一圈，不会变成开机-退出的死循环。
     private var didRequestRestart = false
 
-    /// 告诉 dash-app"我这就退出，等我死透了按新产物把我拉回来"，然后退出。
+    /// 告诉 clam-app"我这就退出，等我死透了按新产物把我拉回来"，然后退出。
     /// 顺序不能反：先退出就没人发这一帧了。
     func requestRestartApp() {
         guard !didRequestRestart else {
             Log.write("已经请求过一次重启，忽略重复请求（防重启环）",
-                      to: DashPaths.logURL, tag: "app-build")
+                      to: ClamPaths.logURL, tag: "app-build")
             return
         }
         didRequestRestart = true
@@ -159,7 +159,7 @@ final class NativePluginHost {
                 log: frame["log"] as? String)
             appBuild = state
             Log.write("壳构建：\(state.status)\(state.hash.map { " \($0)" } ?? "")",
-                      to: DashPaths.logURL, tag: "app-build")
+                      to: ClamPaths.logURL, tag: "app-build")
             onAppBuild?(state)
 
         case "push":
@@ -233,7 +233,7 @@ final class NativePluginHost {
                 let log = (error as? CompileError).flatMap { if case .failed(let l) = $0 { return l } else { return nil } }
                     ?? "\(error)"
                 Log.write("插件 \(source.name) 装载失败：\(log.suffix(2000))",
-                          to: DashPaths.logURL, tag: "plugin")
+                          to: ClamPaths.logURL, tag: "plugin")
                 bridge.send(["type": "compile-result", "plugin": source.name,
                              "contentHash": hash, "ok": false, "log": log])
                 // 失败即保持上一代在役（§0.5-5：坏的插件不许拖垮系统）。
@@ -244,7 +244,7 @@ final class NativePluginHost {
         let names = Set(sources.map(\.name))
         for (name, plugin) in loaded where !names.contains(name) {
             Log.write("插件 \(name) 已从登记表消失，退休第 \(plugin.generation) 代",
-                      to: DashPaths.logURL, tag: "plugin")
+                      to: ClamPaths.logURL, tag: "plugin")
             loaded.removeValue(forKey: name)
             ledger.recordRetire(plugin: name, module: plugin.module)
         }
@@ -260,29 +260,29 @@ final class NativePluginHost {
         }
         // RTLD_LOCAL + 按 image handle 取符号是必需的：每个插件都导出同名入口，
         // 走全局查找会拿到先装的那个（M2 §1）。
-        guard let symbol = dlsym(image, "dash_plugin_entry") else {
-            throw CompileError.failed(log: "找不到 dash_plugin_entry 符号（插件没写 @_cdecl 入口？）")
+        guard let symbol = dlsym(image, "clam_plugin_entry") else {
+            throw CompileError.failed(log: "找不到 clam_plugin_entry 符号（插件没写 @_cdecl 入口？）")
         }
-        let entry = unsafeBitCast(symbol, to: DashPluginEntry.self)
+        let entry = unsafeBitCast(symbol, to: ClamPluginEntry.self)
         let object = Unmanaged<AnyObject>.fromOpaque(entry()).takeRetainedValue()
-        guard let plugin = object as? DashPlugin else {
-            throw CompileError.failed(log: "入口返回的对象没有实现 DashPlugin（SDK 版本不匹配？）")
+        guard let plugin = object as? ClamPlugin else {
+            throw CompileError.failed(log: "入口返回的对象没有实现 ClamPlugin（SDK 版本不匹配？）")
         }
 
         let name = source.name
-        let host = DashHost(
+        let host = ClamHost(
             plugin: name,
             generation: generation,
             registry: registry,
             objects: objects,
             events: events,
-            store: DashStore(directory: storeDir, namespace: name),
-            bridge: DashBridge(send: { [weak self] action, payload in
+            store: ClamStore(directory: storeDir, namespace: name),
+            bridge: ClamBridge(send: { [weak self] action, payload in
                 self?.bridge.send(["type": "invoke", "plugin": name,
                                    "action": action, "payload": payload])
             }),
             log: { message in
-                Log.write("[\(name) g\(generation)] \(message)", to: DashPaths.logURL, tag: "plugin")
+                Log.write("[\(name) g\(generation)] \(message)", to: ClamPaths.logURL, tag: "plugin")
             })
 
         let handle = plugin.activate(host: host)
@@ -294,14 +294,14 @@ final class NativePluginHost {
                                     handle: handle, plugin: plugin, host: host, image: image)
         if let previous {
             // 松手：旧 handle 析构 → 旧注册自行退场（且只退自己那份，见
-            // DashRegistry.register 的 token 校验）。旧 dylib 留在内存里。
+            // ClamRegistry.register 的 token 校验）。旧 dylib 留在内存里。
             ledger.recordRetire(plugin: name, module: previous.module)
             Log.write("插件 \(name) 换代 g\(previous.generation) → g\(generation)（\(compiled.module)）",
-                      to: DashPaths.logURL, tag: "plugin")
+                      to: ClamPaths.logURL, tag: "plugin")
         } else {
             Log.write("插件 \(name) 装载 g\(generation)（\(compiled.module)"
                       + "\(compiled.fromCache ? "，缓存命中" : "")）",
-                      to: DashPaths.logURL, tag: "plugin")
+                      to: ClamPaths.logURL, tag: "plugin")
         }
         ledger.recordLoad(plugin: name, module: compiled.module, hash: compiled.contentHash)
         onUpdate?()

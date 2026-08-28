@@ -1,19 +1,19 @@
 import AppKit
-import DashLayout
-import DashSDK
+import ClamLayout
+import ClamSDK
 import Foundation
 import SwiftUI
 
 /// 插件入口。壳按 image handle `dlsym` 取这个符号。
-@_cdecl("dash_plugin_entry")
-public func dash_plugin_entry() -> UnsafeMutableRawPointer {
+@_cdecl("clam_plugin_entry")
+public func clam_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(NotifyPlugin()).toOpaque()
 }
 
-/// dash-notify 的 Swift 半身：把 node 推下来的待办变成 macOS 原生通知。
+/// clam-notify 的 Swift 半身：把 node 推下来的待办变成 macOS 原生通知。
 ///
 /// **不占任何槽，也不贡献任何界面**——它只跟系统通知中心和 Dock 角标打交道，
-/// 缺席时什么都不会缺，这也是它敢在 `dash-layout` 之后挂载的原因。
+/// 缺席时什么都不会缺，这也是它敢在 `clam-layout` 之后挂载的原因。
 ///
 /// 这半边只做四件事：
 /// 1. 判断**要不要打扰**（`NotifyPolicy`，输入是"用户此刻在看什么"）；
@@ -24,7 +24,7 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 ///
 /// 一条业务判断都不做：哪些事值得通知、通知写什么字、给哪几颗按钮，
 /// 全是 node 半边组好的（`lib/inbox.js`）。
-final class NotifyPlugin: DashPlugin {
+final class NotifyPlugin: ClamPlugin {
     /// **返回 presenter 而不是 handle**，这是本插件与别家最大的结构差异，
     /// 也是踩过的第一个坑：
     ///
@@ -38,11 +38,11 @@ final class NotifyPlugin: DashPlugin {
     ///
     /// 所以这里反过来：壳持有 presenter，presenter 持有 handle，
     /// handle 持有全部 disposable。壳一松手，整条链按序拆掉。
-    func activate(host: DashHost) -> AnyObject? {
-        // 会话展示面缺席（dash-layout 没装配）**不是致命的**：通知照发照撤，
+    func activate(host: ClamHost) -> AnyObject? {
+        // 会话展示面缺席（clam-layout 没装配）**不是致命的**：通知照发照撤，
         // 只是点了之后跳不过去。与 sidebar 不同——那边缺了面就没有存在意义。
-        let surface = host.objects.object(DashObjects.Key.conversationSurface)
-            as? DashConversationSurface
+        let surface = host.objects.object(ClamObjects.Key.conversationSurface)
+            as? ClamConversationSurface
         if surface == nil {
             host.log("保管箱里没有会话展示面，通知仍然会发，但点击不会跳转")
         }
@@ -73,11 +73,11 @@ final class NotifyPresenter {
     /// "你正看着它"这条判据是瞎的。
     private static let currentSessionKey = "clam.notify.currentSession"
 
-    private let host: DashHost
-    private let surface: DashConversationSurface?
+    private let host: ClamHost
+    private let surface: ClamConversationSurface?
     private let center: NotifyCenter
     /// 本代所有注册与订阅。**由 presenter 持有**（见 `NotifyPlugin.activate` 的注释）。
-    private let handle = DashPluginHandle()
+    private let handle = ClamPluginHandle()
 
     private var items: [NotifyItem] = []
     private var settings = NotifySettings()
@@ -91,7 +91,7 @@ final class NotifyPresenter {
     /// presented 清空、再 present 一轮。屏幕上是同一条，但**响两声**。
     private var ready = false
 
-    init(host: DashHost, surface: DashConversationSurface?) {
+    init(host: ClamHost, surface: ClamConversationSurface?) {
         self.host = host
         self.surface = surface
         self.center = NotifyCenter(log: { host.log($0) })
@@ -173,7 +173,7 @@ final class NotifyPresenter {
         }.kept(by: handle)
 
         // 当前会话：页内桥 → 壳 → EventBus。**这是"要不要打扰"最重要的那个输入。**
-        host.events.subscribe(DashEventBus.Topic.pageCurrentSession) { [weak self] payload in
+        host.events.subscribe(ClamEventBus.Topic.pageCurrentSession) { [weak self] payload in
             MainActor.assumeIsolated {
                 guard let self, let id = payload["id"] as? String else { return }
                 self.noteLooking(at: id)
@@ -197,7 +197,7 @@ final class NotifyPresenter {
                         self?.reconcile()
                     }
                 }
-            handle.keep(DashDisposable {
+            handle.keep(ClamDisposable {
                 NotificationCenter.default.removeObserver(token)
             })
         }

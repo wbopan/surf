@@ -1,7 +1,7 @@
 {
-  "name": "@wenbo/dash-app",
+  "name": "@wenbo/clam-app",
   "version": "0.1.0",
-  "description": "dash macOS 壳的宿主插件：以 host/ 的 Xcode 工程为载荷，按需构建、写 endpoint 发现文件、拉起 dash.app，并 provide 'dashApp'。",
+  "description": "Surfclam macOS 壳的宿主插件：以 host/ 的 Xcode 工程为载荷，按需构建、写 endpoint 发现文件、拉起 Surfclam.app，并 provide 'clamApp'。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

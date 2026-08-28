@@ -3,7 +3,7 @@ import Foundation
 /// 应答式钩子表：**系统要求在 app 启动早期就位、而实现方是运行时才装载的插件**
 /// 的那一类接线。
 ///
-/// ## 为什么需要它（而 `DashEventBus` 不够）
+/// ## 为什么需要它（而 `ClamEventBus` 不够）
 ///
 /// 事件总线是广播 + 无返回值 + 谁在听谁听。有三类需求它表达不了：
 ///
@@ -15,7 +15,7 @@ import Foundation
 ///
 /// ## 为什么这是通用设施，不是给某个功能开的后门
 ///
-/// 表里**一个具体的 hook 名都没有**——与 `DashRegistry`/`DashContributions`
+/// 表里**一个具体的 hook 名都没有**——与 `ClamRegistry`/`ClamContributions`
 /// 同一条纪律：SDK 只放机制，槽名/主题名/hook 名全是插件与壳之间的字符串约定。
 /// 壳那侧的 `SystemDelegateRelay` 负责占住系统 delegate 并把回调**原样拍平**
 /// 成字典，不解释任何语义。
@@ -28,11 +28,11 @@ import Foundation
 /// 加一个住户 = 壳的 relay 多占一个 delegate + 多两行拍平代码，
 /// **SDK 与插件协议一个字不动**。
 ///
-/// 载荷同 `DashEventBus`：只放 JSON 能表达的值。答复也是。
+/// 载荷同 `ClamEventBus`：只放 JSON 能表达的值。答复也是。
 /// 线程约定：只在主线程使用。
-public final class DashHooks {
-    /// 进程级单例。壳与插件都用这一份，不必接线（同 `DashContributions.shared`）。
-    public static let shared = DashHooks()
+public final class ClamHooks {
+    /// 进程级单例。壳与插件都用这一份，不必接线（同 `ClamContributions.shared`）。
+    public static let shared = ClamHooks()
 
     private struct Handler {
         let owner: String
@@ -58,18 +58,18 @@ public final class DashHooks {
     /// （答复被丢弃：那一拍早过去了，没人在等返回值）。
     ///
     /// - Returns: 撤销句柄。**只撤自己那一次**：hook 已被更新的一代接管时，
-    ///   撤销是空操作（与 `DashRegistry.register` 同款 token 校验）。
+    ///   撤销是空操作（与 `ClamRegistry.register` 同款 token 校验）。
     @discardableResult
     public func handle(_ hook: String,
                        owner: String,
                        version: Int,
-                       _ body: @escaping ([String: Any]) -> [String: Any]?) -> DashDisposable {
+                       _ body: @escaping ([String: Any]) -> [String: Any]?) -> ClamDisposable {
         let token = UUID()
         handlers[hook] = Handler(owner: owner, version: version, token: token, body: body)
         if let backlog = retained.removeValue(forKey: hook) {
             for payload in backlog { _ = body(payload) }
         }
-        return DashDisposable { [weak self] in
+        return ClamDisposable { [weak self] in
             guard let self, self.handlers[hook]?.token == token else { return }
             self.handlers.removeValue(forKey: hook)
         }

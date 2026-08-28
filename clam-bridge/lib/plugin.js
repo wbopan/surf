@@ -1,45 +1,45 @@
 /**
  * `createSwiftPlugin` —— 带 Swift 载荷的插件的 node 半边工厂（计划 §4.2）。
  *
- * 它住在 dash-bridge 里而不是自成一包：工厂做的事本就是与桥的登记表 API 对话，
+ * 它住在 clam-bridge 里而不是自成一包：工厂做的事本就是与桥的登记表 API 对话，
  * 契约两端（服务实现与客户端工厂）同住一包，永不漂移。
  *
  * 八成插件的 node 半边就是一段配置：
  *
  * ```js
- * import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
+ * import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
  *
  * export default createSwiftPlugin({
- *   name: "dash-sidebar",
- *   provide: "dash-sidebar",              // 空标记服务，供下游 inject（§4.3）
- *   inject: ["dash-layout"],              // cordis 依赖 = 挂载时序
+ *   name: "clam-sidebar",
+ *   provide: "clam-sidebar",              // 空标记服务，供下游 inject（§4.3）
+ *   inject: ["clam-layout"],              // cordis 依赖 = 挂载时序
  *   swiftDir: new URL("../swift/", import.meta.url),
- *   swiftDeps: ["dash-layout"],           // Swift module 依赖（import DashLayout）
- *   sharedModules: [],                    // 随 bundle 分发的共享 module（DashSDK 无需声明）
+ *   swiftDeps: ["clam-layout"],           // Swift module 依赖（import ClamLayout）
+ *   sharedModules: [],                    // 随 bundle 分发的共享 module（ClamSDK 无需声明）
  *   subscribe: ({ ctx, push }) => { ... },
  *   expose: { archive: (payload, { ctx }) => { ... } },
  * });
  * ```
  *
- * **解析方式**：dash-* 之间用相对路径 import。`healProfilesModuleFallback` 只把
+ * **解析方式**：clam-* 之间用相对路径 import。`healProfilesModuleFallback` 只把
  * harness 的依赖闭包镜像进 `~/.dsh/profiles/node_modules/`，不含用户插件，
  * 所以包名 import 需要额外布线（npm workspace 或手工 symlink）——两者都是
- * 机器本地状态，新克隆的仓库拿不到。相对路径在"所有 dash-* 是同一仓库里的兄弟
+ * 机器本地状态，新克隆的仓库拿不到。相对路径在"所有 clam-* 是同一仓库里的兄弟
  * 目录"这个前提下永远成立，零配置。
  *
- * @module dash-bridge/plugin
+ * @module clam-bridge/plugin
  */
 import { fileURLToPath } from "node:url";
 
 /**
  * @param {object} options
- * @param {string} options.name 插件名，同时决定 Swift module 名（dash-sidebar → DashSidebar）。
+ * @param {string} options.name 插件名，同时决定 Swift module 名（clam-sidebar → ClamSidebar）。
  * @param {string} [options.provide] 要 provide 的空标记服务名（让别的插件能 inject 自己）。
- * @param {string[]} [options.inject] 额外的 cordis 依赖（`dashBridge` 会自动加上）。
+ * @param {string[]} [options.inject] 额外的 cordis 依赖（`clamBridge` 会自动加上）。
  * @param {URL|string} options.swiftDir Swift 载荷目录。
  * @param {string[]} [options.swiftDeps] Swift module 依赖（必须同时出现在 inject 里）。
  * @param {string[]} [options.sharedModules] 用到的共享 module（随 app bundle 分发的那些；
- *        DSHKit 退役后暂无住户，机制保留）。**`DashSDK` 不用写**——它是壳↔插件的 ABI，无条件链接。
+ *        DSHKit 退役后暂无住户，机制保留）。**`ClamSDK` 不用写**——它是壳↔插件的 ABI，无条件链接。
  *        没声明的 module 既不 `-l` 也不进本插件的内容 hash，所以它变动时本插件不会
  *        白白全量重编；反过来，声明了就意味着"它变了我必须重编"。
  * @param {number} [options.schemaVersion] 本插件与 Swift 半身之间数据形状的版本。
@@ -68,7 +68,7 @@ export function createSwiftPlugin(options) {
 	// swiftDeps ⊆ inject：Swift 编译拓扑序与 cordis 挂载时序必须是同一份声明
 	// （计划 §4.2），否则会出现"上游还没登记、下游已经在等编译"的时序洞。
 	const missing = swiftDeps.filter((dep) => !inject.includes(dep));
-	const injects = ["dashBridge", ...inject, ...missing];
+	const injects = ["clamBridge", ...inject, ...missing];
 
 	return {
 		name,
@@ -90,7 +90,7 @@ export function createSwiftPlugin(options) {
 				push: (channel, payload) => handle.push(channel, payload ?? {}),
 			};
 
-			const handle = ctx.dashBridge.register({
+			const handle = ctx.clamBridge.register({
 				plugin: name,
 				swiftDir: dir,
 				swiftDeps,

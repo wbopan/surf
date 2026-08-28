@@ -79,6 +79,6 @@ final class DiagnosticsPanel: NSWindowController {
     }
 
     @objc private func openLogs() {
-        NSWorkspace.shared.open(DashPaths.logsDir)
+        NSWorkspace.shared.open(ClamPaths.logsDir)
     }
 }

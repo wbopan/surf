@@ -1,15 +1,15 @@
 #!/bin/bash
 # Debug build: generate project, build Debug config, restart the Dev app.
-# Never touches the installed Release app (dash) — Dev/Release are
+# Never touches the installed Release app (Surfclam) — Dev/Release are
 # separate apps meant to run side by side. Pass --quit-release only if you
 # explicitly want the Release app quit first.
 # Usage: scripts/dev.sh [--quit-release]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="dash Dev"               # Debug product name (project.yml configs.Debug)
-RELEASE_NAME="dash"               # installed Release app name
-TARGET_NAME="dash"
+APP_NAME="Surfclam Dev"               # Debug product name (project.yml configs.Debug)
+RELEASE_NAME="Surfclam"               # installed Release app name
+TARGET_NAME="surfclam"
 CONFIGURATION="Debug"
 DERIVED_DATA="build"
 PRODUCT_PATH="build/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
@@ -29,7 +29,7 @@ fi
 # 时间戳文件不入库：generate 扫描目录前先创建，否则新克隆的首次构建产物缺该资源。
 scripts/write-build-timestamp.sh
 
-# xcodegen 二进制不入库（.gitignore `/dash-app/host/tools/`），新克隆 / 新 worktree
+# xcodegen 二进制不入库（.gitignore `/clam-app/host/tools/`），新克隆 / 新 worktree
 # 里没有它。不拦这一下，报错就只有一句 "No such file or directory"。
 if [[ ! -x ./tools/xcodegen ]]; then
   echo "error: 缺 $(pwd)/tools/xcodegen（该二进制不入库）" >&2

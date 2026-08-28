@@ -1,7 +1,7 @@
 {
-	"name": "@wenbo/dash-notify",
+	"name": "@wenbo/clam-notify",
 	"version": "0.1.0",
-	"description": "dash 的可交互桌面通知：node 半边订 apiProxy 的 mux 帧流，Swift 半边发原生通知并把用户的决定原路答回 dsh",
+	"description": "clam 的可交互桌面通知：node 半边订 apiProxy 的 mux 帧流，Swift 半边发原生通知并把用户的决定原路答回 dsh",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

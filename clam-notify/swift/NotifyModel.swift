@@ -182,7 +182,7 @@ enum NotifyPolicy {
     /// 待批准与待回答不在此列——那两类要真答了才算完，光看着不作数。
     ///
     /// 为什么不能只撤屏幕上的通知：侧边栏那枚「待处理」胶囊读的是 node 那份待办
-    /// （经 `dashPending`），通知撤了而待办还在的话，胶囊会一直亮着一条用户
+    /// （经 `clamPending`），通知撤了而待办还在的话，胶囊会一直亮着一条用户
     /// 明明已经看过的行。
     static func shouldClear(_ item: NotifyItem, focus: NotifyFocus) -> Bool {
         guard item.isPending, item.kind == "done" || item.kind == "error" else { return false }

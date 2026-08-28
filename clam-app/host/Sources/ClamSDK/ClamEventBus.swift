@@ -6,9 +6,9 @@ import Foundation
 /// （String / Int / Double / Bool / 数组 / 字典）。放引用类型就等于让引用过桥，
 /// 换代后另一头拿到的会是一个新 module 认不出来的旧类型。
 ///
-/// 订阅句柄绑插件世代（攒进 `DashPluginHandle`），旧代退休时一并吊销，
+/// 订阅句柄绑插件世代（攒进 `ClamPluginHandle`），旧代退休时一并吊销，
 /// 防幽灵监听。线程约定：只在主线程 emit/subscribe。
-public final class DashEventBus {
+public final class ClamEventBus {
     private var handlers: [String: [UUID: ([String: Any]) -> Void]] = [:]
     /// 粘性主题的最后一次载荷（见 `emitSticky`）。
     private var sticky: [String: [String: Any]] = [:]
@@ -18,11 +18,11 @@ public final class DashEventBus {
     /// 订阅一个主题。**主题是粘性的话，这里会同步回调一次最后那份载荷。**
     @discardableResult
     public func subscribe(_ topic: String,
-                          _ handler: @escaping ([String: Any]) -> Void) -> DashDisposable {
+                          _ handler: @escaping ([String: Any]) -> Void) -> ClamDisposable {
         let token = UUID()
         handlers[topic, default: [:]][token] = handler
         if let last = sticky[topic] { handler(last) }
-        return DashDisposable { [weak self] in
+        return ClamDisposable { [weak self] in
             self?.handlers[topic]?.removeValue(forKey: token)
         }
     }

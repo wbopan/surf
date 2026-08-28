@@ -1,10 +1,10 @@
 {
-	"name": "@wenbo/dash",
+	"name": "@wenbo/surfclam",
 	"version": "0.1.0",
-	"description": "dash：把 dsh 的 Web UI 装进 macOS 原生壳。伞 bundle——本包不含运行时代码，只有一张编排表（cordis.patch.yml）和一个安装器（bin/dash.js）。",
+	"description": "surfclam：把 dsh 的 Web UI 装进 macOS 原生壳。伞 bundle——本包不含运行时代码，只有一张编排表（cordis.patch.yml）和一个安装器（bin/surfclam.js）。",
 	"type": "module",
 	"bin": {
-		"dash": "./bin/dash.js"
+		"surfclam": "./bin/surfclam.js"
 	},
 	"files": [
 		"bin",
@@ -18,14 +18,14 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@wenbo/dash-app": "^0.1.0",
-		"@wenbo/dash-bridge": "^0.1.0",
-		"@wenbo/dash-layout": "^0.1.0",
-		"@wenbo/dash-sidebar": "^0.1.0",
-		"@wenbo/dash-header": "^0.1.0",
-		"@wenbo/dash-notify": "^0.1.0",
-		"@wenbo/dash-settings": "^0.1.0",
-		"@wenbo/dash-nativeify": "^0.1.0"
+		"@wenbo/clam-app": "^0.1.0",
+		"@wenbo/clam-bridge": "^0.1.0",
+		"@wenbo/clam-layout": "^0.1.0",
+		"@wenbo/clam-sidebar": "^0.1.0",
+		"@wenbo/clam-header": "^0.1.0",
+		"@wenbo/clam-notify": "^0.1.0",
+		"@wenbo/clam-settings": "^0.1.0",
+		"@wenbo/clam-nativeify": "^0.1.0"
 	},
 	"dsh": {
 		"bundle": {

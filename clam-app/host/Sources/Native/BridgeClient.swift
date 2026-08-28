@@ -7,7 +7,7 @@ import Foundation
 /// 所以"重连=重新握手+重新拉全量"永远是安全动作。
 @MainActor
 final class BridgeClient {
-    /// 桥协议版本，必须与 dash-bridge 的 `PROTOCOL_VERSION` 一致。
+    /// 桥协议版本，必须与 clam-bridge 的 `PROTOCOL_VERSION` 一致。
     static let protocolVersion = 1
 
     /// 收到一帧（已解析成字典）。
@@ -57,7 +57,7 @@ final class BridgeClient {
               let text = String(data: data, encoding: .utf8) else { return }
         task.send(.string(text)) { error in
             if let error {
-                Log.write("桥发送失败：\(error.localizedDescription)", to: DashPaths.logURL, tag: "bridge")
+                Log.write("桥发送失败：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "bridge")
             }
         }
     }
@@ -90,7 +90,7 @@ final class BridgeClient {
                     self.receive()
                 case .failure(let error):
                     Log.write("桥连接中断：\(error.localizedDescription)",
-                              to: DashPaths.logURL, tag: "bridge")
+                              to: ClamPaths.logURL, tag: "bridge")
                     self.setConnected(false)
                     self.scheduleReconnect()
                 }

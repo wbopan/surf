@@ -6,8 +6,8 @@
  * 只会命中第一条，这个坑踩过两次）。这里跑一遍 apply()，抓下 style.textContent，
  * 顺带数括号。
  *
- *   node dash-nativeify/tools/dump-css.mjs            # 全量
- *   node dash-nativeify/tools/dump-css.mjs nofx tint  # 只看含关键字的规则
+ *   node clam-nativeify/tools/dump-css.mjs            # 全量
+ *   node clam-nativeify/tools/dump-css.mjs nofx tint  # 只看含关键字的规则
  *
  * 桩的两个坑：
  *  · Node 18+ 自带只读的 `navigator`，直接赋值会静默失效 —— 必须 defineProperty，

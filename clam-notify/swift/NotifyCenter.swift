@@ -1,5 +1,5 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import Foundation
 import UserNotifications
 
@@ -15,7 +15,7 @@ import UserNotifications
 /// add 不报错、日志一片祥和，只是 **app 在前台时不弹横幅、所有按钮都没反应**。
 ///
 /// 所以 delegate 归壳：`SystemDelegateRelay` 在 `applicationDidFinishLaunching`
-/// 里占住它，把回调原样拍平经 `DashHooks` 转发。壳不解释任何通知语义，
+/// 里占住它，把回调原样拍平经 `ClamHooks` 转发。壳不解释任何通知语义，
 /// 那是个通用的中转站（下一个住户可能是 URL scheme 或 Services 菜单）。
 /// 本插件只是**接手 hook 的那个人**，一切判断仍在这边。
 ///
@@ -125,8 +125,8 @@ final class NotifyCenter {
     ///   - present: 给 itemId，答"要哪些呈现方式"（空数组 = 不显示）。
     ///   - onOpen: 点了卡片本体或带 foreground 的按钮。
     ///   - onAction: 按了别的按钮（`text` 只在文本输入那颗上有值）。
-    func installHooks(host: DashHost,
-                      handle: DashPluginHandle,
+    func installHooks(host: ClamHost,
+                      handle: ClamPluginHandle,
                       present: @escaping (_ itemId: String) -> [String],
                       onOpen: @escaping (_ itemId: String, _ sessionId: String) -> Void,
                       onAction: @escaping (_ itemId: String, _ actionId: String, _ text: String?) -> Void) {
@@ -285,7 +285,7 @@ final class NotifyCenter {
     /// 实例指纹：拿 bundle 的绝对路径算一个短 hash。
     ///
     /// 多 worktree 时两个 Dev 实例 bundle id 相同、产物路径不同，这是唯一稳定的
-    /// 区分依据（壳那边的 `DashPaths.instanceTag` 同源，但它在壳的 Sources 里，
+    /// 区分依据（壳那边的 `ClamPaths.instanceTag` 同源，但它在壳的 Sources 里，
     /// 不随 SDK 分发，插件够不着，只能自己算）。
     private static func instanceTag() -> String {
         let path = Bundle.main.bundleURL.path

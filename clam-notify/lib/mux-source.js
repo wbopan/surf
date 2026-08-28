@@ -10,7 +10,7 @@
  * cordis 事件可订**：
  *
  * - `approval/request` 是个 waterfall 抢答钩子，插一脚进去会和 apiproxy 抢着回答
- *   用户的审批（`dash-sidebar/lib/dsh-source.js` 已经踩过这条线，别再踩）。
+ *   用户的审批（`clam-sidebar/lib/dsh-source.js` 已经踩过这条线，别再踩）。
  *   session log 里那两条 `approval/asked｜decided` 是**审计事件**，只说"问过了"，
  *   不给你回答用的钥匙。
  * - `ask_user_question` 更彻底：既不发 cordis 事件、也不落 session log，唯一的
@@ -34,7 +34,7 @@
  * 这不是错误，是正常结局——意味着"通知上点了允许"和"网页里点了允许"天然不打架，
  * 先点的赢。我们据此把通知撤下即可。
  *
- * @module dash-notify/mux-source
+ * @module clam-notify/mux-source
  */
 import { randomUUID } from "node:crypto";
 

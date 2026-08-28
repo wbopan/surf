@@ -12,13 +12,13 @@ import SwiftUI
 /// 这里不加 `@MainActor`——M2 没有覆盖跨 dylib 的 actor 边界，
 /// 少一个未验证的变量比多一层静态保证划算。
 @Observable
-public final class DashRegistry {
+public final class ClamRegistry {
     /// 一个槽的占用记录。
     public struct Entry {
-        /// 占用者插件名（诊断用，如 `dash-layout`）。
+        /// 占用者插件名（诊断用，如 `clam-layout`）。
         public let owner: String
         /// 世代号。消费方对视图挂 `.id(version)`：跳变即整棵重建，
-        /// `@State` 归零，由 `DashStore` 或 TS 半身 rehydrate。
+        /// `@State` 归零，由 `ClamStore` 或 TS 半身 rehydrate。
         public let version: Int
         /// 视图工厂。每次重建调用一次。
         public let make: () -> AnyView
@@ -34,7 +34,7 @@ public final class DashRegistry {
     ///
     /// - Parameters:
     ///   - slot: 槽名。壳只认得 `root`；其余槽名由插件之间自行约定
-    ///     （如 dash-layout 认得 `sidebar`）。
+    ///     （如 clam-layout 认得 `sidebar`）。
     ///   - owner: 插件名，进诊断。
     ///   - version: 世代号，取插件装载时壳给的那个。
     ///   - make: 视图工厂。
@@ -44,10 +44,10 @@ public final class DashRegistry {
     public func register(slot: String,
                          owner: String,
                          version: Int,
-                         make: @escaping () -> AnyView) -> DashDisposable {
+                         make: @escaping () -> AnyView) -> ClamDisposable {
         let token = UUID()
         entries[slot] = Entry(owner: owner, version: version, make: make, token: token)
-        return DashDisposable { [weak self] in
+        return ClamDisposable { [weak self] in
             guard let self, self.entries[slot]?.token == token else { return }
             self.entries.removeValue(forKey: slot)
         }

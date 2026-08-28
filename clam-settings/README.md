@@ -1,10 +1,10 @@
-# dash-settings
+# clam-settings
 
 一扇真正的原生设置窗口：**窗框、导航、控件全是 AppKit/SwiftUI**，不加载任何网页。
 数据面由跑在 dsh 进程里的 node 半边直接消费 host 服务（`ctx.settings` / `ctx.llm` /
 credentials / `ctx.agentPresets` / `ctx.pluginInventory`），桥上只走 JSON 快照与动作。
 
-权威计划在 [`docs/dash-settings-plan.md`](../docs/dash-settings-plan.md)——
+权威计划在 [`docs/clam-settings-plan.md`](../docs/clam-settings-plan.md)——
 动手前先读它，尤其 §1（三条走不通的路，别重走）、§4（编辑器语义）、§5（三条红线）。
 
 **当前进度：M0～M7 全部完成**，四栏与 Web 逐条对齐。全链路实测过：在原生窗口点一下
@@ -139,7 +139,7 @@ macOS 27 起可以显式指定——`.pickerStyle(.tabs)` 是浅色凸起的标�
 ## 缺席时会发生什么（这是设计好的，不是意外）
 
 `settings` 服务是**硬 inject**：服务不在，整个插件不挂载 → Swift 半边不会去占
-`DashObjects.Key.settingsOwner` → dash-layout 见无主，⌘, 回落到 dsh 自己的页内
+`ClamObjects.Key.settingsOwner` → clam-layout 见无主，⌘, 回落到 dsh 自己的页内
 modal。一个设置界面缺席时的正确姿态是让位给还能用的那个，不是开出一扇空窗。
 
 `llm` / `credentials` 反过来：它们缺席只该让「模型」那一页不出现，不该连累整扇窗口，
@@ -191,10 +191,10 @@ does not add plugin mutation controls"。那个「已启用/已停用」是编�
 ## 怎么验它
 
 ```sh
-node dash-settings/tools/probe.mjs              # 快照概览：ns / 字段数 / 覆盖数 / revision
-node dash-settings/tools/probe.mjs --ns shell   # 某个 ns 的 schema 与值
-node dash-settings/tools/probe.mjs --providers  # 模型页的数据
-node dash-settings/tools/probe.mjs --set        # 写入 / 回读 / 乐观锁冲突 / 还原
+node clam-settings/tools/probe.mjs              # 快照概览：ns / 字段数 / 覆盖数 / revision
+node clam-settings/tools/probe.mjs --ns shell   # 某个 ns 的 schema 与值
+node clam-settings/tools/probe.mjs --providers  # 模型页的数据
+node clam-settings/tools/probe.mjs --set        # 写入 / 回读 / 乐观锁冲突 / 还原
 ```
 
 数据面全跑在 dsh 进程里，跟 SwiftUI 没有半点关系——用截图验它等于让 21KB 的 JSON

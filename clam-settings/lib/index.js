@@ -1,5 +1,5 @@
 /**
- * dash-settings —— 原生设置窗口（计划 docs/dash-settings-plan.md）。
+ * clam-settings —— 原生设置窗口（计划 docs/clam-settings-plan.md）。
  *
  * node 半边登记 Swift 载荷，并在 dsh 进程里**直接消费 host 服务**：
  * `ctx.settings.describe()` 出快照往下推，`mutate` 的单字段 op 往上收。
@@ -13,12 +13,12 @@
  * 不该连累整扇窗口，所以走运行时 `ctx.inject([...], cb)` 嵌套（见 ./models.js）
  * ——这个 cordis fork 的 `inject` 没有 `{required, optional}` 形态。
  *
- * **不 inject `dash-layout`**：设置是自己的窗口，不占任何槽，也不需要会话展示面
+ * **不 inject `clam-layout`**：设置是自己的窗口，不占任何槽，也不需要会话展示面
  * ——完整网页模式（layout 缺席的逃生舱）下 ⌘, 照样该开出原生设置窗口。
  *
- * @module dash-settings
+ * @module clam-settings
  */
-import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
+import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
 import { installModels, setCredential, unsetCredential } from "./models.js";
 import { installPresets } from "./presets.js";
 import { installInventory } from "./inventory.js";
@@ -72,8 +72,8 @@ function describeToWire(d) {
 }
 
 export default createSwiftPlugin({
-	name: "dash-settings",
-	provide: "dash-settings",
+	name: "clam-settings",
+	provide: "clam-settings",
 	inject: ["settings"],
 	swiftDir: new URL("../swift/", import.meta.url),
 
@@ -93,7 +93,7 @@ export default createSwiftPlugin({
 					hasDocument: typeof ctx.settings.documentPath === "string",
 				});
 			} catch (error) {
-				ctx.logger("dash-settings").warn(`快照失败：${String(error?.message ?? error)}`);
+				ctx.logger("clam-settings").warn(`快照失败：${String(error?.message ?? error)}`);
 			}
 		};
 
@@ -218,7 +218,7 @@ async function mutate(api, payload, ops) {
 /**
  * 回执。
  *
- * **桥本身是单向的**——`invoke` 的返回值被 dash-bridge 丢弃（只在抛错时记一行日志）。
+ * **桥本身是单向的**——`invoke` 的返回值被 clam-bridge 丢弃（只在抛错时记一行日志）。
  * 请求/响应语义因此在本插件这一层实现：每个 invoke 带 `id`，回执按 id 配对。
  * 没带 id 的调用（不该有）静默跳过，免得推一堆无主的 ack。
  */

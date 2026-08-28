@@ -6,7 +6,7 @@
  * 静态 `inject` 没有 `{required, optional}` 形态，嵌套是它表达可选依赖的唯一方式。
  * `credentials` 再可选一层：它不在，provider 还是列得出来，只是不知道 key 配没配。
  *
- * @module dash-settings/models
+ * @module clam-settings/models
  */
 
 /**
@@ -97,7 +97,7 @@ export function installModels(api) {
 					providers,
 				});
 			} catch (error) {
-				ctx.logger("dash-settings").warn(`provider 快照失败：${String(error?.message ?? error)}`);
+				ctx.logger("clam-settings").warn(`provider 快照失败：${String(error?.message ?? error)}`);
 			}
 		};
 

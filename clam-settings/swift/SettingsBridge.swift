@@ -1,9 +1,9 @@
-import DashSDK
+import ClamSDK
 import Foundation
 
 /// 本插件与自己 TS 半身之间的请求/响应层。
 ///
-/// **桥本身是单向的**：`DashBridge.send` 只管发，`invoke` 的返回值在 dash-bridge
+/// **桥本身是单向的**：`ClamBridge.send` 只管发，`invoke` 的返回值在 clam-bridge
 /// 那边被丢弃。所以每条动作自带一个 `id`，TS 半身把结果经 `ack` 频道推回来，
 /// 这里按 id 找到等着的那个回调。
 ///
@@ -20,7 +20,7 @@ final class SettingsBridge {
         let value: JSONValue?
     }
 
-    private let bridge: DashBridge
+    private let bridge: ClamBridge
     private let log: (String) -> Void
     private var pending: [String: (Ack) -> Void] = [:]
     private var counter = 0
@@ -29,7 +29,7 @@ final class SettingsBridge {
     /// 就是桥断了或者 dsh 卡住了，两种情况都该告诉用户而不是继续转圈。
     private let timeout: TimeInterval = 8
 
-    init(bridge: DashBridge, log: @escaping (String) -> Void) {
+    init(bridge: ClamBridge, log: @escaping (String) -> Void) {
         self.bridge = bridge
         self.log = log
     }

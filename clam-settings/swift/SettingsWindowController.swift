@@ -1,5 +1,5 @@
 import AppKit
-import DashSDK
+import ClamSDK
 import SwiftUI
 
 /// 设置窗口：**窗框与标签栏归 AppKit，页面内容是 SwiftUI**。

@@ -1,5 +1,5 @@
 /**
- * dash-sidebar —— 原生会话侧边栏（计划 §7.2）。
+ * clam-sidebar —— 原生会话侧边栏（计划 §7.2）。
  *
  * **node 半边就是这个插件的数据面**（M10）。它订宿主的会话/工作区服务与事件，
  * 组好一份"侧边栏要画的东西"的投影，经桥推给 Swift 半身；Swift 那边只管画，
@@ -10,9 +10,9 @@
  * 住在 dsh 进程里、随 npm 可更新，且 Swift 插件怎么热替换它都不动。
  * （M6~M9 时这套逻辑是 Swift 的 `DSHKit.SessionStore`，自己开 WS 解 `/api` 的帧。）
  *
- * `inject`/`swiftDeps` 里的 `dash-layout` 一份声明两层消费：Cordis 据此保证
+ * `inject`/`swiftDeps` 里的 `clam-layout` 一份声明两层消费：Cordis 据此保证
  * "layout 未挂好本插件不挂载、layout 换代时本插件级联重载"，桥据此排编译拓扑序
- * （Swift 侧 `import DashLayout` 拿 `DashConversationSurface`）。
+ * （Swift 侧 `import ClamLayout` 拿 `ClamConversationSurface`）。
  *
  * ## 桥协议
  *
@@ -31,7 +31,7 @@
  * `status` 是字符串而不是数字枚举（加新状态时旧壳解码不会失败，只会当成 idle），
  * 取值 `running` / `pendingApproval` / `pendingQuestion` / `failed` / `done` / `idle`。
  * **后四个里有三个不是这一侧算出来的**：`pendingQuestion` / `failed` / `done` 来自
- * dash-notify 供出来的 `dashPending`（见 `withPending`），dash-notify 缺席时
+ * clam-notify 供出来的 `clamPending`（见 `withPending`），clam-notify 缺席时
  * 就只剩 `running` / `pendingApproval` / `idle` 这三个老取值。
  * `blank` / `isSubagent` / `archived` 原样带上、**不在这里过滤**——"列表里显示什么"
  * 是 UI 政策，归 Swift 的 `AppSidebarModel`。
@@ -59,9 +59,9 @@
  * 搜索留在 Swift 侧的客户端过滤（标题/组名子串），没有走桥——上游的
  * `session.search` 是全文检索，是另一件事，本次不迁也不新增。
  *
- * @module dash-sidebar
+ * @module clam-sidebar
  */
-import { createSwiftPlugin } from "../../dash-bridge/lib/plugin.js";
+import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
 import { SOURCE_SERVICES, createSessionSource } from "./dsh-source.js";
 import { increasedForkTitle } from "./fork-title.js";
 
@@ -76,14 +76,14 @@ const COALESCE_MS = 30;
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  * v1 = M6 的"没有数据面"，v2 = M10 的投影协议，v3 = 副行摘要 `preview` +
  * 归档不再在数据层滤除（新增 `archived`），v4 = `status` 多了 `pendingQuestion`
- * / `failed` / `done` 三个取值（经 `dashPending`，见 `withPending`）。
+ * / `failed` / `done` 三个取值（经 `clamPending`，见 `withPending`）。
  */
 const SCHEMA_VERSION = 4;
 
 /**
- * `dashPending` 的原因 → 投影里的 `status`。
+ * `clamPending` 的原因 → 投影里的 `status`。
  *
- * 键就是 dash-notify 那份待办的 `kind`；它没供出来的类别（将来新加的）在这里
+ * 键就是 clam-notify 那份待办的 `kind`；它没供出来的类别（将来新加的）在这里
  * 查不到就被忽略，不会把一个 Swift 不认得的字符串推下去。
  */
 const REASON_STATUS = {
@@ -121,25 +121,25 @@ const ACTIONS = ["snapshot", "archive", "renameSession", "fork",
 const RUNTIME = new WeakMap();
 
 export default createSwiftPlugin({
-	name: "dash-sidebar",
-	provide: "dash-sidebar",
-	inject: ["dash-layout"],
+	name: "clam-sidebar",
+	provide: "clam-sidebar",
+	inject: ["clam-layout"],
 	swiftDir: new URL("../swift/", import.meta.url),
-	swiftDeps: ["dash-layout"],
+	swiftDeps: ["clam-layout"],
 	schemaVersion: SCHEMA_VERSION,
-	// 没有 sharedModules：Swift 半身只 import DashSDK（无条件）与 DashLayout。
+	// 没有 sharedModules：Swift 半身只 import ClamSDK（无条件）与 ClamLayout。
 	// 曾经声明的 DSHKit 随本次迁移整体退役。
 
 	subscribe: (api) => {
 		const { ctx, push } = api;
-		const log = reporter(ctx.logger("dash-sidebar"));
+		const log = reporter(ctx.logger("clam-sidebar"));
 		let version = 0;
 		let timer;
 		/** 首份有内容的投影是否已经记过日志。 */
 		let announced = false;
 		/** @type {ReturnType<typeof createSessionSource>|undefined} */
 		let source;
-		/** dash-notify 供出来的「有什么在等着你」。缺席时是 undefined。 */
+		/** clam-notify 供出来的「有什么在等着你」。缺席时是 undefined。 */
 		let pending;
 
 		// 宿主服务走**作用域 inject**，不写进插件顶层的 `inject` 数组：写上去就是
@@ -164,19 +164,19 @@ export default createSwiftPlugin({
 				clearTimeout(timer);
 				source?.dispose();
 				source = undefined;
-			}, "dash-sidebar 会话数据源");
+			}, "clam-sidebar 会话数据源");
 		});
 
 		// 「待处理」那枚胶囊要列的不止待批准——待回答、出错、跑完了都算。
 		// 后三样这一侧**推不出来**（`ask_user_question` 不发 cordis 事件也不落
-		// session log，见 dsh-source.js 的 `statusOf`），而 dash-notify 那边为了发
+		// session log，见 dsh-source.js 的 `statusOf`），而 clam-notify 那边为了发
 		// 通知已经养着一条 mux 帧流、维护着一份权威的待办表。真相只该有一份，
 		// 所以订它，而不是在这儿再养一条。
 		//
-		// **运行时嵌套 inject**：dash-notify 是可选的，缺席时侧边栏退回自己那份
+		// **运行时嵌套 inject**：clam-notify 是可选的，缺席时侧边栏退回自己那份
 		// approval-only 的状态点，一切照旧。
-		ctx.inject(["dashPending"], (scoped) => {
-			pending = scoped.dashPending;
+		ctx.inject(["clamPending"], (scoped) => {
+			pending = scoped.clamPending;
 			const off = pending.subscribe(() => {
 				// 状态翻牌，用户正等着那个点亮/熄灭——不压拍。
 				if (source !== undefined) schedulePush(source, true);
@@ -184,7 +184,7 @@ export default createSwiftPlugin({
 			scoped.effect(() => () => {
 				off();
 				pending = undefined;
-			}, "dash-sidebar 待处理订阅");
+			}, "clam-sidebar 待处理订阅");
 			if (source !== undefined) schedulePush(source, true);
 		});
 
@@ -195,7 +195,7 @@ export default createSwiftPlugin({
 				+ "侧边栏会是空列表（dsh 版本变动改了服务名？核对 lib/dsh-source.js）");
 		}, 10_000);
 		sentinel.unref?.();
-		ctx.effect(() => () => clearTimeout(sentinel), "dash-sidebar 数据面守望");
+		ctx.effect(() => () => clearTimeout(sentinel), "clam-sidebar 数据面守望");
 
 		function buildActions(source) {
 			return {
@@ -253,10 +253,10 @@ export default createSwiftPlugin({
 		}
 
 		/**
-		 * 把 `dashPending` 的原因叠进投影的 `status`。
+		 * 把 `clamPending` 的原因叠进投影的 `status`。
 		 *
 		 * **只升不降**：两边各自看到的都是真事实，取更该管的那一个（`STATUS_RANK`）。
-		 * dash-notify 缺席时原样返回——这条路径必须存在，它是侧边栏的独立性。
+		 * clam-notify 缺席时原样返回——这条路径必须存在，它是侧边栏的独立性。
 		 */
 		function withPending(groups) {
 			const map = pending?.snapshot();
@@ -287,8 +287,8 @@ export default createSwiftPlugin({
 			await handler(payload ?? {});
 		} catch (error) {
 			const message = errorText(error);
-			api.ctx.logger("dash-sidebar").warn(`${action} 失败：${message}`);
-			process.stderr.write(`dash-sidebar: ${action} 失败：${message}\n`);
+			api.ctx.logger("clam-sidebar").warn(`${action} 失败：${message}`);
+			process.stderr.write(`clam-sidebar: ${action} 失败：${message}\n`);
 			api.push("error", { action, message });
 		}
 	}])),
@@ -296,12 +296,12 @@ export default createSwiftPlugin({
 
 /**
  * cordis logger 在 `dsh web` 下没有 exporter（计划 §1.7），消息只进环形缓冲。
- * 要给蹲在终端的人看的东西必须自己写 stderr——照 dash-bridge 的做法两边都喂。
+ * 要给蹲在终端的人看的东西必须自己写 stderr——照 clam-bridge 的做法两边都喂。
  */
 function reporter(logger) {
 	const emit = (level, message) => {
 		logger[level](message);
-		process.stderr.write(`dash-sidebar: ${message}\n`);
+		process.stderr.write(`clam-sidebar: ${message}\n`);
 	};
 	return {
 		info: (message) => emit("info", message),
