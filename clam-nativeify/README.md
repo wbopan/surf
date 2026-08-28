@@ -683,22 +683,39 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 
 ```css
 @supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {
-  @media (prefers-reduced-transparency: no-preference) {
-    :root:not([data-clam-blur]) <neutral 五条> {
-      background-color: transparent !important;   /* 给色处让位 */
-      backdrop-filter: none;                      /* 材质自己糊背景 */
-      -apple-visual-effect: -apple-system-glass-material-media-controls;
-      --clam-surface: inset 0 0 0 100px var(--clam-tint);   /* 只留交互态那一层 */
-      --clam-glass-drop: transparent;             /* 外投影一并交出去 */
-    }
+  :root:not([data-clam-blur]):not([data-clam-reduce]) <neutral 五条> {
+    background-color: transparent !important;   /* 给色处让位 */
+    backdrop-filter: none;                      /* 材质自己糊背景 */
+    position: relative; isolation: isolate;     /* 给 fx 层备好锚与层叠上下文 */
+    --clam-surface: inset 0 0 0 100px var(--clam-tint);   /* 只留交互态那一层 */
+    --clam-glass-drop: transparent;             /* 外投影一并交出去 */
+  }
+  :root:not([data-clam-blur]):not([data-clam-reduce]) <neutral 五条>::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    z-index: -1; pointer-events: none; overflow: hidden;
+    -apple-visual-effect: -apple-system-glass-material-media-controls;
   }
 }
 ```
 
+**材质挂在 `::before` fx 层上，不挂按钮自身**——挂自身画出来的是材质自己的圆角
+矩形，**不认元素的 `border-radius`**（真 App 实测：圆形 + 按钮当场变"胖方形"）。
+`.fx` 空子层是 Raycast 的模式（playbook §1.1），spike 里材质胶囊是圆的正因为
+它挂在这样一层上；我们用 `::before` 代替真子元素，`border-radius: inherit` 拿到
+按钮的圆角，`isolation` 让 `z-index: -1` 落在按钮自己的层叠上下文底部。
+
+**减少透明度那道门是根属性 `data-clam-reduce`，不是媒体查询**——本机 WebKit
+**不认识 `prefers-reduced-transparency`**（真 App 角标实测：系统设置明明关着，
+`no-preference` 照样不命中；未知特性让媒体查询两个分支双双恒假），写成 CSS 媒体
+查询等于把材质和降级路径各锁死一半。属性由 `watchReduceTransparency()` 用
+`matchMedia` 打上：不认识时 `matches` 恒 false = 门常开，方向恰好安全；引擎哪天
+认识了还能吃到 change 事件活更新。同一批手绘侧的降透明度覆写也一并改成
+`:root[data-clam-reduce]` 前缀（特异性高于被覆盖的那条，不再依赖源码顺序）。
+
 | 门 | 不成立时 | 落到哪 |
 |---|---|---|
 | `@supports` | 普通浏览器 / 壳侧 `useSystemAppearance` 没开 | 手绘四态，原样 |
-| `prefers-reduced-transparency` | 系统设置 → 辅助功能 → 显示 打开了"降低透明度" | 手绘 + 已有的不透明近似色 |
+| `:not([data-clam-reduce])` | 系统"降低透明度"开着（JS matchMedia 判定） | 手绘 + 已有的不透明近似色 |
 | `:root:not([data-clam-blur])` | 窗口失活 | 手绘失活那两格（平色 + 描边 + `grayscale(1)`） |
 
 **计划里写的是"块内覆写 `-apple-visual-effect: none` 再让手绘层重新生效"，这里改成了
@@ -724,43 +741,37 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 - **`_primary` 不上材质。** 实色强调键，色由 dsh 自己画，背后糊什么都看不见——
   和它本来就没有 `backdrop-filter` 是同一个理由。它的相对颜色高光（P1 那条
   `oklch(from --dsw-alias-button-info-fill …)`）原样不动。
-- **材质直接挂在按钮自身上，没有 Raycast 那个空的 `.fx` 子元素。** 他们要那一层是为了
-  z-index 分层（材质 `z-index:-1` 压在内容之下、`pointer-events:none` 不吃指针），
-  而我们的按钮内容就是一行字加一个图标，材质走元素自己的背景层天然在内容之下。
-  代价是绘制次序没有实测过，见下面的待验证清单。
+- **材质挂 `::before` fx 层**（最初直接挂按钮自身，真 App 一开就露馅：材质不认
+  元素圆角，圆钮变胖方形——所以这不是可选项，是硬约束）。选 `::before` 不选
+  `::after` 纯粹保守：给 dsh 将来用 `::after` 画徽标之类留着位置。
 - **玻璃不嵌套**（HIG + Raycast 实测：材质套材质出合并伪影）。白名单这几枚都直接浮在
   页面上，没有一枚坐在另一块材质里，天然满足；**往 `SOLID_BUTTONS` 加按钮时要自己
   确认这一条**。
 
-#### 待视觉验证（尚未在真 App 里看过）
+#### 真 App 验证账（2026-08）
 
-结构是推的，数值和观感一个都没验。按"先看有没有、再看对不对"的顺序：
+已验：
 
-1. **材质到底生效了没有。** 控制台两句：
-   `CSS.supports('-apple-visual-effect','-apple-system-glass-material-media-controls')`
-   与 `matchMedia('(prefers-reduced-transparency: no-preference)').matches`——
-   两个都为真才可能进那个块。任一为假 = 走降级路径（观感与 P3 之前完全一致，
-   所以"看着没变"不等于"没生效"，必须这么查）。
-2. **绘制次序**：`--clam-tint`（inset box-shadow）与按压泛光（`background-image`）
-   在材质**之上**还是被它盖住？盖住的话 hover / 按下就没有反馈了，得改挂 `.fx` 子元素。
-3. **`SOLID_BORDERED` 那三枚的双描边**：dsh 自己给它们画着 `1px rgba(0,0,0,.1)`，
-   材质又自带一圈高光描边。我们手绘的描边层已经退休，但**dsh 那条不是我们的，没动**。
-   看着重就在块内补一句 `border-color: transparent`。
-4. **圆角**：材质跟不跟元素的 `border-radius`（`backdrop-filter` 是跟的，材质没验过）。
-   不跟的话胶囊会露出方角。
-5. **深浅两档**：材质认的是 `NSAppearance`。P4 之后 `NSApp.appearance` 跟着 dsh 的
-   `ui-theme` 走，所以 **dsh 深色 + 系统浅色**那一格要专门看一眼材质是不是深的。
-6. **hover / 按下的层次够不够**：投影三档没了，只剩 tint 的 `.035 / .070`（浅）与
-   `.113`（深）。不够就先恢复 `--clam-glass-drop`，别急着加回手绘层。
-7. **对照组**：把 `@supports` 那句条件改成一个必假的值（或壳侧关掉
-   `useSystemAppearance`）再截一张，确认降级路径完好——CLAUDE.md 的既定纪律，
-   每条视觉改动都要有对照组。
-8. **`-apple-system-vibrancy-label` 给按钮文字**（计划里的可选项）：本次没做。
-   dsh 控制着文字颜色，要不要交出去得先有并排截图。
+- **材质生效**（三枚角标法：顶层 / `@supports` 内 / 媒体查询内各放一枚 `::after`
+  角标，冷启动看哪枚在）。也是这一验揪出了 `prefers-reduced-transparency`
+  在本机 WebKit 是未知特性——`@supports` 那枚在、媒体查询那枚不在，而系统
+  设置里"降低透明度"明明关着。
+- **圆角**：材质不认元素 `border-radius`，圆钮变胖方形（用户当场看穿）。
+  修法 = `::before` fx 层，见上。
+- **修完的「+」是正圆**，带材质自带的一圈边缘高光。
 
-**`prefers-reduced-transparency: no-preference` 这个门有个静默失效方向**：UA 不认识
-这个特性时它是 false，于是材质永远不上，而观感与 P3 之前一模一样。失效方向安全，
-但排查时容易白花时间——所以第 1 条把它写成了必查项。
+待验（按"先看有没有、再看对不对"）：
+
+1. **绘制次序**：`--clam-tint`（inset box-shadow）与按压泛光（`background-image`）
+   如今在按钮自身、材质在 `z-index:-1` 的 fx 层——理论上必在材质之上，hover 按一遍确认。
+2. **`SOLID_BORDERED` 那三枚的双描边**：dsh 自己画着 `1px rgba(0,0,0,.1)`，材质又
+   自带一圈高光。看着重就在块内补 `border-color: transparent`。
+3. **深浅两档**：材质认 `NSAppearance`。P4 之后跟 dsh `ui-theme` 走，
+   **dsh 深色 + 系统浅色**那一格专门看一眼。
+4. **hover / 按下层次够不够**：只剩 tint 两级。不够先恢复 `--clam-glass-drop`。
+5. **对照组**：壳侧关掉 `useSystemAppearance`（或把 `@supports` 条件改成必假）
+   截一张，确认降级路径完好。
+6. **`-apple-system-vibrancy-label` 给按钮文字**：未做，要动先出并排截图。
 
 ## 原生侧跟随 dsh 主题
 

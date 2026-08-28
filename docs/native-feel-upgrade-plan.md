@@ -365,3 +365,14 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
   **视觉一格都没验**（屏幕锁着），待验证清单八条写在 README「真材质路线」末尾，
   第 1 条是必查项：材质没生效时观感与改动前**完全一致**，"看着没变"分不出
   "生效了但差别小"和"根本没进那个块"。
+- 2026-08-28 P3 真 App 验证 + 两处修正。①「必查第 1 条」当场命中：三枚角标实测
+  `@supports` 为真（壳侧私有开关生效）而 `prefers-reduced-transparency` 是**未知
+  特性**（系统设置关着照样两个分支恒假）——媒体查询门换成 JS `matchMedia` 驱动的
+  根属性 `data-clam-reduce`（watchReduceTransparency，带实例 token；不认识时
+  matches 恒 false = 门常开，方向安全），P1 那块手绘降级同步改为
+  `:root[data-clam-reduce]` 前缀。②材质不认元素 `border-radius`：圆钮变胖方形
+  （用户实时看穿），改挂 `::before` fx 层（`border-radius: inherit` +
+  `z-index: -1` + `isolation`，Raycast `.fx` 模式）后恢复正圆。
+  **另发现一个待查问题：对 clam-nativeify/lib/client.js 的 HMR 重载会赔掉整棵
+  client 插件树**（web header / rail 复现、新样式不上、⌘R 或重启壳恢复；冷启动
+  一切正常）。两次复现，机制未定位——修 P3 期间一律用「重启壳」代替 HMR。

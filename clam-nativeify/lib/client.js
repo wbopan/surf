@@ -123,7 +123,9 @@ window.__ModuleLoader__.load({
 		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-nofx] ' + sel).join(",\n");
 		// 真材质接管的那组（P3）。**只在窗口激活时接管** —— 失活整个交还给手绘四态，
 		// 理由见文件末尾 @supports 块的注释。前缀同样逐条加，逗号串上只写一次只命中第一条。
-		const materialNeutral = NEUTRAL.map((sel) => ':root:not([data-clam-blur]) ' + sel).join(",\n");
+		const materialNeutral = NEUTRAL.map((sel) => ':root:not([data-clam-blur]):not([data-clam-reduce]) ' + sel).join(",\n");
+		const materialNeutralFx = NEUTRAL.map((sel) => ':root:not([data-clam-blur]):not([data-clam-reduce]) ' + sel + '::before').join(",\n");
+		const reduceNeutral = NEUTRAL.map((sel) => ':root[data-clam-reduce] ' + sel).join(",\n");
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -525,9 +527,41 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		/**
+		 * 把「减少透明度」翻译成根属性 `data-clam-reduce`，给 CSS 当门控。
+		 *
+		 * **为什么不直接在 CSS 里写 `@media (prefers-reduced-transparency: …)`**：
+		 * 本机 WebKit（Safari 26 引擎）**不认识这个特性**——实测系统设置里
+		 * 「减少透明度」明明关着（defaults 里连键都没有），`no-preference` 照样
+		 * 不命中；未知特性让整条媒体查询恒假，`reduce` 和 `no-preference` 两个
+		 * 分支**双双失效且静默**。写 CSS 媒体查询等于把降级路径和材质各锁死一半。
+		 * JS 的 `matchMedia` 恰好没有这个坑：不认识的查询 `matches` 恒为 false，
+		 * 属性不打上 = 当作没开减少透明度 = 和今天的行为一致，失效方向安全；
+		 * 引擎哪天认识了，change 事件跟着系统设置活更新，比媒体查询还多一口气。
+		 *
+		 * 属性带实例 token，理由同 watchWindowFocus。
+		 */
+		function watchReduceTransparency() {
+			const root = document.documentElement;
+			const token = makeToken();
+			let mq = null;
+			try { mq = matchMedia("(prefers-reduced-transparency: reduce)"); } catch { /* 拿不到就当没开 */ }
+			const sync = () => {
+				if (mq && mq.matches) root.setAttribute("data-clam-reduce", token);
+				else if (root.getAttribute("data-clam-reduce") === token) root.removeAttribute("data-clam-reduce");
+			};
+			mq?.addEventListener?.("change", sync);
+			sync();
+			return () => {
+				mq?.removeEventListener?.("change", sync);
+				if (root.getAttribute("data-clam-reduce") === token) root.removeAttribute("data-clam-reduce");
+			};
+		}
+
 		function apply(ctx) {
 			if (!insideClam()) return;
 			ctx.effect(watchWindowFocus);
+			ctx.effect(watchReduceTransparency);
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
 
 			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
@@ -1095,13 +1129,16 @@ window.__ModuleLoader__.load({
 					//
 					// 不管 `_primary`：它本来就没有 backdrop-filter，底色也是 dsh 自己
 					// 画的实色，本就不透明。
-					"@media (prefers-reduced-transparency: reduce) {",
-					"  :root { --clam-glass-fill: #FDFDFD; }",
-					"  body[data-ds-dark-theme] { --clam-glass-fill: #3D3D3D; }",
-					"  :root[data-clam-blur] body { --clam-glass-fill: #F0F0F0; }",
-					"  :root[data-clam-blur] body[data-ds-dark-theme] { --clam-glass-fill: #333333; }",
-					"  " + neutral + " { backdrop-filter: none; }",
-					"}",
+					// **门控是根属性 `data-clam-reduce`，不是 `@media (prefers-reduced-transparency)`**
+					// —— 本机 WebKit 不认识那个特性，媒体查询两个分支双双恒假（见
+					// watchReduceTransparency 顶注，真 App 里用角标实测过）。属性由 JS 的
+					// matchMedia 打上，选择器带上它之后特异性高于被覆盖的那条，不再依赖
+					// "排在整张表最后"的源码顺序。
+					":root[data-clam-reduce] { --clam-glass-fill: #FDFDFD; }",
+					":root[data-clam-reduce] body[data-ds-dark-theme] { --clam-glass-fill: #3D3D3D; }",
+					":root[data-clam-reduce][data-clam-blur] body { --clam-glass-fill: #F0F0F0; }",
+					":root[data-clam-reduce][data-clam-blur] body[data-ds-dark-theme] { --clam-glass-fill: #333333; }",
+					reduceNeutral + " { backdrop-filter: none; }",
 
 					// ===== 真材质接管玻璃表面（计划 P3）=====
 					//
@@ -1114,8 +1151,11 @@ window.__ModuleLoader__.load({
 					// ── 三层门控，都是「进入条件」而不是「进去之后再覆写回来」 ──
 					//
 					//   ① `@supports (-apple-visual-effect: …)`   WebKit 解锁了没有
-					//   ② `prefers-reduced-transparency: no-preference`
-					//                                             "别让我透过控件看背景"
+					//   ② `:not([data-clam-reduce])`              "别让我透过控件看背景"
+					//      （不能写成 @media (prefers-reduced-transparency: no-preference)：
+					//      本机 WebKit 不认识该特性，未知特性让媒体查询恒假，材质会被
+					//      静默锁死 —— 真 App 里角标实测过。属性由 watchReduceTransparency
+					//      的 matchMedia 驱动，不认识时 matches 恒 false = 门常开，方向对。）
 					//   ③ `:root:not([data-clam-blur])`           窗口激活态
 					//
 					// **②③ 刻意写成条件而不是覆写**，虽然计划里写的是"块内覆写
@@ -1148,7 +1188,6 @@ window.__ModuleLoader__.load({
 					// 白名单里这几枚按钮都直接浮在页面上，没有一枚坐在另一块材质里，
 					// 天然满足；往名单里加按钮时要自己确认这一条。
 					"@supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {",
-					"@media (prefers-reduced-transparency: no-preference) {",
 					materialNeutral + " {",
 					// 玻璃的两根支柱同时让位给材质。
 					// **`!important` 是必须的**：上面 neutral 那条 background-color
@@ -1158,9 +1197,14 @@ window.__ModuleLoader__.load({
 					// backdrop-filter 也退场：页面 compositor 与 CoreMaterial 两层糊
 					// 同一块背景，只会互相叠加，还白白多一个合成层。
 					"  backdrop-filter: none;",
-					// 胶囊控件那一档（Safari 视频控件同款，Raycast 的 `.macos__control`
-					// 也是它）。不用 `-apple-system-glass-material`：那是面板/popover 档。
-					"  -apple-visual-effect: -apple-system-glass-material-media-controls;",
+					// 材质**不挂按钮自身**——那样画出来是材质自己的圆角矩形，不认按钮的
+					// border-radius（真 App 实测：圆形 + 按钮变"胖方形"，用户一眼看穿）。
+					// 挂在 ::before 假元素上、`border-radius: inherit`，就是 Raycast 的
+					// `.fx` 空子层模式（playbook §1.1）——spike 里材质胶囊是圆的，正因为
+					// 它挂在这样一层上。isolation 让 z-index:-1 的假元素落在按钮自己的
+					// 层叠上下文底部：材质在文字/图标之下、又在页面背景之上。
+					"  position: relative;",
+					"  isolation: isolate;",
 					// 手绘表面**整摞退休，只留 tint 这一层**。材质自带完整外观（模糊、
 					// 提饱和、边缘高光描边，spike 里那圈高光是它造型语言的一部分、关不掉），
 					// 8 层发光 + 描边 + 左右侧影再叠上去就是两套边缘打架。
@@ -1176,6 +1220,19 @@ window.__ModuleLoader__.load({
 					// 删掉就整套回来，不牵动别的。
 					"  --clam-glass-drop: transparent;",
 					"}",
+					// fx 层本体。挂 ::before 而不是 ::after 是避开 dsh 可能用 ::after 画
+					// 徽标之类的冲突面（两者都没被这些按钮用到，选前者纯粹保守）。
+					// 胶囊控件那一档（Safari 视频控件同款，Raycast 的 `.macos__control`
+					// 也是它）。不用 `-apple-system-glass-material`：那是面板/popover 档。
+					materialNeutralFx + " {",
+					"  content: '';",
+					"  position: absolute;",
+					"  inset: 0;",
+					"  border-radius: inherit;",
+					"  z-index: -1;",
+					"  pointer-events: none;",
+					"  overflow: hidden;",
+					"  -apple-visual-effect: -apple-system-glass-material-media-controls;",
 					"}",
 					"}",
 				];
