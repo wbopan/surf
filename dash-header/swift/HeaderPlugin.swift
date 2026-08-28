@@ -28,7 +28,7 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 ///
 /// ## 两条数据通道
 ///
-/// - **页内桥**（`dash.page.headerTabs`）：视图标签的名单与选中态。
+/// - **页内桥**（`clam.page.headerTabs`）：视图标签的名单与选中态。
 ///   那是 ui-conversation 的私有客户端状态，dsh 侧没有对应物。
 /// - **数据桥**（`host.bridge` 的 `snapshot` 频道）：面包屑 / mode / jobs。
 ///   这几样在 dsh 侧都有一等契约，数据面住在 node 半边。
@@ -42,9 +42,9 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 /// ——新旧两代的同名类型互不认识，取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
 final class HeaderPlugin: DashPlugin {
     /// 保管箱里那份最后的 tabs 投影（页内桥那条）。
-    private static let tabsKey = "dash.header.tabs"
+    private static let tabsKey = "clam.header.tabs"
     /// 保管箱里那份最后的 header 投影（数据桥那条）。
-    private static let snapshotKey = "dash.header.snapshot"
+    private static let snapshotKey = "clam.header.snapshot"
     /// dash-layout 的工具栏贡献槽名。**槽名是插件之间约定的字符串**，
     /// 壳一个都不认得，所以这里就该硬写而不是去 import 一个常量。
     private static let toolbarSlot = "toolbar"
@@ -83,7 +83,7 @@ final class HeaderPlugin: DashPlugin {
         // ---- 页内桥 ----
 
         // client 半边报上来的 tabs 投影。壳对未知 type 一律广播成
-        // `dash.page.<type>`（去白名单后的通用转发），这条通道不需要改壳。
+        // `clam.page.<type>`（去白名单后的通用转发），这条通道不需要改壳。
         host.events.subscribe(DashEventBus.Topic.pagePrefix + "headerTabs") { payload in
             host.objects.setObject(Self.tabsKey, payload as NSDictionary) // 先落箱再上屏
             Self.applyTabs(payload, to: model)
@@ -149,7 +149,7 @@ final class HeaderPlugin: DashPlugin {
         // 自定义视图套一枚玻璃胶囊，那是按钮的长相，不是标题的。
         //
         // 这里给的全是**拓扑**（长什么样、排在哪）。会变的那部分（选中态、
-        // 徽标数字、菜单内容、显隐）走 `dash.toolbar.update` 活通道，
+        // 徽标数字、菜单内容、显隐）走 `clam.toolbar.update` 活通道，
         // 由 HeaderToolbarSync 推——改 metadata 会重建整条工具栏。
 
         // 会话谱系：祖先导航 + 兄弟切换 + 子代理进入，三种交互一个菜单。

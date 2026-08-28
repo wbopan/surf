@@ -104,7 +104,7 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     }
 
     /// **动作面不走桥**：切换会话是页面的事，一直是、也仍然是
-    /// dash-layout 的 `conversationSurface`（页内 `window.__dash`）。
+    /// dash-layout 的 `conversationSurface`（页内 `window.__clam`）。
     func activate(sessionId: String) {
         selectedSessionId = sessionId
         onSelectionChange?(sessionId)

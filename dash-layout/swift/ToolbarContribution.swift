@@ -29,7 +29,7 @@ import SwiftUI
 /// 菜单内容、段控选中态是**流量**，一秒能变好几次——走 metadata 等于每次都把
 /// 工具栏拆了重装，按钮会闪、popover 会掉。
 ///
-/// 所以流量走事件总线：贡献者 `emit(dash.toolbar.update, [owner, id, ...patch])`，
+/// 所以流量走事件总线：贡献者 `emit(clam.toolbar.update, [owner, id, ...patch])`，
 /// 本消费方把 patch 记进 `ToolbarItemState` **并**就地改活着的那一项。
 /// 记账是必须的——项会因为换代/重建而重造，那时得把状态补回去，
 /// 否则热替换一次徽标就没了。

@@ -5,7 +5,7 @@
  *
  *   1. **Swift 载荷登记表**：`ctx.provide('dashBridge', api)`，各插件经
  *      `createSwiftPlugin`（见 `./plugin.js`）把自己的 `swift/` 目录登记进来。
- *   2. **一条 WebSocket**（`/dash/bridge`，与 dsh 同端口）：壳连上来拉 snapshot、
+ *   2. **一条 WebSocket**（`/clam/bridge`，与 dsh 同端口）：壳连上来拉 snapshot、
  *      回报编译结果、收发插件与其 TS 半身之间的信封消息。
  *   3. **盯文件**：500ms statSync 轮询各 `swift/` 目录。node 半边在 web bundle 下
  *      没有 HMR（官方 disable），所以 Swift 源码的热循环不能指望它——桥常驻、
@@ -33,7 +33,7 @@ export const name = "dash-bridge";
 export const inject = ["webServer"];
 
 export const Config = z.object({
-	path: z.string().default("/dash/bridge")
+	path: z.string().default("/clam/bridge")
 		.description("WebSocket 升级路径（与 dsh 同端口）。dash-app 经 dashBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"),
 	pollIntervalMs: z.number().step(1).min(100).default(500)
 		.description("盯各插件 swift/ 目录的轮询间隔，与 dsh-client-hmr 同款做法。"),
@@ -66,7 +66,7 @@ export function apply(ctx, config) {
 		/**
 		 * 本桥实际挂载的 WS 路径。**这是该路径的唯一真相**——挂 WS 的是这里，
 		 * 而 `path` 又是用户可覆写的配置项。dash-app 取它写进 endpoint 发现文件
-		 * 与 `--dash-bridge-path`，壳因此永远连得上，不管用户把它改成什么。
+		 * 与 `--clam-bridge-path`，壳因此永远连得上，不管用户把它改成什么。
 		 */
 		path: config.path,
 		register(entry) {

@@ -56,16 +56,16 @@ public final class DashEventBus {
     /// 壳与插件共用的主题名。
     public enum Topic {
         /// 壳完成一次 dsh 接入或换端点。载荷 `["httpBase": String]`。
-        public static let endpointChanged = "dash.endpointChanged"
+        public static let endpointChanged = "clam.endpointChanged"
         /// 请求把窗口带到前台。载荷可带 `["sessionId": String]`。
-        public static let activateWindow = "dash.activateWindow"
+        public static let activateWindow = "clam.activateWindow"
         /// 页内桥消息的主题前缀。**壳对页内消息不设白名单**：
-        /// `window.webkit.messageHandlers.dash.postMessage({type, ...})` 里的
-        /// 任意 `type` 都会原样广播成 `dash.page.<type>`，载荷就是那个字典本身。
+        /// `window.webkit.messageHandlers.clam.postMessage({type, ...})` 里的
+        /// 任意 `type` 都会原样广播成 `clam.page.<type>`，载荷就是那个字典本身。
         /// 想接一条新页内消息的插件订阅 `pagePrefix + "yourType"` 即可，
         /// 不必改壳。动态主题不逐个加常量——只有壳自己也要 emit 的那几条
         /// （下面两个）才配常量。
-        public static let pagePrefix = "dash.page."
+        public static let pagePrefix = "clam.page."
         /// 页内桥上报当前会话。载荷 `["id": String]`。**粘性**（`emitSticky`）
         /// ——插件装载得比页面晚，不粘的话它得等到用户下一次切会话才知道当前是哪个。
         public static let pageCurrentSession = pagePrefix + "currentSession"
@@ -73,6 +73,6 @@ public final class DashEventBus {
         public static let pageReady = pagePrefix + "ready"
         /// 壳的菜单/快捷键触发了一个命令。载荷 `["command": String]`。
         /// 壳只负责喊，具体做什么归拥有相应能力的插件（如 layout 拥有会话展示面）。
-        public static let menuCommand = "dash.menu.command"
+        public static let menuCommand = "clam.menu.command"
     }
 }

@@ -120,7 +120,7 @@ struct NotifyFocus {
     var appActive = false
     /// 主窗口是 key **且**没有被别的窗口整个盖住（`occlusionState`）。
     var windowVisible = false
-    /// 页内桥报上来的当前会话（`dash.page.currentSession`）。
+    /// 页内桥报上来的当前会话（`clam.page.currentSession`）。
     var currentSessionId: String?
 
     /// 你正看着这条待办所属的会话吗。

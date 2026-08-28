@@ -259,7 +259,7 @@ final class HeaderModel {
         return out + "\""
     }
 
-    /// 调 `window.__dashHeader.*`。桥不在（普通浏览器、页面还没加载完、
+    /// 调 `window.__clamHeader.*`。桥不在（普通浏览器、页面还没加载完、
     /// client 半边这一代还没起）时静默失败——不弹窗不报错，与 dash-layout
     /// 的 `WebViewConversationSurface` 同一条纪律。
     private func call(_ fn: String, _ args: String = "", receipt: Bool = false) {
@@ -268,7 +268,7 @@ final class HeaderModel {
         // 这里只负责拼壳。
         // 桥不在时返回**有内容的**字符串而不是 undefined：`nil` 回执什么都没说，
         // 分不清"页面没加载"和"这一版 client 里没有这个函数"。
-        let script = "(function(){var h=window.__dashHeader;"
+        let script = "(function(){var h=window.__clamHeader;"
             + "if(!h)return 'no-bridge';"
             + "if(typeof h.\(fn)!=='function')return 'missing:\(fn)|have='+Object.keys(h).join(',');"
             + "return h.\(fn)(\(args));})()"

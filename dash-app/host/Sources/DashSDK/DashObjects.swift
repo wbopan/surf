@@ -27,7 +27,7 @@ public final class DashObjects {
         }
     }
 
-    /// 取并转型的糖：`host.objects.object("dash.webView", as: WKWebView.self)`。
+    /// 取并转型的糖：`host.objects.object("clam.webView", as: WKWebView.self)`。
     public func object<T>(_ key: String, as type: T.Type) -> T? {
         storage[key] as? T
     }
@@ -35,16 +35,16 @@ public final class DashObjects {
     /// 壳与各插件共用的键名。字符串键天生易漂移，集中在这里对一次。
     public enum Key {
         /// 壳创建并持有的 `WKWebView`（终极逃生舱也用它，故不归任何插件）。
-        public static let webView = "dash.webView"
+        public static let webView = "clam.webView"
         /// 当前 dsh 的 HTTP base，`NSURL`。壳在接入/换端点时更新。
-        public static let endpoint = "dash.endpoint"
+        public static let endpoint = "clam.endpoint"
         /// 会话展示面。协议由 dash-layout 定义（`DashConversationSurface`），
         /// 消费者需 `import DashLayout` 后转型。
-        public static let conversationSurface = "dash.conversationSurface"
+        public static let conversationSurface = "clam.conversationSurface"
         /// 设置面板的主人。**取值只看在不在**，所以放一个光秃秃的 `NSObject` 就够
         /// ——正因为只看在不在，它可以是系统类型，不违反"禁止放插件自己定义的类型"。
         /// dash-settings 在场时占住它，dash-layout 见有主就不再用页内 modal 响应 ⌘,；
         /// 它不在场时页内 modal 是唯一的设置入口，逃生舱模式也得能改设置。
-        public static let settingsOwner = "dash.settingsOwner"
+        public static let settingsOwner = "clam.settingsOwner"
     }
 }

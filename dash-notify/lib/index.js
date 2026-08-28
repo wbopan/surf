@@ -207,15 +207,15 @@ export default createSwiftPlugin({
 			}, "dash-notify 事件源");
 		});
 
-		// 开发用的自测钩子：`DASH_NOTIFY_SELFTEST=1 ./dev` 会在挂载 3 秒后塞两条
+		// 开发用的自测钩子：`CLAM_NOTIFY_SELFTEST=1 ./dev` 会在挂载 3 秒后塞两条
 		// 假待办（一条审批、一条单选提问）。**为什么值得留着**：验证通知链路
 		// （外观、按钮、点击跳转、撤下、角标、前台策略）本来要先真去触发一次
 		// 工具审批，那是分钟级的往返；假待办把这一圈压到三秒。
 		// 假的 rpcId 在 `act` 时会被上游判成 `not-pending`——那条路径同样是真的
 		// （别人先答了就是这个结局），所以连"答完之后怎么收场"都一起验了。
-		if (process.env.DASH_NOTIFY_SELFTEST === "1") {
+		if (process.env.CLAM_NOTIFY_SELFTEST === "1") {
 			const timer = setTimeout(() => {
-				log.warn("自测：塞两条假待办（DASH_NOTIFY_SELFTEST=1）");
+				log.warn("自测：塞两条假待办（CLAM_NOTIFY_SELFTEST=1）");
 				const sessionId = "session-selftest";
 				inbox?.onPending({
 					kind: "approval", id: "approval.selftest", rpcId: "selftest-approval",

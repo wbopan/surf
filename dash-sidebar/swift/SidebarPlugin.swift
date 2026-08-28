@@ -26,7 +26,7 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 /// 互不认识，取出来 `as?` 只会安静地得到 nil（M2 断言 4）。
 final class SidebarPlugin: DashPlugin {
     /// 保管箱里那份最后的快照（`NSDictionary`）。
-    private static let snapshotKey = "dash.sidebar.snapshot"
+    private static let snapshotKey = "clam.sidebar.snapshot"
 
     func activate(host: DashHost) -> AnyObject? {
         guard let surface = host.objects.object(DashObjects.Key.conversationSurface)

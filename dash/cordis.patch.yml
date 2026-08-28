@@ -12,7 +12,7 @@
     - id: dash-bridge
       name: "@wenbo/dash-bridge"
       config:
-        path: /dash/bridge
+        path: /clam/bridge
         pollIntervalMs: 500
 
     - id: dash-app

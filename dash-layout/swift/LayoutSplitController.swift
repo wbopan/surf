@@ -19,7 +19,7 @@ final class LayoutSplitController: NSSplitViewController {
     static let contentMinWidth: CGFloat = 432
 
     /// 分隔条宽度的 autosave key（系统级记忆；改默认宽度时换 key 才对已有用户生效）。
-    private static let sidebarAutosaveName = "DashMainSidebar.v2"
+    private static let sidebarAutosaveName = "ClamMainSidebar.v2"
 
     let host: DashHost
     private let webView: WKWebView
@@ -122,7 +122,7 @@ final class LayoutSplitController: NSSplitViewController {
     ///
     /// `force` 是给**后到的订阅者**用的：厚度只在变化时才发，晚一步上线的插件
     /// 等不来第二次（和"node 半边不给新世代补发投影"是同一条纪律——补发归
-    /// 请求方）。它自己喊一声 `dash.layout.requestTitlebarMetrics` 就能要到。
+    /// 请求方）。它自己喊一声 `clam.layout.requestTitlebarMetrics` 就能要到。
     func publishTitlebarMetrics(force: Bool = false) {
         guard let window = view.window,
               let layoutGuide = window.contentLayoutGuide as? NSLayoutGuide,
@@ -292,7 +292,7 @@ final class LayoutSplitController: NSSplitViewController {
     private func installToolbar() {
         guard let window = view.window, sidebarItem != nil else { return }
         if let ownedToolbar, window.toolbar === ownedToolbar { return }
-        let toolbar = NSToolbar(identifier: "DashLayoutToolbar")
+        let toolbar = NSToolbar(identifier: "ClamLayoutToolbar")
         toolbar.delegate = self
         // 初始值。**不是最终值**——`allowsDisplayModeCustomization` 在 macOS 15+
         // 默认就是 YES，用户右键工具栏就能改成 Icon and Text / Text Only。
@@ -407,37 +407,37 @@ public enum LayoutToolbar {
     ///
     /// **别拿 metadata 传这些**——metadata 是拓扑，一变就重建整条工具栏，
     /// 状态会跟着项一起没。载荷见 `ToolbarItemState`。
-    public static let updateTopic = "dash.toolbar.update"
+    public static let updateTopic = "clam.toolbar.update"
 
     // MARK: 消费方 → 贡献者（回来的动作）
 
     /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
     /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`，
     /// group 另带 `index` 与 `itemId`。
-    public static let activateTopic = "dash.toolbar.activate"
+    public static let activateTopic = "clam.toolbar.activate"
     /// 菜单项被选中。载荷同上，另带被选项的 `itemId`。
-    public static let menuSelectTopic = "dash.toolbar.menuSelect"
+    public static let menuSelectTopic = "clam.toolbar.menuSelect"
     /// 菜单**将要打开**。给贡献者一个预热的机会（拉数据、刷新勾选态）。
-    public static let menuOpenTopic = "dash.toolbar.menuOpen"
+    public static let menuOpenTopic = "clam.toolbar.menuOpen"
 
     // MARK: 窗口标识与标题栏几何
 
     /// 设置 `window.title` / `window.subtitle`。载荷 `title` / `subtitle`。
     /// 空标题 = 交回给壳。
-    public static let windowTitleTopic = "dash.window.title"
+    public static let windowTitleTopic = "clam.window.title"
     /// 请求重发一次标识。**只在变化时推，所以后到的订阅者得自己喊一嗓子**。
-    public static let windowTitleRequestTopic = "dash.window.requestTitle"
+    public static let windowTitleRequestTopic = "clam.window.requestTitle"
     /// 标题栏当前厚度（`inset`，pt）。显示模式一变就跟着变。
-    public static let titlebarMetricsTopic = "dash.layout.titlebarMetrics"
+    public static let titlebarMetricsTopic = "clam.layout.titlebarMetrics"
     /// 请求重发一次厚度。理由同 `windowTitleRequestTopic`。
-    public static let titlebarMetricsRequestTopic = "dash.layout.requestTitlebarMetrics"
+    public static let titlebarMetricsRequestTopic = "clam.layout.requestTitlebarMetrics"
 }
 
 extension LayoutSplitController {
     /// 本插件认得的贡献槽名。壳一个槽名都不认得，全靠插件之间约定。
     static let toolbarSlot = LayoutToolbar.slot
     /// 贡献项的 `NSToolbarItem.Identifier` 前缀，后面接 `owner/id`。
-    static let contributionPrefix = "dash.contribution."
+    static let contributionPrefix = "clam.contribution."
     /// 没在 metadata 里指定 `event` 时，点击广播的默认主题。
     /// 载荷 `["slot": "toolbar", "owner": String, "id": String]`。
     static let toolbarActivateTopic = LayoutToolbar.activateTopic
@@ -477,7 +477,7 @@ extension LayoutSplitController {
 ///     "label":   "我的按钮",              // 必填：标题 + 无障碍名
 ///     "symbol":  "sparkles",              // 选填：SF Symbol 名
 ///     "tooltip": "干点什么",               // 选填，缺省取 label
-///     "event":   "myplugin.doSomething",  // 选填，缺省 "dash.toolbar.activate"
+///     "event":   "myplugin.doSomething",  // 选填，缺省 "clam.toolbar.activate"
 ///     "region":  "content",               // 选填，缺省 "sidebar"（见下）
 ///     "align":   "trailing",              // 选填，缺省 "leading"（见下）
 ///     "spaced":  true,                    // 选填，缺省 false（见下）
@@ -524,18 +524,18 @@ extension LayoutSplitController {
 ///
 /// 原生项拿不到闭包（`NSToolbarItem` 的 target/action 必须是 `@objc`，而闭包
 /// 跨不了世代），所以点击一律翻译成广播：`button` / `group` 发
-/// `dash.toolbar.activate`（`group` 额外带 `index` 与 `itemId`），菜单项发
-/// `dash.toolbar.menuSelect`（带 `itemId`）。主题名是字符串，热替换后新一代
+/// `clam.toolbar.activate`（`group` 额外带 `index` 与 `itemId`），菜单项发
+/// `clam.toolbar.menuSelect`（带 `itemId`）。主题名是字符串，热替换后新一代
 /// 重新订阅即可。
 ///
-/// ### 流量不走 metadata，走 `dash.toolbar.update`
+/// ### 流量不走 metadata，走 `clam.toolbar.update`
 ///
 /// metadata 是**拓扑**，一变就重建整条工具栏。徽标数字、菜单内容、选中态、
 /// 显隐是**流量**，一秒能变好几次——走 metadata 等于每次把工具栏拆了重装
 /// （按钮会闪、popover 会掉）。所以：
 ///
 /// ```swift
-/// host.events.emit("dash.toolbar.update", [
+/// host.events.emit("clam.toolbar.update", [
 ///     "owner": "dash-header", "id": "jobs",   // 认人，必填
 ///     "hidden": false, "badge": 3,            // 以下都是选填，没提到的原样保留
 ///     "enabled": true, "selectedIndex": 1,

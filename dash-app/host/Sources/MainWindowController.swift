@@ -47,7 +47,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 窗口 frame / 分隔条宽度的 autosave key。AppKit 的记忆会盖住代码里的
     /// 默认值，调整默认值时需换 key 才能对已有用户生效。
-    private static let windowAutosaveName = "DashMainWindow.v1"
+    private static let windowAutosaveName = "ClamMainWindow.v1"
 
     /// 启动时的目标窗口 frame（默认或 autosave 恢复值）。赋
     /// contentViewController / 插入侧边栏项时 AppKit 会把窗口收缩成内容
@@ -125,13 +125,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private lazy var webView: WKWebView = {
         let config = WKWebViewConfiguration()
-        // UA 追加 "Dash/<version>"（带斜杠，防 "dash" 作为普通子串误命中）：
+        // UA 追加 "Clam/<version>"（带斜杠，防 "clam" 作为普通子串误命中）：
         // dash-nativeify / dash-layout 的 client 半边以此判断页面运行在壳内（终端 dsh web /
         // 普通浏览器共用同一 profile，不受影响）。
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        config.applicationNameForUserAgent = "Dash/\(shortVersion)"
+        config.applicationNameForUserAgent = "Clam/\(shortVersion)"
         // 网页 → 原生通道：插件 v2 桥（ready / currentSession 上报）
-        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "dash")
+        config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "clam")
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
@@ -327,7 +327,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let native = Self.rememberedNativeSidebar
         nativeSidebarParamInUse = native
         components.queryItems = native
-            ? [URLQueryItem(name: "dash-native-sidebar", value: "1")] : nil
+            ? [URLQueryItem(name: "clam-native-sidebar", value: "1")] : nil
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
         bridgeReady = false
@@ -370,7 +370,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // MARK: - 原生侧边栏门控
 
-    private static let nativeSidebarDefaultsKey = "dash.nativeSidebar"
+    private static let nativeSidebarDefaultsKey = "clam.nativeSidebar"
 
     /// 上次运行时是否有原生侧边栏。页面必须在插件编译完成之前就开始加载
     /// （预热 WebView），那时还不知道 sidebar 槽会不会被占，只能先按上次的答案来。
@@ -649,7 +649,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
         lines.append("桥：\(nativeHost.isBridgeConnected ? "已连接" : "未连接")")
         lines.append("页内桥：\(bridgeReady ? "已就绪" : "未就绪")")
-        lines.append("原生侧边栏门控：\(nativeSidebarParamInUse ? "开（?dash-native-sidebar=1）" : "关（完整网页模式）")")
+        lines.append("原生侧边栏门控：\(nativeSidebarParamInUse ? "开（?clam-native-sidebar=1）" : "关（完整网页模式）")")
         lines.append("")
         lines.append("── 原生插件 ──")
         lines.append("在役 \(nativeHost.loadedCount) 个，本次运行退休 \(nativeHost.retiredThisRun) 个 image")
@@ -695,7 +695,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     func handleBridgeMessage(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         switch message.name {
-        case "dash":
+        case "clam":
             guard let type = body["type"] as? String else { return }
             switch type {
             case "ready":
@@ -719,7 +719,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: DashPaths.logURL, tag: "bridge")
             default:
-                // 去白名单：壳不认得的 type 一律原样广播成 `dash.page.<type>`。
+                // 去白名单：壳不认得的 type 一律原样广播成 `clam.page.<type>`。
                 // 上面三条留特化分支是因为壳自己也要用（ready 关掉超时警告、
                 // debug 落日志），不是因为它们特殊到需要壳批准。
                 // 第三方插件接一条新页内消息 = 页面 postMessage + 插件 subscribe，

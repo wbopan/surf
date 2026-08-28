@@ -56,22 +56,22 @@ final class NotifyPlugin: DashPlugin {
 @MainActor
 final class NotifyPresenter {
     /// 保管箱：最后一份 inbox（`NSDictionary`，系统类型跨代安全）。
-    private static let inboxKey = "dash.notify.inbox"
+    private static let inboxKey = "clam.notify.inbox"
     /// 保管箱：已经发出去的那些通知的内容签名（`NSDictionary`）。
     /// 不存的话，每次热替换都会把在屏的通知**重发一遍**——响一声、跳一下，
     /// 改一行 Swift 就来一次，很快就会让人把通知关掉。
-    private static let presentedKey = "dash.notify.presented"
+    private static let presentedKey = "clam.notify.presented"
     /// 保管箱：本进程是否已经清过"上一次运行的残留"（`NSNumber`）。
     ///
     /// **判据必须是"本进程第一次装载"，不是"本代第一次"**——热替换是同一个进程，
     /// 上一代刚发出去的通知此刻仍然有效。第一版没分清，于是每改一行 Swift 就把
     /// 屏幕上的通知全清掉，而恢复出来的 presented 表又说"发过了"，
     /// 结果通知**消失且不会回来**。保管箱随进程存活、随进程消失，正是这个判据。
-    private static let sweptKey = "dash.notify.swept"
+    private static let sweptKey = "clam.notify.swept"
     /// 保管箱：页内桥最后报上来的当前会话（`NSString`）。
     /// 页面只在**切换时**报，新一代拿不到当前值；不存的话热替换后的头一分钟里
     /// "你正看着它"这条判据是瞎的。
-    private static let currentSessionKey = "dash.notify.currentSession"
+    private static let currentSessionKey = "clam.notify.currentSession"
 
     private let host: DashHost
     private let surface: DashConversationSurface?

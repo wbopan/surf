@@ -4,7 +4,7 @@
  * 干三件事，全部围绕**内置 header 那条 tabs 行**：
  *
  * 1. **投影**：把 `[role="tab"]` 的名单与选中态报给壳（`headerTabs` 页内消息）。
- * 2. **驱动**：装 `window.__dashHeader.setView(index)`，原生段控点了就派发
+ * 2. **驱动**：装 `window.__clamHeader.setView(index)`，原生段控点了就派发
  *    一次 click 到对应按钮。
  * 3. **折叠**：原生侧确认接管之后，才把 tabs 行压成零高度。
  *
@@ -34,12 +34,12 @@
  *
  * ## 折叠要等原生点头
  *
- * `data-dash-native-header` 属性不是发现 tablist 就加，而是等 Swift 半身收到
+ * `data-clam-native-header` 属性不是发现 tablist 就加，而是等 Swift 半身收到
  * 投影、画好段控、回调 `confirmNative()` 之后才加。这样"原生侧缺席"
  * （插件编译失败、壳是旧版、根本没装）的退化结果是**网页 header 原样露出**，
  * 而不是标题栏和页面各画一半。
  *
- * 门控：UA 含 "Dash/" 且 URL 带 dash-native-sidebar=1，与 dash-layout 同款。
+ * 门控：UA 含 "Clam/" 且 URL 带 clam-native-sidebar=1，与 dash-layout 同款。
  */
 window.__ModuleLoader__.load({
 	id: "@wenbo/dash-header",
@@ -48,12 +48,12 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-		const STYLE_ID = "dash-header-style";
-		const NATIVE_ATTR = "data-dash-native-header";
+		const STYLE_ID = "clam-header-style";
+		const NATIVE_ATTR = "data-clam-native-header";
 		/** 折叠范围：`tabs` 只折视图标签那一行，`full` 折整条 header。 */
-		const SCOPE_ATTR = "data-dash-header-scope";
+		const SCOPE_ATTR = "data-clam-header-scope";
 		/** full 模式下补给滚动容器的顶部留白（px），由原生实测后传下来。 */
-		const INSET_VAR = "--dash-header-inset";
+		const INSET_VAR = "--clam-header-inset";
 		/** header 槽 outlet 的选择器。槽名是槽系统的一等身份，不会随 CSS 改。 */
 		const HEADER_SEAT = '[data-slot="conversation.session.header"]';
 		/** 巡检周期。与 dash-layout 的守护同一个节奏。 */
@@ -70,26 +70,26 @@ window.__ModuleLoader__.load({
 		}
 
 		function insideDash() {
-			try { return navigator.userAgent.includes("Dash/"); } catch { return false; }
+			try { return navigator.userAgent.includes("Clam/"); } catch { return false; }
 		}
 
 		function nativeMode() {
 			try {
 				return insideDash()
-					&& new URLSearchParams(window.location.search).get("dash-native-sidebar") === "1";
+					&& new URLSearchParams(window.location.search).get("clam-native-sidebar") === "1";
 			} catch { return false; }
 		}
 
 		/**
-		 * 经 window.webkit.messageHandlers.dash 向壳发消息；普通浏览器静默跳过。
-		 * 壳对未知 type 一律广播成 `dash.page.<type>`（去白名单后的通用转发），
+		 * 经 window.webkit.messageHandlers.clam 向壳发消息；普通浏览器静默跳过。
+		 * 壳对未知 type 一律广播成 `clam.page.<type>`（去白名单后的通用转发），
 		 * 所以这里加一条新消息**不需要改壳**。
 		 * @param {Record<string, unknown>} msg
 		 */
 		function postToShell(msg) {
 			try {
 				const handler = window.webkit && window.webkit.messageHandlers
-					&& window.webkit.messageHandlers.dash;
+					&& window.webkit.messageHandlers.clam;
 				if (handler && typeof handler.postMessage === "function") handler.postMessage(msg);
 			} catch { /* 上报失败静默 */ }
 		}
@@ -339,7 +339,7 @@ window.__ModuleLoader__.load({
 				 *    会让整个插件在服务缺席时不挂载，而缺 `sessions` 只该让"点
 				 *    catalog 一行"失效，tabs / 折叠 / 导出不该跟着消失。
 				 * 2. **包 try**：`ctx.inject` 自己会抛（实测过——裸调一次，
-				 *    整个 apply 挂掉，页面上连 `window.__dashHeader` 都没有，
+				 *    整个 apply 挂掉，页面上连 `window.__clamHeader` 都没有，
 				 *    症状是原生这边所有页面调用回执 `no-bridge`）。
 				 * 3. **装在 effect 内部**：每代重装。沿用上一代的服务句柄等于留一个
 				 *    fiber 已卸载的僵尸接线。
@@ -444,7 +444,7 @@ window.__ModuleLoader__.load({
 							service.openSubagent(address);
 							return "ok:" + child;
 						} catch (error) {
-							window.__dashHeaderLastError = String(error && error.message ? error.message : error);
+							window.__clamHeaderLastError = String(error && error.message ? error.message : error);
 						}
 					}
 					return null;
@@ -552,9 +552,9 @@ window.__ModuleLoader__.load({
 					} catch { /* 静默 */ }
 				};
 
-				window.__dashHeader = {
+				window.__clamHeader = {
 					setView, exportSession, openSubagent, primeCatalog, releaseCatalog,
-					confirmNative, __dashToken: token,
+					confirmNative, __clamToken: token,
 				};
 				// 壳可能早就连上了：告诉原生侧「我这一代起来了，重新报一次」。
 				postToShell({ type: "headerReady" });
@@ -569,8 +569,8 @@ window.__ModuleLoader__.load({
 							root.removeAttribute(SCOPE_ATTR);
 							root.style.removeProperty(INSET_VAR);
 						}
-						if (window.__dashHeader && window.__dashHeader.__dashToken === token) {
-							delete window.__dashHeader;
+						if (window.__clamHeader && window.__clamHeader.__clamToken === token) {
+							delete window.__clamHeader;
 						}
 					} catch { /* 静默 */ }
 				};

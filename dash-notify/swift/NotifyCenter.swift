@@ -46,7 +46,7 @@ final class NotifyCenter {
 
     init(log: @escaping (String) -> Void) {
         self.log = log
-        self.prefix = "dash.\(Self.instanceTag()).".self
+        self.prefix = "clam.\(Self.instanceTag()).".self
     }
 
     // MARK: - 授权

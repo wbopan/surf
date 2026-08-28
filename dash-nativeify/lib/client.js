@@ -8,7 +8,7 @@
  * 见下面「原生字体度量」的实测表）。
  *
  * **不在这里的**：
- * - `window.__dash` 动作桥、收起 web 侧边栏、rail 轨道抵消——那些是原生分栏
+ * - `window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消——那些是原生分栏
  *   接管排版的一部分，住在 dash-layout 的 client 半边（协议两端同包：Swift 侧
  *   `WebViewConversationSurface` 是它们唯一的调用方）。
  * - 网页侧边栏的任何外观调整（顶部让位、背景透明化以透出原生玻璃）。这些是
@@ -17,7 +17,7 @@
  *   够不着侧边栏那一栏）或完整网页模式（全出血逃生舱，原样展示 dsh UI，不修）。
  *   「用网页侧边栏但把它打扮成原生」这个中间态不存在，别再往回加。
  *
- * 门控只有一条：UA 含 "Dash/"（带斜杠，防普通子串误命中）。终端 `dsh web` /
+ * 门控只有一条：UA 含 "Clam/"（带斜杠，防普通子串误命中）。终端 `dsh web` /
  * 普通浏览器打开同一 profile 完全不受影响。
  *
  * 选择器说明：dsh Web UI 的类名是 hash 化 CSS module（如 Md3f7G_flowItem），
@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-		const STYLE_ID = "dash-nativeify-style";
+		const STYLE_ID = "clam-nativeify-style";
 		/**
 		 * 字体那一层**单独一张 style**，因为它是唯一随设置变化的部分。
 		 *
@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		 * 拆开不影响取胜：字体那批规则靠 `html body`（0,0,2）的特异性压过 dsh 的
 		 * `body`（0,0,1），本来就不靠源码顺序——文件头 typeTokenDecls 那段写着理由。
 		 */
-		const FONT_STYLE_ID = "dash-nativeify-font";
+		const FONT_STYLE_ID = "clam-nativeify-font";
 
 		/**
 		 * 「实体按钮」白名单——按钮原生化只作用于这些。
@@ -103,7 +103,7 @@ window.__ModuleLoader__.load({
 		// **给色只能有一处，那一处是 background-color。**
 		// `_primary` 是唯一自带强调色的按钮，它的色由 dsh 自己画，我们碰都不碰，
 		// 只补结构层；其余几枚的色由我们出，写进 background-color。
-		// 这里以前是一层 `inset 0 0 0 100px var(--dash-glass-fill)`，理由写的是
+		// 这里以前是一层 `inset 0 0 0 100px var(--clam-glass-fill)`，理由写的是
 		// 「不碰 background，dsh 自己的底色照常生效」—— 结果就是**两处都在给色**：
 		// 半透明白压在 dsh 的强调蓝上，把发送键洗成藕荷色。少一个能给色的地方，
 		// 这个 bug 在结构上就不可能再出现。
@@ -116,9 +116,9 @@ window.__ModuleLoader__.load({
 		const solidActive = join(ENABLED + ":active");
 		// 失活时给按钮整体去饱和用。前缀必须逐条加 —— 逗号串上只写一次
 		// 只会命中第一条选择器。
-		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-dash-blur] ' + sel).join(",\n");
+		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-blur] ' + sel).join(",\n");
 		// 切焦点那一帧用的「禁过渡」选择器，同样得逐条加前缀。
-		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-dash-nofx] ' + sel).join(",\n");
+		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-nofx] ' + sel).join(",\n");
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -385,7 +385,7 @@ window.__ModuleLoader__.load({
 
 		function insideDash() {
 			try {
-				return navigator.userAgent.includes("Dash/");
+				return navigator.userAgent.includes("Clam/");
 			} catch {
 				return false;
 			}
@@ -396,7 +396,7 @@ window.__ModuleLoader__.load({
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 */
 		/**
-		 * 把承载窗口的激活态映射到 <html data-dash-blur>。
+		 * 把承载窗口的激活态映射到 <html data-clam-blur>。
 		 *
 		 * 页面拿不到 AppKit 的窗口状态，但 WKWebView 会把承载窗口的激活/失活
 		 * 转成页面的 focus/blur 事件（Safari 里切 app 也是同一套）。这是本插件
@@ -416,8 +416,8 @@ window.__ModuleLoader__.load({
 		 * k 像素、alpha = peak × decay^(k-1)。box-shadow 先写的盖后写的，于是第 n 行的
 		 * 累积不透明度是第 n..4 层的合成 —— 天然单调递减，且只用两个旋钮：
 		 *
-		 *   --dash-glass-glow-t / -b   最外一像素的峰值（上下可以不等，深色下确实不等）
-		 *   --dash-glass-glow-d        每向内一像素乘的衰减系数，越小掉得越快
+		 *   --clam-glass-glow-t / -b   最外一像素的峰值（上下可以不等，深色下确实不等）
+		 *   --clam-glass-glow-d        每向内一像素乘的衰减系数，越小掉得越快
 		 *
 		 * 实测（浅色 peak .55 / decay .45，相对白底）：−1 → −3 → −4（本体）；decay 调到
 		 * .55 就摊成 −1 → −2 → −3 → −4。深色 peak .025 / decay .45：+8 → +4 → +2 → +1 → 0，
@@ -431,15 +431,15 @@ window.__ModuleLoader__.load({
 		function glowLayers() {
 			const out = [];
 			for (let k = 1; k <= 4; k++) {
-				const decay = "*var(--dash-glass-glow-d)".repeat(k - 1);
-				out.push(`    inset 0 ${k}px 0 rgb(var(--dash-glass-glow-c) / calc(var(--dash-glass-glow-t)${decay})),`);
-				out.push(`    inset 0 -${k}px 0 rgb(var(--dash-glass-glow-c) / calc(var(--dash-glass-glow-b)${decay})),`);
+				const decay = "*var(--clam-glass-glow-d)".repeat(k - 1);
+				out.push(`    inset 0 ${k}px 0 rgb(var(--clam-glass-glow-c) / calc(var(--clam-glass-glow-t)${decay})),`);
+				out.push(`    inset 0 -${k}px 0 rgb(var(--clam-glass-glow-c) / calc(var(--clam-glass-glow-b)${decay})),`);
 			}
 			return out;
 		}
 
 		/**
-		 * 把按下的位置写成按钮上的 --dash-px / --dash-py（百分比）。
+		 * 把按下的位置写成按钮上的 --clam-px / --clam-py（百分比）。
 		 *
 		 * 按压时那块亮光要从**手指底下**泛起来，不是从按钮正中 —— 位置这件事 CSS
 		 * 拿不到，只能由 JS 喂。一条 document 上的委托监听，capture 阶段抓，
@@ -456,8 +456,8 @@ window.__ModuleLoader__.load({
 				if (!el) return;
 				const r = el.getBoundingClientRect();
 				if (!r.width || !r.height) return;
-				el.style.setProperty("--dash-px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
-				el.style.setProperty("--dash-py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+				el.style.setProperty("--clam-px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+				el.style.setProperty("--clam-py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
 			};
 			document.addEventListener("pointerdown", onDown, { capture: true, passive: true });
 			return () => document.removeEventListener("pointerdown", onDown, { capture: true });
@@ -469,15 +469,15 @@ window.__ModuleLoader__.load({
 			// 而按钮上挂着 box-shadow / background-color / filter 的过渡（那是给 hover 和
 			// 按下用的），焦点一变就会顺带把整摞玻璃层做成 160ms 淡入淡出 —— 一眼假。
 			//
-			// 老办法：先挂 data-dash-nofx（配套 CSS 把过渡整个关掉）→ 改值 →
+			// 老办法：先挂 data-clam-nofx（配套 CSS 把过渡整个关掉）→ 改值 →
 			// **读一次 offsetHeight 强制刷新样式**，让新值以「无过渡」落定 → 摘掉标记。
 			// 那次读取是整段的关键，删了就等于没加：不强制刷新，浏览器会把加标记、改值、
 			// 摘标记合成一次样式计算，过渡照旧发生。
 			const sync = () => {
-				root.setAttribute("data-dash-nofx", "");
-				root.toggleAttribute("data-dash-blur", !document.hasFocus());
+				root.setAttribute("data-clam-nofx", "");
+				root.toggleAttribute("data-clam-blur", !document.hasFocus());
 				void root.offsetHeight;
-				root.removeAttribute("data-dash-nofx");
+				root.removeAttribute("data-clam-nofx");
 			};
 			addEventListener("focus", sync);
 			addEventListener("blur", sync);
@@ -485,8 +485,8 @@ window.__ModuleLoader__.load({
 			return () => {
 				removeEventListener("focus", sync);
 				removeEventListener("blur", sync);
-				root.removeAttribute("data-dash-blur");
-				root.removeAttribute("data-dash-nofx");
+				root.removeAttribute("data-clam-blur");
+				root.removeAttribute("data-clam-nofx");
 			};
 		}
 
@@ -530,10 +530,10 @@ window.__ModuleLoader__.load({
 					// 三条 Apple 动效常数。曲线取自 SwiftUI 全系基准（起步快、收尾极缓）；
 					// 按下切到 80ms 让它跟手，松开回到 320ms 留余韵。
 					":root {",
-					"  --dash-ease: cubic-bezier(0.32, 0.72, 0, 1);",
-					"  --dash-dur-press: 90ms;",
-					"  --dash-dur-fast: 160ms;",
-					"  --dash-dur: 320ms;",
+					"  --clam-ease: cubic-bezier(0.32, 0.72, 0, 1);",
+					"  --clam-dur-press: 90ms;",
+					"  --clam-dur-fast: 160ms;",
+					"  --clam-dur: 320ms;",
 					// 玻璃表面，三层：**硬描边** + 上缘镜面高光 + 整圈 Fresnel 暗带。
 					//
 					// 数值不是估的，是量出来的：用 SwiftUI 的 .glassEffect(.regular, in:
@@ -634,43 +634,43 @@ window.__ModuleLoader__.load({
 					//    之后 50% 穿越点正好落在几何边界上。CSS 的 backdrop-filter 是在
 					//    sRGB 里做的，这一条我们复刻不了，只能接受过渡略偏暗。
 					//  · **底色的合成确实在 sRGB 里**：玻璃盖纯黑读 145.0、盖纯白读 254.0，
-					//    这条直线预测中灰 127 → 199.3，实测 199.2。所以下面的 --dash-glass-fill
+					//    这条直线预测中灰 127 → 199.3，实测 199.2。所以下面的 --clam-glass-fill
 					//    用普通 alpha 合成就对，不需要换空间。
 					//    （顺带：这两个点解出的是 rgba(253,253,253,0.5725)，比下面定稿的
 					//     0.5272 更透一点。定稿是只拿白底一个点校的，两者在白底上等价，
 					//     在深色背景上才分得出。真要更贴系统就改那一行，不必动这里。）
-					"  --dash-glass-blur: 13px;",
+					"  --clam-glass-blur: 13px;",
 					// 饱和度。模糊会把颜色搅浑，系统靠提饱和补回来——这就是"糊了却不脏"
 					// 的来源。四条中间色带（避开纯色，纯红/纯绿在提亮后会撞 255 天花板，
 					// 一 clip 就再也解不出系数）逐通道做最小二乘，得 S = 1.966；网上复刻
 					// 液态玻璃的教程普遍给 saturate(180%)，量出来的正好落在同一档。
-					"  --dash-glass-sat: 1.95;",
-					"  --dash-glass-edge: rgba(0, 0, 0, 0.197);",
-					"  --dash-glass-edge-w: 0.25px;",
+					"  --clam-glass-sat: 1.95;",
+					"  --clam-glass-edge: rgba(0, 0, 0, 0.197);",
+					"  --clam-glass-edge-w: 0.25px;",
 					// 发光的颜色。无色玻璃是白的；**带色玻璃不是** —— 系统蓝键的峰值是 #00C0FF，
 					// R 通道从头到尾是 0，白色叠加会把 R 拉起来，对不上（红键同理，峰值 #FF5762）。
 					// 所以留成变量：真要给某个带色按钮上玻璃，换成同色系更亮的一档，别用白。
-					"  --dash-glass-glow-c: 255 255 255;",
-					"  --dash-glass-glow-t: 0.795;",
-					"  --dash-glass-glow-b: 0.795;",
-					"  --dash-glass-glow-d: 0.45;",
-					"  --dash-glass-side: rgba(0, 0, 0, 0.119);",
+					"  --clam-glass-glow-c: 255 255 255;",
+					"  --clam-glass-glow-t: 0.795;",
+					"  --clam-glass-glow-b: 0.795;",
+					"  --clam-glass-glow-d: 0.45;",
+					"  --clam-glass-side: rgba(0, 0, 0, 0.119);",
 					// 底色 = 元素的 background-color（不是阴影层）。**这是唯一的给色处**；
 					// 半透明 = 页面透上来，压到 1 就是实色。名字以前叫 -body，读起来像"玻璃本体"，
 					// 正是那个"再叠一层材料"的错误心智模型的来源，已改名。
-					"  --dash-glass-fill: rgba(252, 252, 252, 0.5272);",
+					"  --clam-glass-fill: rgba(252, 252, 252, 0.5272);",
 					// 按压亮光。**浅色档几乎没有余量**：本体已经 248/255，纯白也只抬得动 7 级，
 					// 所以给到 1.0 仍然是"淡淡一片"。真想按下去更明显，把它换成一点点黑
 					// （rgba(0,0,0,.10)）读起来强得多 —— 那是"压下去"不是"泛起光"，看要哪个。
 					// 浅色档按下**不泛光**：系统实测就是整体压暗，一点白光都没有；而且浅色
 					// 玻璃本体已经 248/255，头顶只剩 7 级，白光物理上也抬不动（实测 +1 级）。
-					"  --dash-press-glow: transparent;",
+					"  --clam-press-glow: transparent;",
 					// hover 变暗、按下更暗。系统实测（激活窗口、同图左右对照）：
 					// 248.1 → 悬停 239.5（−8.6）→ 按下 230.8（−17.3）。tint 是叠在最上面的
 					// 整片 inset，所以 alpha 直接由 Δ/底色算：8.6/248.1、17.3/248.1。
-					"  --dash-tint-hover: rgba(0, 0, 0, 0.035);",
-					"  --dash-tint-press: rgba(0, 0, 0, 0.070);",
-					"  --dash-glass-drop: rgba(0, 0, 0, 0.05);",
+					"  --clam-tint-hover: rgba(0, 0, 0, 0.035);",
+					"  --clam-tint-press: rgba(0, 0, 0, 0.070);",
+					"  --clam-glass-drop: rgba(0, 0, 0, 0.05);",
 					"}",
 					// dsh 的深色主题挂在 body[data-ds-dark-theme] 上（它自己的 --dsw-*
 					// token 也是在那儿翻面的）。深色下描边翻成亮的（玻璃边缘在暗背景上
@@ -690,25 +690,25 @@ window.__ModuleLoader__.load({
 					// 也就是：本体比背景**亮 +37.3**（不是压暗）· 没有暗描边 · **没有左右阴影**·
 					// **没有上部暗带** · 只有上下两条发光，且**下比上强**（+8 vs +4.7，与浅色反过来）。
 					// 深色玻璃靠整体提亮和边缘发光站住，不靠明暗渐变，所以 side / top 两层归零。
-					"  --dash-glass-edge: rgba(255, 255, 255, 0);",
-					"  --dash-glass-edge-w: 0.25px;",
+					"  --clam-glass-edge: rgba(255, 255, 255, 0);",
+					"  --clam-glass-edge-w: 0.25px;",
 					// 系统在深色下上下**不等强**（+4.7 vs +8.0，与浅色反过来），但定稿在校准台上
 					// 眼调回了等强 —— 深色玻璃本体已经比背景亮 37，上下差那 3 级看不出来，
 					// 反倒是整体的发光强度和衰减速度更要紧。峰值分上下两个变量仍留着，随时能拆开。
-					"  --dash-glass-glow-t: 0.06;",
-					"  --dash-glass-glow-b: 0.06;",
-					"  --dash-glass-glow-d: 0.5;",
-					"  --dash-glass-side: rgba(0, 0, 0, 0);",
-					"  --dash-glass-fill: rgba(255, 255, 255, 0.137);",
+					"  --clam-glass-glow-t: 0.06;",
+					"  --clam-glass-glow-b: 0.06;",
+					"  --clam-glass-glow-d: 0.5;",
+					"  --clam-glass-side: rgba(0, 0, 0, 0);",
+					"  --clam-glass-fill: rgba(255, 255, 255, 0.137);",
 					// 深色档余量大得多，扫过 .20/.30/.40/.55 后取 .30：再高就白成一块。
-					"  --dash-press-glow: rgba(255, 255, 255, 0.17);",
+					"  --clam-press-glow: rgba(255, 255, 255, 0.17);",
 					// 深色档 hover 提亮。系统实测 66.6 → 88.5（+21.9），**按下与悬停逐像素
 					// 完全一致** —— 深色那档的高光到 hover 就到顶了，按下不再加码。我们仍然在
-					// 按下时多叠一层跟指针走的泛光（--dash-press-glow），那是自己要的层次：
+					// 按下时多叠一层跟指针走的泛光（--clam-press-glow），那是自己要的层次：
 					// 闲时 → 悬停（整面提亮）→ 按下（手指底下再亮一块），系统只有前两级。
-					"  --dash-tint-hover: rgba(255, 255, 255, 0.113);",
-					"  --dash-tint-press: rgba(255, 255, 255, 0.113);",
-					"  --dash-glass-drop: rgba(0, 0, 0, 0.25);",
+					"  --clam-tint-hover: rgba(255, 255, 255, 0.113);",
+					"  --clam-tint-press: rgba(255, 255, 255, 0.113);",
+					"  --clam-glass-drop: rgba(0, 0, 0, 0.25);",
 					"}",
 
 					// 深色档的页面底色。dsh 的 `body` 规则是
@@ -736,26 +736,26 @@ window.__ModuleLoader__.load({
 					// 所以这里不是"把值调淡"，是**把四层里的三层直接关掉**，只留底色
 					// （浅色再留一条更浓的描边：−34.8 对激活的 −16.0，浓 2.2 倍）。
 					//
-					// 触发靠 data-dash-blur，由下面 watchWindowFocus() 打在 <html> 上。
+					// 触发靠 data-clam-blur，由下面 watchWindowFocus() 打在 <html> 上。
 					// 特异性：:root[…] body 是 (0,2,2)，稳压上面 body[data-ds-dark-theme] 的
 					// (0,1,1)；深色失活再多一个属性选择器，压住浅色失活。
-					":root[data-dash-blur] body {",
+					":root[data-clam-blur] body {",
 					// 失活描边反过来走「更宽更淡」：0.6px/.095 的墨量（.057）比激活的
 					// 0.25px/.197（.049）略重，但摊开后是一圈灰雾而不是一道锐线 —— 正是
 					// 失活该有的"退到背景里"的样子。
-					"  --dash-glass-edge: rgba(0, 0, 0, 0.095);",
-					"  --dash-glass-edge-w: 0.6px;",
-					"  --dash-glass-glow-t: 0;",
-					"  --dash-glass-glow-b: 0;",
-					"  --dash-glass-side: transparent;",
-					"  --dash-glass-fill: rgba(0, 0, 0, 0.059);",
+					"  --clam-glass-edge: rgba(0, 0, 0, 0.095);",
+					"  --clam-glass-edge-w: 0.6px;",
+					"  --clam-glass-glow-t: 0;",
+					"  --clam-glass-glow-b: 0;",
+					"  --clam-glass-side: transparent;",
+					"  --clam-glass-fill: rgba(0, 0, 0, 0.059);",
 					"}",
-					":root[data-dash-blur] body[data-ds-dark-theme] {",
-					"  --dash-glass-edge: rgba(255, 255, 255, 0);",
-					"  --dash-glass-glow-t: 0;",
-					"  --dash-glass-glow-b: 0;",
-					"  --dash-glass-side: transparent;",
-					"  --dash-glass-fill: rgba(255, 255, 255, 0.094);",
+					":root[data-clam-blur] body[data-ds-dark-theme] {",
+					"  --clam-glass-edge: rgba(255, 255, 255, 0);",
+					"  --clam-glass-glow-t: 0;",
+					"  --clam-glass-glow-b: 0;",
+					"  --clam-glass-side: transparent;",
+					"  --clam-glass-fill: rgba(255, 255, 255, 0.094);",
 					"}",
 
 					// 表面换成平色只做了一半 —— **失活时按钮里的内容也得褪色**。系统在失活窗口里
@@ -781,26 +781,26 @@ window.__ModuleLoader__.load({
 					// （box-shadow 是整体覆盖的，漏抄一层就会把表面抹平）。
 					// **这里不含描边**——自带 border 的那组就到此为止，由 dsh 自己那条
 					// border 充当玻璃边界，我们只补高光和暗带。
-					"  --dash-surface:",
+					"  --clam-surface:",
 					...glowLayers(),
 					// hover / 按下的整片着色。**放在高光层之下**：上下那两道高光是镜面反射，
 					// 不该被"鼠标移上去"改掉；系统那组 Δ 也是量按钮腰部（本体）得来的，
 					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
-					"    inset 0 0 0 100px var(--dash-tint),",
-					"    inset 14px 0 8px -15px var(--dash-glass-side),",
-					"    inset -14px 0 8px -15px var(--dash-glass-side);",
-					"  box-shadow: var(--dash-surface), 0 1px 2px var(--dash-glass-drop);",
+					"    inset 0 0 0 100px var(--clam-tint),",
+					"    inset 14px 0 8px -15px var(--clam-glass-side),",
+					"    inset -14px 0 8px -15px var(--clam-glass-side);",
+					"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop);",
 					"}",
 					// 底色 = 元素自己的 background-color。`!important` 是必须的：dsh 在更具体的
 					// 规则里用 `background` 简写，不加会被静默清掉，连报错都没有。
 					// **`_primary` 不在这条里** —— 它的色是 dsh 画的，我们再盖一层就是两处给色。
 					neutral + " {",
-					"  background-color: var(--dash-glass-fill) !important;",
-					// 材质层。**跟着 --dash-glass-fill 走，只给这一组**：`_primary` 那枚
+					"  background-color: var(--clam-glass-fill) !important;",
+					// 材质层。**跟着 --clam-glass-fill 走，只给这一组**：`_primary` 那枚
 					// 强调键是 dsh 自己画的实色，背后糊什么都看不见，给它上 backdrop-filter
 					// 只是白白多一个合成层。
 					//
-					// 不加 `-webkit-` 前缀：本插件由 UA 门控（含 `Dash/`），只会跑在壳的
+					// 不加 `-webkit-` 前缀：本插件由 UA 门控（含 `Clam/`），只会跑在壳的
 					// WKWebView 里，那是 Safari 26 的引擎，无前缀版本从 Safari 18 就有了。
 					//
 					// 一条 WebKit/Blink 的共同行为要知道：backdrop-filter 的采样**基本只
@@ -808,31 +808,31 @@ window.__ModuleLoader__.load({
 					// 高的按钮不会真的糊进 13px 半径外的东西，读起来更像"把身下这块摊匀"。
 					// 这和系统玻璃在小控件上的观感是一致的，不用去补 Comeau 那套
 					// 「撑高 200% 再拿 mask 裁回来」的花招——那是给整条横幅用的。
-					"  backdrop-filter: blur(var(--dash-glass-blur)) saturate(var(--dash-glass-sat));",
+					"  backdrop-filter: blur(var(--clam-glass-blur)) saturate(var(--clam-glass-sat));",
 					"}",
 					solid + " {",
 					"  transition:",
-					"    scale var(--dash-dur) var(--dash-ease),",
-					"    background-color var(--dash-dur-fast) linear,",
-					"    box-shadow var(--dash-dur-fast) var(--dash-ease),",
-					"    --dash-press-r var(--dash-dur) var(--dash-ease),",
-					"    --dash-press-a var(--dash-dur) var(--dash-ease),",
-					"    filter var(--dash-dur-fast) linear,",
-					"    color var(--dash-dur-fast) linear !important;",
+					"    scale var(--clam-dur) var(--clam-ease),",
+					"    background-color var(--clam-dur-fast) linear,",
+					"    box-shadow var(--clam-dur-fast) var(--clam-ease),",
+					"    --clam-press-r var(--clam-dur) var(--clam-ease),",
+					"    --clam-press-a var(--clam-dur) var(--clam-ease),",
+					"    filter var(--clam-dur-fast) linear,",
+					"    color var(--clam-dur-fast) linear !important;",
 					"}",
-					// 无 border 的那组：把描边补进 --dash-surface 的最前面（层序在最上，
+					// 无 border 的那组：把描边补进 --clam-surface 的最前面（层序在最上，
 					// 不被暗带糊掉）。写在共用规则之后，靠源码顺序覆盖同特异性的上一条。
 					// hover / active 引用的是同一个变量，所以那两态自动带上描边。
 					solidPlain + " {",
-					"  --dash-surface:",
-					"    inset 0 0 0 var(--dash-glass-edge-w) var(--dash-glass-edge),",
+					"  --clam-surface:",
+					"    inset 0 0 0 var(--clam-glass-edge-w) var(--clam-glass-edge),",
 					...glowLayers(),
 					// hover / 按下的整片着色。**放在高光层之下**：上下那两道高光是镜面反射，
 					// 不该被"鼠标移上去"改掉；系统那组 Δ 也是量按钮腰部（本体）得来的，
 					// 所以 alpha 也只该按本体算。闲时 transparent，由 @property 兜底。
-					"    inset 0 0 0 100px var(--dash-tint),",
-					"    inset 14px 0 8px -15px var(--dash-glass-side),",
-					"    inset -14px 0 8px -15px var(--dash-glass-side);",
+					"    inset 0 0 0 100px var(--clam-tint),",
+					"    inset 14px 0 8px -15px var(--clam-glass-side),",
+					"    inset -14px 0 8px -15px var(--clam-glass-side);",
 					"}",
 
 					// 强调键的高光要跟着它自己的色走，不能用白的。
@@ -848,13 +848,13 @@ window.__ModuleLoader__.load({
 					// 的别名链后面，而高光变量吃的是"通道三元组"（配 rgb(... / calc(...))），
 					// 塞不进一个 var(--色)。dsh 换主题色的话这圈边会偏色，到那时再说。
 					tinted + " {",
-					"  --dash-glass-glow-c: 0 192 255;",
-					"  --dash-glass-glow-t: 0.6;",
-					"  --dash-glass-glow-b: 0.6;",
-					"  --dash-glass-glow-d: 0.5;",
+					"  --clam-glass-glow-c: 0 192 255;",
+					"  --clam-glass-glow-t: 0.6;",
+					"  --clam-glass-glow-b: 0.6;",
+					"  --clam-glass-glow-d: 0.5;",
 					"}",
 					"body[data-ds-dark-theme] " + tinted + " {",
-					"  --dash-glass-glow-c: 0 203 255;",
+					"  --clam-glass-glow-c: 0 203 255;",
 					"}",
 
 					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，
@@ -869,11 +869,11 @@ window.__ModuleLoader__.load({
 					solidActive + " {",
 					"  scale: 1.09;",
 					// 150% 就是闲时那个值 —— **定稿故意不收拢**：亮光只淡入淡出，是整面泛光，
-					// 不是聚成一小块。位置仍然跟着 --dash-px/--dash-py 走（渐变中心在手指底下，
+					// 不是聚成一小块。位置仍然跟着 --clam-px/--clam-py 走（渐变中心在手指底下，
 					// 只是摊得很开）。这一行留着是为了把"不收拢"写在用它的地方，改回收拢就调它。
-					"  --dash-press-r: 150%;",
-					"  --dash-press-a: var(--dash-press-glow);",
-					"  transition-duration: var(--dash-dur-press) !important;",
+					"  --clam-press-r: 150%;",
+					"  --clam-press-a: var(--clam-press-glow);",
+					"  transition-duration: var(--clam-dur-press) !important;",
 					"}",
 
 					// 按下时手指底下泛起一片亮光，松手淡掉。渐变中心跟着指针走。
@@ -885,7 +885,7 @@ window.__ModuleLoader__.load({
 					// 不用 JS 补第三个关键帧。反过来写（闲时收小、按住摊开）松手就成了"缩回去"。
 					//
 					// 半径和颜色都能过渡，是因为 @property 把它们注册成了 <percentage> / <color>：
-					// **没注册的自定义属性不参与插值**，会直接跳变。位置走 --dash-px/--dash-py，
+					// **没注册的自定义属性不参与插值**，会直接跳变。位置走 --clam-px/--clam-py，
 					// 由 watchPressPoint() 喂；拿不到指针时兜底 50% 50%。
 					//
 					// **走 background-image 而不是 ::after**：伪元素盖在内容之上，浅色档那点
@@ -894,19 +894,19 @@ window.__ModuleLoader__.load({
 					// 它会覆盖 dsh 自己的 background-image（这几个按钮目前都是纯色，没有渐变），
 					// 而且 inset 阴影画在背景之上，玻璃底色那层会把亮光吃掉一半 —— 后者反而
 					// 更对：光是从材料内部透出来的，不是糊在玻璃表面。
-					// 不注册它，闲时 var(--dash-tint) 解析不出来会让**整条 box-shadow 失效**，
+					// 不注册它，闲时 var(--clam-tint) 解析不出来会让**整条 box-shadow 失效**，
 					// 玻璃表面直接消失。注册成 <color> 顺带也让它自己可插值。
-					"@property --dash-tint {",
+					"@property --clam-tint {",
 					"  syntax: \"<color>\";",
 					"  inherits: false;",
 					"  initial-value: transparent;",
 					"}",
-					"@property --dash-press-r {",
+					"@property --clam-press-r {",
 					"  syntax: \"<percentage>\";",
 					"  inherits: false;",
 					"  initial-value: 150%;",
 					"}",
-					"@property --dash-press-a {",
+					"@property --clam-press-a {",
 					"  syntax: \"<color>\";",
 					"  inherits: false;",
 					"  initial-value: transparent;",
@@ -915,34 +915,34 @@ window.__ModuleLoader__.load({
 					// !important 是必须的：`background` 简写会把 background-image 一起清掉，
 					// dsh 只要在哪条更具体的规则里用了简写（发送键那种实心色最容易），亮光就
 					// 整个没了，而且是静默的 —— 不报错、不留痕。
-					"  background-image: radial-gradient(circle at var(--dash-px, 50%) var(--dash-py, 50%),",
-					"    var(--dash-press-a) 0%, transparent var(--dash-press-r)) !important;",
+					"  background-image: radial-gradient(circle at var(--clam-px, 50%) var(--clam-py, 50%),",
+					"    var(--clam-press-a) 0%, transparent var(--clam-press-r)) !important;",
 					"}",
 
 					// 悬停：整面着色（浅色变暗 / 深色提亮，见上面两组 tint 变量），
 					// 外加把贴地投影抬高一档（"浮起来"）。表面其余层原样保留 ——
-					// box-shadow 是整体覆盖的，所以这里必须重抄 var(--dash-surface)。
+					// box-shadow 是整体覆盖的，所以这里必须重抄 var(--clam-surface)。
 					solidHover + " {",
-					"  --dash-tint: var(--dash-tint-hover);",
-					"  box-shadow: var(--dash-surface), 0 2px 5px var(--dash-glass-drop);",
+					"  --clam-tint: var(--clam-tint-hover);",
+					"  box-shadow: var(--clam-surface), 0 2px 5px var(--clam-glass-drop);",
 					"}",
 					// **实心强调键不参与 hover**：系统实测 .glassProminent 悬停零变化
 					// （浅深两档、逐像素 diff 都是空的，且 .onHover 指示灯确认游标确实到位）。
 					// 选择器与上一条同特异性，靠源码顺序覆盖。投影那一档保留。
 					'button[class*="_primary"]' + ENABLED + ':hover {',
-					"  --dash-tint: transparent;",
+					"  --clam-tint: transparent;",
 					"}",
 					// 按下：着色加深一档 + 投影压回去（贴地），配合容器放大，像被按进桌面。
 					// 排在 hover 之后，所以两态同时命中时这条赢（含上面那条 _primary 的清零）。
 					solidActive + " {",
-					"  --dash-tint: var(--dash-tint-press);",
-					"  box-shadow: var(--dash-surface), 0 0 1px var(--dash-glass-drop);",
+					"  --clam-tint: var(--clam-tint-press);",
+					"  box-shadow: var(--clam-surface), 0 0 1px var(--clam-glass-drop);",
 					"}",
 
 					// 尊重"减少动态效果"：关掉形变，保留配色反馈。
 					"@media (prefers-reduced-motion: reduce) {",
 					"  " + solidActive + " { scale: 1 !important; }",
-					"  " + solidActive + " { --dash-press-r: 100% !important; }",
+					"  " + solidActive + " { --clam-press-r: 100% !important; }",
 					"}",
 				];
 				style.textContent = rules.join("\n");

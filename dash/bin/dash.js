@@ -305,7 +305,7 @@ function realpath(path) {
  *
  * 端口默认 `0`：OS 挑一个空闲的。多 worktree 并行时这是唯一不用协调的做法，
  * 而 App 那边不受影响——dash-app 把实际端口写进 endpoint 文件、也用
- * `--dash-endpoint` 直接递给它拉起的壳。
+ * `--clam-endpoint` 直接递给它拉起的壳。
  */
 function start(profile, opts) {
 	const args = ["--profile", profile, "--port", String(opts.port), "--no-open", ...opts.passthrough];

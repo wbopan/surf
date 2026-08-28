@@ -230,7 +230,7 @@ export function createSessionSource(ctx, log) {
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 		if (others.length > 0) {
 			// **标题留空**：兜底组不是真工作区，「未分组」四个字归显示层。
-			result.push({ id: "dash.sidebar.other", workspaceId: null, title: "", sessions: others });
+			result.push({ id: "clam.sidebar.other", workspaceId: null, title: "", sessions: others });
 		}
 		return result;
 	}

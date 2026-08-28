@@ -7,7 +7,7 @@
  *   1. 写 endpoint 发现文件（`~/Library/Application Support/io.wenbo.dash/endpoint.json`），
  *      让手动双击启动的 app 也能找到这个 dsh；fiber 卸载时删除。
  *   2. 源码 hash 变了或产物缺失 → xcodegen + xcodebuild（无 Xcode 则降级为只探测既有产物）。
- *   3. 产物存在且 app 尚未运行 → `open --args --dash-endpoint …` 拉起。
+ *   3. 产物存在且 app 尚未运行 → `open --args --clam-endpoint …` 拉起。
  *
  * 起来之后还盯着壳源码（v1，§7.5）：变了就后台重建，经桥播报
  * `app-build`；壳把它变成一条"有新版，重启生效"的横幅。**重建不等于重启**——
@@ -69,7 +69,7 @@ const ENDPOINTS_DIR = join(APP_SUPPORT, "endpoints");
  * 只在桥缺席时用这个默认；写死一份自己的会让"改了桥的 path 壳就静默连不上"。
  * 与 Swift 侧 `DashEndpoint.defaultBridgePath` 是同一个默认。
  */
-const DEFAULT_BRIDGE_PATH = "/dash/bridge";
+const DEFAULT_BRIDGE_PATH = "/clam/bridge";
 
 /** Xcode 工程载荷根（本包的 `host/`）。 */
 const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
@@ -406,8 +406,8 @@ async function launch({ appPath, httpBase, bridgePath, logger }) {
 	}
 	try {
 		await run("open", [appPath, "--args",
-			"--dash-endpoint", httpBase,
-			"--dash-bridge-path", bridgePath], HOST_DIR);
+			"--clam-endpoint", httpBase,
+			"--clam-bridge-path", bridgePath], HOST_DIR);
 		logger.info(`已拉起 dash：${appPath} → ${httpBase}`);
 	} catch (error) {
 		logger.error(`拉起 dash 失败（不重试）：${errorText(error)}`);

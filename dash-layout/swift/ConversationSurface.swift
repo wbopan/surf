@@ -18,7 +18,7 @@ public protocol DashConversationSurface: AnyObject {
     func openSettings()
 }
 
-/// WKWebView 实现：经 `evaluateJavaScript` 调用本包 client 半边（lib/client.js）装的 `window.__dash`。
+/// WKWebView 实现：经 `evaluateJavaScript` 调用本包 client 半边（lib/client.js）装的 `window.__clam`。
 /// 全部防御式——桥不在（普通浏览器、页面还没加载完）时静默失败，不弹窗不报错。
 final class WebViewConversationSurface: DashConversationSurface {
     private weak var webView: WKWebView?
@@ -47,8 +47,8 @@ final class WebViewConversationSurface: DashConversationSurface {
 
     private func call(_ fn: String, args: [String]) {
         guard let webView else { return }
-        let script = "(window.__dash && typeof window.__dash.\(fn) === 'function')"
-            + " ? window.__dash.\(fn)(\(args.joined(separator: ","))) : undefined"
+        let script = "(window.__clam && typeof window.__clam.\(fn) === 'function')"
+            + " ? window.__clam.\(fn)(\(args.joined(separator: ","))) : undefined"
         webView.evaluateJavaScript(script) { [log] _, error in
             if let error { log("桥调用 \(fn) 失败：\(error.localizedDescription)") }
         }

@@ -22,7 +22,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "..", "lib", "client.js"), "utf8");
 
 Object.defineProperty(globalThis, "navigator",
-	{ value: { userAgent: "Mozilla/5.0 Dash/1.0" }, configurable: true, writable: true });
+	{ value: { userAgent: "Mozilla/5.0 Clam/1.0" }, configurable: true, writable: true });
 
 let css = null;
 const el = () => ({ setAttribute() {}, removeAttribute() {}, toggleAttribute() {}, remove() {},

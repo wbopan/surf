@@ -6,8 +6,8 @@
  * （swift/ConversationSurface.swift）。协议两端同包 = 改一边必然看见另一边，
  * 与 `DashConversationSurface` 协议「住在消费者侧」是同一条 1×N 规则。
  *
- * 1. **页内动作桥 `window.__dash`**：selectSession / startSession / openSettings
- *    + 当前会话反向回报（window.webkit.messageHandlers.dash.postMessage）。
+ * 1. **页内动作桥 `window.__clam`**：selectSession / startSession / openSettings
+ *    + 当前会话反向回报（window.webkit.messageHandlers.clam.postMessage）。
  * 2. **收起 web 侧边栏**：经 ui-layout 的公开服务 ctx.layout.toggleSidebar()
  *    把侧边栏收起，再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口
  *    左缘起排——原生侧边栏（dash-sidebar）占的就是那块地方。
@@ -15,8 +15,8 @@
  * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
  * 那是 dash-nativeify 的事，它零服务依赖、要抢首帧。
  *
- * 门控：UA 含 "Dash/"（动作桥）之上，收起侧边栏再要求 URL 参数
- * dash-native-sidebar=1。终端 `dsh web` / 普通浏览器不受影响。
+ * 门控：UA 含 "Clam/"（动作桥）之上，收起侧边栏再要求 URL 参数
+ * clam-native-sidebar=1。终端 `dsh web` / 普通浏览器不受影响。
  *
  * 选择器说明：dsh Web UI 的类名是 hash 化 CSS module（如 pI_x6G_sidebarCol），
  * hash 随版本变化但语义后缀稳定，因此用 [class*="_sidebarCol"] 防御式命中。
@@ -28,9 +28,9 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-		const STYLE_ID = "dash-layout-style";
-		const NATIVE_ATTR = "data-dash-native-sidebar";
-		const OCCUPANCY_VAR = "--dash-sidebar-occupancy";
+		const STYLE_ID = "clam-layout-style";
+		const NATIVE_ATTR = "data-clam-native-sidebar";
+		const OCCUPANCY_VAR = "--clam-sidebar-occupancy";
 		// ui-layout computeColumns：折叠（sidebar 偏好为 0）时轨道仍占 56px rail。
 		const RAIL_PX = 56;
 
@@ -47,35 +47,35 @@ window.__ModuleLoader__.load({
 
 		function insideDash() {
 			try {
-				return navigator.userAgent.includes("Dash/");
+				return navigator.userAgent.includes("Clam/");
 			} catch {
 				return false;
 			}
 		}
 
-		/** 原生侧边栏模式：UA 门控之上再要求 URL 查询参数 dash-native-sidebar=1。 */
+		/** 原生侧边栏模式：UA 门控之上再要求 URL 查询参数 clam-native-sidebar=1。 */
 		function nativeSidebarMode() {
 			try {
-				return insideDash() && new URLSearchParams(window.location.search).get("dash-native-sidebar") === "1";
+				return insideDash() && new URLSearchParams(window.location.search).get("clam-native-sidebar") === "1";
 			} catch {
 				return false;
 			}
 		}
 
 		/**
-		 * 经 window.webkit.messageHandlers.dash 向壳应用发消息；
+		 * 经 window.webkit.messageHandlers.clam 向壳应用发消息；
 		 * 普通浏览器（无该 handler）静默跳过。
 		 * @param {Record<string, unknown>} msg
 		 */
 		function postToShell(msg) {
 			try {
-				const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dash;
+				const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.clam;
 				if (handler && typeof handler.postMessage === "function") handler.postMessage(msg);
 			} catch { /* 上报失败静默 */ }
 		}
 
 		/* ------------------------------------------------------------------ *
-		 * 页内动作桥 window.__dash（仅 dash UA；防御式，绝不抛）。
+		 * 页内动作桥 window.__clam（仅 dash UA；防御式，绝不抛）。
 		 * ------------------------------------------------------------------ */
 
 		/**
@@ -87,7 +87,7 @@ window.__ModuleLoader__.load({
 		 *     useState），回退为点击侧边栏设置触发按钮 button[aria-haspopup="dialog"]。
 		 * ctx.inject([...], cb) 在服务可用时（含已可用）启动子 fiber；服务缺席则
 		 * 该能力静默缺失，ready 上报里如实反映。子 fiber 随本插件 fiber 一起卸载。
-		 * 每次启动都重装：新实例的服务接线才是活的，沿用上一代的 window.__dash
+		 * 每次启动都重装：新实例的服务接线才是活的，沿用上一代的 window.__clam
 		 * 等于留一个 fiber 已卸载的僵尸桥（点原生侧边栏没反应）。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 * @param {string} token 实例所有权标记
@@ -176,11 +176,11 @@ window.__ModuleLoader__.load({
 			const delegate = (name) => (...args) => {
 				try { bridge[name]?.(...args); } catch { /* 静默 */ }
 			};
-			window.__dash = {
+			window.__clam = {
 				selectSession: delegate("selectSession"),
 				startSession: delegate("startSession"),
 				openSettings: delegate("openSettings"),
-				__dashToken: token,
+				__clamToken: token,
 			};
 
 			// ready 上报：caps 反映实际接通的槽位（非委托对象键），接线变化时补报。
@@ -209,9 +209,9 @@ window.__ModuleLoader__.load({
 				for (const t of timers) clearTimeout(t); // 卸载后别再补报，否则壳收到过期 caps
 				try {
 					// 只收回自己装的那份（见 makeToken）。
-					if (window.__dash && window.__dash.__dashToken === token) delete window.__dash;
+					if (window.__clam && window.__clam.__clamToken === token) delete window.__clam;
 				} catch {
-					try { window.__dash = undefined; } catch { /* 静默 */ }
+					try { window.__clam = undefined; } catch { /* 静默 */ }
 				}
 			};
 		}
@@ -323,7 +323,7 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * 插件体：装动作桥（凡 Dash/ UA）+ 收起 web 侧边栏（再要 native 模式）。
+		 * 插件体：装动作桥（凡 Clam/ UA）+ 收起 web 侧边栏（再要 native 模式）。
 		 * @param {import('@deepseek-ai/cordis').Context} ctx
 		 */
 		function apply(ctx) {
@@ -342,7 +342,7 @@ window.__ModuleLoader__.load({
 						// 折叠后 computeColumns 仍给 sidebar 轨道保留 56px rail。
 						// grid 轨道宽度由 AppFrame 的内联 gridTemplate-columns 决定、
 						// 无法部分覆盖，因此整体把 frame 向左平移 rail 宽（实时测量入
-						// --dash-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
+						// --clam-sidebar-occupancy，缺省 56px），侧边栏列移出视口、
 						// 会话列从窗口左缘起排。frame 自带 overflow:hidden，不会外溢。
 						":root { " + OCCUPANCY_VAR + ": " + RAIL_PX + "px; }",
 						"html[" + NATIVE_ATTR + '] [class*="_frame"] {',
@@ -393,7 +393,7 @@ window.__ModuleLoader__.load({
 		exports.apply = apply;
 		// 三个服务（sessions / workspaces / layout）全部走作用域 ctx.inject：
 		// 服务缺席时该能力静默缺失，插件本身照常挂载——顶层硬依赖会让任一服务
-		// 重载连带本插件卸载重挂，白白抖掉已装好的 window.__dash。
+		// 重载连带本插件卸载重挂，白白抖掉已装好的 window.__clam。
 		exports.inject = [];
 		return module.exports;
 	}

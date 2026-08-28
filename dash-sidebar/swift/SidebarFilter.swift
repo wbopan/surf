@@ -42,14 +42,14 @@ final class SidebarFilterState: ObservableObject {
     @Published var query = ""
 
     /// 兜底组（未分组）在隐藏集合里的键。它没有 workspaceId，借组 id 顶上。
-    static let otherGroupKey = "dash.sidebar.other"
+    static let otherGroupKey = "clam.sidebar.other"
 
     private let defaults: UserDefaults
 
     private enum Keys {
-        static let mode = "dash.sidebar.filter.mode"
-        static let hidden = "dash.sidebar.filter.hiddenGroups"
-        static let archived = "dash.sidebar.filter.showArchived"
+        static let mode = "clam.sidebar.filter.mode"
+        static let hidden = "clam.sidebar.filter.hiddenGroups"
+        static let archived = "clam.sidebar.filter.showArchived"
     }
 
     init(defaults: UserDefaults = .standard) {

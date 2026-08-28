@@ -14,7 +14,7 @@ public func dash_plugin_entry() -> UnsafeMutableRawPointer {
 final class LayoutPlugin: DashPlugin {
     /// 本插件那条工具栏贡献被点击时广播的主题。
     /// 主题名是字符串而不是闭包，所以它天然跨得过世代替换。
-    static let newSessionTopic = "dash.layout.newSession"
+    static let newSessionTopic = "clam.layout.newSession"
 
     func activate(host: DashHost) -> AnyObject? {
         guard let webView = host.objects.object(DashObjects.Key.webView, as: WKWebView.self) else {

@@ -4,7 +4,7 @@ import Foundation
 struct DashEndpoint: Equatable {
     /// 这个答案是从哪来的（诊断用；flag 优先于发现文件）。
     enum Source: String {
-        case flag       // 命令行 --dash-endpoint（dash-app 插件拉起时传入）
+        case flag       // 命令行 --clam-endpoint（dash-app 插件拉起时传入）
         case discovery  // endpoint 发现文件（用户手动双击 App 时走这条）
     }
 
@@ -46,7 +46,7 @@ struct DashEndpoint: Equatable {
 /// 每一级给出的都只是"候选"，真伪由 `probe` 的一次 GET 判定——
 /// flag 里的端口可能属于一个已经退出的 dsh。
 enum EndpointLocator {
-    static let defaultBridgePath = "/dash/bridge"
+    static let defaultBridgePath = "/clam/bridge"
 
     // MARK: - 候选
 
@@ -63,14 +63,14 @@ enum EndpointLocator {
         return out
     }
 
-    /// `--dash-endpoint <url>`（也吃 `--dash-endpoint=<url>`）；
-    /// 可选 `--dash-bridge-path <path>`。
+    /// `--clam-endpoint <url>`（也吃 `--clam-endpoint=<url>`）；
+    /// 可选 `--clam-bridge-path <path>`。
     static func flagEndpoint() -> DashEndpoint? {
         let args = ProcessInfo.processInfo.arguments
-        guard let raw = value(of: "--dash-endpoint", in: args),
+        guard let raw = value(of: "--clam-endpoint", in: args),
               let url = URL(string: raw), url.scheme != nil, url.host != nil else { return nil }
         return DashEndpoint(httpBase: url,
-                            bridgePath: value(of: "--dash-bridge-path", in: args) ?? defaultBridgePath,
+                            bridgePath: value(of: "--clam-bridge-path", in: args) ?? defaultBridgePath,
                             pid: nil, startedAt: nil, profile: nil, hostDir: nil, source: .flag)
     }
 

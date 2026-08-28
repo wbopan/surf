@@ -11,7 +11,7 @@ import Observation
 /// 五格里有四格现在是**原生** `NSToolbarItem` 子类（段控 / 两个菜单 / 一个按钮），
 /// 不再是 SwiftUI 视图——好处是排版、显示模式、玻璃分组、徽标、溢出全归 AppKit 管，
 /// 代价是它们不会自己观察 model。所以得有人盯着 model，把变化翻译成
-/// `dash.toolbar.update` 广播。
+/// `clam.toolbar.update` 广播。
 ///
 /// ## 盯的方式：`withObservationTracking` 自续期
 ///

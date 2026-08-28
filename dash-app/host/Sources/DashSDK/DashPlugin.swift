@@ -27,7 +27,7 @@ import Foundation
 ///   + `DashHost.contribute(to:id:order:metadata:make:)`。给"N 个插件各往一个
 ///   表面加一条"用（工具栏按钮是第一个消费者，在 dash-layout）。
 /// - `DashEventBus.Topic.pagePrefix`：页内桥的未知消息不再被壳白名单挡掉，
-///   一律以 `dash.page.<type>` 广播。
+///   一律以 `clam.page.<type>` 广播。
 /// - `DashHooks`（应答式钩子表）+ `DashHost.hooks` + `DashHost.handle(hook:_:)`。
 ///   给"系统要求在 app 启动早期就位、实现方却是运行时装载的插件"那一类接线用
 ///   （第一个住户：`UNUserNotificationCenter.delegate`，实测晚设无效）。

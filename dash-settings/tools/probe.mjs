@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dash-settings 的桥探针：不开窗口、不碰屏幕，直接当一个"壳"连上 `/dash/bridge`，
+ * dash-settings 的桥探针：不开窗口、不碰屏幕，直接当一个"壳"连上 `/clam/bridge`，
  * 把 node 半边的数据面从头验一遍。
  *
  * **为什么需要它**：设置的数据面（快照形状、单字段写入、乐观锁、redact）全都跑在
@@ -64,7 +64,7 @@ function findEndpoint() {
 }
 
 const base = findEndpoint();
-const wsURL = base.replace(/^http/, "ws") + "/dash/bridge";
+const wsURL = base.replace(/^http/, "ws") + "/clam/bridge";
 console.log(`连接 ${wsURL}`);
 
 const ws = new WebSocket(wsURL);
