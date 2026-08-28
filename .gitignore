@@ -11,7 +11,10 @@ dash-app/host/Sources/Resources/BuildTimestamp.txt
 # 共享 module 编译产物（scripts/build-modules.sh 每次构建重生成）
 dash-app/host/build-sdk/
 
-# xcodegen 二进制（从 GitHub Releases 下载，见 README）。
+# xcodegen 二进制（从 GitHub Releases 下载，或 brew install xcodegen）。
+# 挡住它是对的，但**缺了它整个壳就没了**（dash-app 只留一句「优雅缺席」）——
+# 所以 `./dev` 的 ensureXcodegen 会从同仓库的其它 worktree 或 PATH 拷一份补上，
+# 详见 CLAUDE.md「多 worktree」。
 # **必须带路径锚点**：无锚点的 `tools/` 匹配任意层级的同名目录，会把源码工具
 # 一起吞掉——dash-nativeify/tools/dump-css.mjs 就这么在库外躺了一阵子。
 /dash-app/host/tools/
