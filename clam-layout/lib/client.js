@@ -15,6 +15,9 @@
  *    的 node 半边注册），值一变就经同一条页内桥推给壳，壳据此重建主菜单。
  *    住这儿是因为页 → 壳的上报通道（ready / currentSession）本来就归它。
  *    计划：docs/clam-shortcuts-settings-plan.md。
+ * 4. **语言投影**：订 `ctx.locale`（dsh 解析后的 active，不是设置里的原始
+ *    preference），经同一条页内桥推给壳，壳转成粘性总线主题 `clam.locale`
+ *    供原生插件消费。计划：docs/clam-i18n-plan.md。
  *
  * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
  * 那是 clam-nativeify 的事，它零服务依赖、要抢首帧。
@@ -260,6 +263,45 @@ window.__ModuleLoader__.load({
 						};
 						kctx.effect(() => scope.subscribe(sync), "clam-layout: keymap 投影");
 						sync();
+					} catch { /* 服务形状不符静默 */ }
+				});
+			} catch { /* ctx.inject 不可用静默 */ }
+
+			// 语言投影：dsh 的 locale（**页面解析后的 active**）→ 壳与原生插件。
+			//
+			// **订 `locale` 而不是 settings 里那个 `preference`**：`preference`
+			// 缺省时的取值是浏览器推导（navigator.languages 的 primary subtag），
+			// 只有页面侧算得准。不变量是"原生 UI 的语言 == 页面显示的语言"，
+			// 所以两半必须读同一个解析结果，而不是各自解析同一份原始设置。
+			//
+			// 通道与补发同 keymap：走页内桥（壳把任意 type 广播成
+			// `clam.page.<type>`），页面生命周期天然解决补发——壳重启 = WebView
+			// 重载 = 本文件重跑 = 重新投影。壳那边再转成粘性总线主题，
+			// 因为插件比页面装载得晚（见 ClamEventBus.emitSticky）。
+			//
+			// locale 服务缺席 = 永远不推，壳一直用自己那条决议链（缓存 → 系统语言
+			// → en）——**退化，不是故障**。
+			try {
+				ctx.inject(["locale"], (lctx) => {
+					try {
+						const locale = lctx.locale;
+						if (!locale || typeof locale.getSnapshot !== "function") return;
+						let lastActive = null;
+						const syncLocale = () => {
+							try {
+								const active = locale.getSnapshot()?.active;
+								// 词典注册也会 bump revision 叫一遍订阅者，绝大多数
+								// 通知里语言根本没变——同值不重推，省掉壳那边一轮
+								// 缓存写入与广播。
+								if (typeof active !== "string" || active === "" || active === lastActive) return;
+								lastActive = active;
+								postToShell({ type: "locale", locale: active });
+							} catch { /* 读取失败静默 */ }
+						};
+						if (typeof locale.subscribe === "function") {
+							lctx.effect(() => locale.subscribe(syncLocale), "clam-layout: locale 投影");
+						}
+						syncLocale();
 					} catch { /* 服务形状不符静默 */ }
 				});
 			} catch { /* ctx.inject 不可用静默 */ }

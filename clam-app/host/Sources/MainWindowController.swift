@@ -188,6 +188,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     init() {
         super.init(window: nil)
+        // **语言要在一切之前定下来**：菜单、引导页都在下面几行里建，而插件装载得
+        // 更晚——粘性广播先发一份，谁来订都拿得到（见 publishLocale）。
+        publishLocale(Self.startupLocale)
         setupWindow()
         setupContentView()
         // 先用默认表把菜单建起来：页面还没加载完，设置里那份键位表要等
@@ -850,6 +853,59 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
     }
 
+    // MARK: - 界面语言（跟随 dsh 的 `locale` 设置）
+
+    /// 缓存键。**这不是偏好**——语言的唯一权威是 dsh 的 `locale.preference`
+    /// （`~/.dsh/settings.yaml`），这里只记住上次已知的解析结果。
+    /// 页面投影一到就覆盖，永远不反向写回 dsh。
+    private static let localeDefaultsKey = "clamLocale"
+
+    /// 此刻在役的语言。真相来自页面（`clam.page.locale`）；
+    /// 页面还没说话时是 `startupLocale` 那一级的猜测。
+    private(set) var activeLocale: ClamLocale = .en
+
+    /// 冷启动时的决议：**缓存 → 系统语言 → en**。
+    ///
+    /// 为什么要缓存这一级：菜单在 `init` 里就建好了，而页面侧的投影要等
+    /// WebView 载入 + 插件树挂载，中间隔着一两秒。没有缓存的话每次冷启动都会
+    /// "先英文、两秒后闪成中文"。缓存不是偏好：页面一说话就被覆盖。
+    ///
+    /// 系统语言这一级与页面侧天然一致——WKWebView 的 `navigator.languages`
+    /// 同样来自系统语言，而 `ClamLocale.resolve` 复刻的就是 dsh 的推导规则。
+    private static var startupLocale: ClamLocale {
+        if let raw = UserDefaults.standard.string(forKey: localeDefaultsKey),
+           let cached = ClamLocale(rawValue: raw) {
+            return cached
+        }
+        return ClamLocale.resolve(preferred: Locale.preferredLanguages)
+    }
+
+    /// 广播当前语言。**粘性**：插件装载晚于壳启动，不粘的话它要等到用户下一次
+    /// 切语言才知道现在是哪一种，而那个状态很可能一直不变
+    /// （见 `ClamEventBus.emitSticky`）。
+    private func publishLocale(_ next: ClamLocale) {
+        activeLocale = next
+        nativeHost.events.emitSticky(ClamEventBus.Topic.locale, ["locale": next.rawValue])
+    }
+
+    /// 页面投影来的语言（`clam.page.locale`，clam-layout 的 client 半边订
+    /// `ctx.locale` 后推）。这是决议链的最高一级，无条件覆盖前两级。
+    ///
+    /// 取的是页面**解析后**的 `active` 而不是设置里的原始 `preference`：
+    /// `preference` 缺省时的推导只有浏览器侧算得准，而不变量是
+    /// "原生 UI 的语言 == 页面显示的语言"。
+    private func applyProjectedLocale(_ raw: String) {
+        guard let next = ClamLocale(rawValue: raw) else {
+            Log.write("页面投影的语言 \"\(raw)\" 不在值域内，忽略", to: ClamPaths.logURL, tag: "locale")
+            return
+        }
+        // 缓存无条件刷新（哪怕值没变）：便宜，而且能修好手改过 defaults 的机器。
+        UserDefaults.standard.set(next.rawValue, forKey: Self.localeDefaultsKey)
+        guard next != activeLocale else { return }
+        publishLocale(next)
+        Log.write("界面语言切到 \(next.rawValue)（来自 dsh 设置）", to: ClamPaths.logURL, tag: "locale")
+    }
+
     // MARK: - 菜单动作：喊命令
 
     // 以下这些只 emit，不做事——词汇表与"没人应答会怎样"见 setupMenus() 顶注。
@@ -958,6 +1014,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         lines.append("桥：\(nativeHost.isBridgeConnected ? "已连接" : "未连接")")
         lines.append("页内桥：\(bridgeReady ? "已就绪" : "未就绪")")
         lines.append("原生侧边栏门控：\(nativeSidebarParamInUse ? "开（?clam-native-sidebar=1）" : "关（完整网页模式）")")
+        // 页面还没投影过来时，显示的是缓存/系统语言那两级的猜测——分得清才好查
+        // "原生和网页各说各话"这类问题。
+        let localeSource = UserDefaults.standard.string(forKey: Self.localeDefaultsKey) == nil
+            ? "系统语言" : "缓存或页面投影"
+        lines.append("界面语言：\(activeLocale.rawValue)（\(localeSource)）")
         lines.append("")
         lines.append("── 原生插件 ──")
         lines.append("在役 \(nativeHost.loadedCount) 个，本次运行退休 \(nativeHost.retiredThisRun) 个 image")
@@ -999,7 +1060,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // MARK: - 网页 → 原生消息
 
-    /// v2 桥消息（ready / currentSession）。
+    /// v2 桥消息（ready / currentSession / locale）。
     func handleBridgeMessage(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         switch message.name {
@@ -1023,6 +1084,12 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                     // ——而这恰恰是它最需要的那个输入（见 ClamEventBus.emitSticky）。
                     nativeHost.events.emitSticky(ClamEventBus.Topic.pageCurrentSession,
                                                  ["id": id])
+                }
+            case "locale":
+                // 留特化分支的理由与 currentSession 同款：**壳自己也要用它**
+                // （菜单栏、引导页、诊断面板都是壳画的），而且它还要落缓存。
+                if let raw = body["locale"] as? String {
+                    applyProjectedLocale(raw)
                 }
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: ClamPaths.logURL, tag: "bridge")

@@ -244,3 +244,25 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
 ## 10. 执行日志
 
 （每完成一个里程碑追加一行：日期、里程碑、结果、偏离计划之处。）
+
+- **2026-08-28 · i0（管线基建）· 完成。** 新增 `ClamSDK/ClamLocale.swift`
+  （`ClamLocale` + `ClamLocaleStore`）、`ClamEventBus.Topic.locale = "clam.locale"`；
+  `clam-layout/lib/client.js` 加 `ctx.inject(["locale"])` 投影
+  （`postToShell({type:"locale", locale: active})`，同值不重推）；
+  `MainWindowController` 加 `locale` 特化分支 + `clamLocale` 缓存 + 冷启动决议
+  （`init` 第一句就 `emitSticky`，早于建菜单与装插件）；新增
+  `clam-notify/lib/locale.js`（`createLocaleSource`，只 `get` + 听
+  `settings/updated`，不 register），已在 `lib/index.js` 接上并持有，暂不消费。
+  壳 `xcodebuild` Debug BUILD SUCCEEDED，`ClamLocale` 已出现在
+  `build-sdk/ClamSDK.swiftinterface`；`node --check` 三个改动文件通过，
+  `node --test clam-sidebar/test/*.test.js` 18/18 绿。
+  **偏离计划三处**：
+  ① `ClamLocale.resolve` 按 **dsh 的 `detectBrowserLocale()` 原样复刻**——
+  第一条命中**任一**已支持语言的标签赢（`en` 也算命中），而不是「只认 `zh`、
+  其余往后找」。差别只在 `["en","zh"]` 这类序列上，但不变量 2（两半永远不许
+  各说各话）要求两边规则逐字一致，所以以上游为准。
+  ② 顺手在诊断面板加了一行「界面语言：<id>（来源）」——i0 的验收判据要求
+  「壳日志/诊断面板里看到 sticky 事件与新值」，这行是那个判据的落点，
+  不是文案翻译。
+  ③ clam-notify 启动时用 `log.info` 打一行当前语言（stderr），
+  同样是为了让 i0 在终端可验。

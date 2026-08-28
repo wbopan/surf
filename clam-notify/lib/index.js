@@ -42,6 +42,7 @@
 import z from "@deepseek-ai/schemastery";
 import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
 import { createInbox } from "./inbox.js";
+import { createLocaleSource } from "./locale.js";
 import { SOURCE_SERVICES, createMuxSource } from "./mux-source.js";
 
 /** 桥这一侧的合并窗口。挡的是"同一拍里几条帧都说变了"。 */
@@ -175,6 +176,18 @@ export default createSwiftPlugin({
 				schedulePush(true);
 			}), "clam-notify 设置订阅");
 		});
+
+		// 界面语言：跟随 dsh 的 `locale` 设置（`locale.js` 里那条决议链）。
+		// **本插件的用户文案是全仓唯一写在 JS 里的一份**（标题/正文/按钮由 node
+		// 组好，Swift 那边收到什么画什么），所以语言得在这边自己算一遍。
+		//
+		// i0 只把管线接通、把值持有住；真正拿它选文案是 i5 的事
+		// （`docs/clam-i18n-plan.md` §9）。语言一变就要重组 inbox 并重推——
+		// 那一步等文案表落地再加，现在加了也只是空转。
+		const locale = createLocaleSource(ctx, (next) => {
+			log.info(`界面语言切到 ${next}（通知文案下一版起跟随）`);
+		});
+		log.info(`界面语言：${locale.current}`);
 
 		// 宿主服务同样走作用域 inject：最坏情况是一条通知都没有 + 终端一行 warn，
 		// 而不是整个插件（连同 Swift 半身）安静地不挂载。

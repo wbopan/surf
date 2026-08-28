@@ -74,5 +74,13 @@ public final class ClamEventBus {
         /// 壳的菜单/快捷键触发了一个命令。载荷 `["command": String]`。
         /// 壳只负责喊，具体做什么归拥有相应能力的插件（如 layout 拥有会话展示面）。
         public static let menuCommand = "clam.menu.command"
+        /// 当前界面语言。载荷 `["locale": "zh" | "en"]`（`ClamLocale.rawValue`）。
+        /// **粘性**（`emitSticky`）——插件装载晚于壳启动，不粘的话它得等到用户
+        /// 下一次切语言才知道现在是哪一种，而那个状态可能一直不变。
+        ///
+        /// 真相是 dsh 的 `locale` 设置：页面侧解析出 active 之后经页内桥推给壳，
+        /// 壳缓存 + 转成这条主题（决议链见 `docs/clam-i18n-plan.md` §3）。
+        /// 消费方一般不直接订它，用 `ClamLocaleStore` 就行。
+        public static let locale = "clam.locale"
     }
 }
