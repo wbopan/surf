@@ -69,7 +69,7 @@ struct PresetsPage: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text(preset.displayName).lineLimit(1)
+            Text(preset.displayName(model.strings)).lineLimit(1)
         }
         .tag(preset.id)
         .listRowSeparator(.hidden)
@@ -87,8 +87,8 @@ struct PresetDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            DetailHeader(title: row.displayName,
-                         subtitle: row.description,
+            DetailHeader(title: row.displayName(strings),
+                         subtitle: row.summary(strings),
                          identifier: row.id)
 
             Form {

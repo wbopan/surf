@@ -26,6 +26,10 @@ struct HeaderSnapshot {
         let label: String
         /// 坏掉的 preset 仍然列出（它占着这个 id），但不该被选中。
         let broken: Bool
+        /// `"system"` = 随部署出厂，名字由 `L.builtInPreset` 翻；
+        /// `"user"` = 用户自己写的，`label` 原样用（上游也是这么分的）。
+        /// 老投影没有这个字段，缺省当 `"user"`（= 与 i3 的行为一致）。
+        let trust: String?
     }
 
     /// mode 那一格。部署不编排 preset 时整个为 nil。

@@ -397,6 +397,13 @@ function translate(item, actionId, text) {
 		if (actionId === "cancel") {
 			// 取消是 error 分支且**只认 `cancelled` 这一个 code**，别的 code 会被
 			// 判成 bad-response 而 pending 原地不动（agent 就永远卡着）。
+			//
+			// **`message` 是纯装饰，不是用户文案，所以不双语化**（i6 核过上游）：
+			// `dsh-host-apiproxy` 的 respond 只读 `error.code`，读到 `cancelled`
+			// 就自己抛 `UserQuestionError("the user cancelled ask_user_question",
+			// "ASK_CANCELLED")`——进会话日志、进网页、进模型上下文的是**那一句**，
+			// 我们这句一眼都不会被看到（连日志都不写）。dsh 自己的网页取消按钮
+			// 同样塞了一句装饰文字（"the user closed this question request"）。
 			return { ok: false, error: { code: "cancelled", message: "用户在通知上取消了提问" } };
 		}
 		if (actionId === "custom") {

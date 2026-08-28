@@ -280,15 +280,15 @@ final class HeaderToolbarSync {
             "enabled": true,
             // **这个 label 走活通道是对的**：它是当前 preset 的名字，一换就变
             // ——与「子代理」那种常量 label 不是一回事（见 `subagentsPatch`）。
-            // preset 名本身是 dsh 给的数据，不翻。
+            // 名字本身**出厂的翻、用户自己写的不翻**，判据见 `presetName`。
             "label": current,
             "tooltip": strings.modeTooltip(current),
             "menu": preset.options.map { option in
-                [
+                let name = Self.presetName(option, strings)
+                return [
                     "id": option.id,
                     // 坏掉的仍然列出（它占着这个 id），但标出来。
-                    "label": option.broken ? strings.presetUnavailable(option.label)
-                                           : option.label,
+                    "label": option.broken ? strings.presetUnavailable(name) : name,
                     "state": option.id == preset.current,
                     "enabled": !option.broken,
                 ] as [String: Any]
@@ -308,7 +308,17 @@ final class HeaderToolbarSync {
 
     private static func presetLabel(_ preset: HeaderSnapshot.Preset, _ strings: L) -> String {
         guard let current = preset.current else { return strings.defaultPreset }
-        return preset.options.first { $0.id == current }?.label ?? current
+        guard let option = preset.options.first(where: { $0.id == current }) else { return current }
+        return presetName(option, strings)
+    }
+
+    /// 一个 preset 该显示什么名字。出厂的查表、用户自己写的原样用——判据与措辞
+    /// 都照上游，见 `L.builtInPreset`。
+    private static func presetName(_ option: HeaderSnapshot.PresetOption, _ strings: L) -> String {
+        guard option.trust == "system", let name = strings.builtInPreset(option.id) else {
+            return option.label
+        }
+        return name
     }
 
     // MARK: - 发

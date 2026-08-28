@@ -320,6 +320,45 @@ struct L {
         t("agentPresets 服务未在场，这一页暂时不可用。",
           "The agentPresets service is absent, so this tab is unavailable.")
     }  // 原：agentPresets 服务不在场，这一页填不了。
+    /// **随部署出厂的那四个预设的名字与说明**（`trust == "system"`）。认不出给 nil，
+    /// 调用方退回预设文件里那份 `name` / `description`。
+    ///
+    /// 这是**照抄上游的规则**，不是另立一份真相：`agentPresets.list` 给的是
+    /// 预设目录里那份文件写死的字（不随语言变），而 dsh 的网页在
+    /// `presetDisplayText` 里对 `trust === "system"` 的四个改查自己的词典。
+    /// 不照做就会出现"网页写 Standard mode、原生写「标准模式」"的分叉。
+    /// 用户自己写的预设上游明说不翻（"without making user-authored metadata
+    /// translatable"），这里也不翻。**id 与措辞跟 `dsh-client-ui-agent-preset`
+    /// 逐字对齐**，上游改了这里也要改。
+    func builtInPreset(_ id: String) -> String? {
+        switch id {
+        case "standard": return t("标准模式", "Standard mode")
+        case "code": return t("PTC 模式", "PTC mode")
+        case "minimal": return t("极简模式", "Minimal mode")
+        case "cordis": return t("创造模式", "Creator mode")
+        default: return nil
+        }
+    }
+
+    /// 同上，说明那一句。**名字翻了说明不翻会更难看**，所以两个一起。
+    func builtInPresetSummary(_ id: String) -> String? {
+        switch id {
+        case "standard":
+            return t("功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。",
+                     "Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.")
+        case "code":
+            return t("具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。",
+                     "All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.")
+        case "minimal":
+            return t("仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。",
+                     "Two-tool coding agent with persistent bash and str_replace_editor.")
+        case "cordis":
+            return t("用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。",
+                     "Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.")
+        default: return nil
+        }
+    }
+
     var presetsBuiltIn: String { t("内建", "Built-in") }
     var presetsCustom: String { t("自定义", "Custom") }
     /// 「自定义」那组一条都没有时的占位。

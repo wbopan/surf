@@ -1,6 +1,7 @@
 # clam-i18n —— 原生侧语言跟随 dsh（权威计划）
 
-> 状态：**规划中**，一行代码都还没写。动手前先读 §1（上游机制事实）与 §8（坑）。
+> 状态：**已实现（i0–i6），待用户审校文案**。改这一带的代码前先读 §1（上游机制
+> 事实）与 §8（坑）；文案本身的审校表在 `docs/clam-i18n-copy-review.md`。
 > 上游事实对着 dsh 0.1.1-rc.2 源码核过（2026-08-28，两个调研子代理逐文件确认）。
 
 ## 0. 一句话
@@ -178,7 +179,7 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
 | 工具栏贡献 label（header 四格、sidebar「筛选」、layout「新建会话」） | `label` 是拓扑键，各贡献方收到 locale 变更后**重新贡献** metadata → 既有机制整条重建工具栏。切换瞬间闪一下，可接受 |
 | 系统通知（clam-notify） | 新通知用新语言；已挂在通知中心的不追改 |
 | 诊断面板 / 快捷键面板 / 各种 alert | 打开时现生成，天然新 |
-| `window.title/subtitle`、面包屑 | 数据（会话名）不翻；「未命名会话」这类兜底词进表 |
+| `window.title/subtitle`、面包屑 | 数据（会话名）不翻；「新会话」这类兜底词进表。**"数据一律不翻"有一个例外**：dsh 随部署出厂的那四个 agent preset，上游网页对 `trust === "system"` 的行改查自己的词典（`presetDisplayText`），我们不照做就会和同一屏上的网页各说各话——照抄那张表，用户自己写的 preset 仍旧不翻（i6 修正，见 §10） |
 
 ## 6. 文案打磨（与双语化同一次手术做完）
 
@@ -476,3 +477,77 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   ③ **`inbox.js` 多了一个 `item.locale` 字段**（计划没提）。理由见上：
   没有它，"语言变了 + 设置也变了"会拼出半个语言的通知。它也随 item 上桥，
   Swift 不读——`signatureOf` 不含它，不会造成重发。
+- **2026-08-28 · i6（收尾清查 + 审校表 + 截图验收）· 完成。**
+  **① 全仓清查**（脚本 `.scratch/i18n/scan_cn.py`：剥掉行注释与块注释后再找中文字面量，
+  排除 node_modules/build/docs/test/README）：732 条命中，**逐条分过类之后一条漏网的
+  用户可见文案都没有**——除去五张字符串表（`Strings.swift` ×4 + `strings.js`）与
+  `FieldNotes.swift` 共 339 条，其余全部是 `Log.write` / `host.log` / `ctx.logger` /
+  `ctx.effect` 的名字 / `package.json` 的 npm 描述 / 开发工具（`tools/shot.swift`、
+  `probe.mjs`、`dump-css.mjs`）/ 安装器 `surfclam/bin/surfclam.js` 的终端输出。
+  点名排查的几个角落都干净：**clam-layout 早就没有工具栏贡献了**（「新建会话」那条
+  在 clam-shortcuts 那次改动里已经撤掉，`LayoutPlugin.swift` L44 有注释），
+  菜单命令应答只 emit 不组文案；clam-nativeify / clam-bridge 只有日志与已经双语化的
+  description；**壳自 i1 起 `git diff` 为空**，没有回流。反向也扫了一遍
+  （`Text(` / `NSMenuItem(title:` / `.messageText` / `toolTip` / `Label(` …）：
+  除了 `Text("\(count)")` 这种纯数字与 i3 声明过不翻的 `Chat` / `Trajectory`，
+  没有绕过 `L` 的字面量。
+  **i5 留的那个问题有了确定答案：不用改。** `clam-notify` 取消回执里那句
+  「用户在通知上取消了提问」**永远不会被任何人看到**——`dsh-host-apiproxy` 的
+  `respond` 只读 `error.code`，读到 `cancelled` 就自己抛
+  `UserQuestionError("the user cancelled ask_user_question", "ASK_CANCELLED")`，
+  进会话日志、进网页、进模型上下文的是**那一句英文**；我们这句连日志都不写。
+  dsh 自己的网页取消按钮同样塞了一句装饰文字。已就地加注，免得下次再查一遍。
+  **② 审校表** `docs/clam-i18n-copy-review.md`：i1–i5 的 44 条 `// 原：` 标记
+  （壳 12 / sidebar 9 / header 3 / settings 18 / notify 2）+ i6 自己补的两块，
+  三栏对照 + 一句话理由，按插件分节；语气拿不准的 9 条标了 ⚠️ 并在文末单列
+  「需要裁决的条目」（8 条），另有「未改动但值得一提」记刻意不翻的几处。
+  **③ 验收**（脚本落在 `.scratch/i18n/`，截图不入库）。
+  **热切换整窗生效，两种语言都验过**：菜单栏 7 个菜单 + 全部菜单项、工具栏
+  `Filter`/`Export`、窗口标题与副标题、侧边栏（搜索框占位 / 三枚胶囊 / 分组头）、
+  设置窗口四栏**连窗框标签与窗口标题一起换**（i4 偏离①那条另订 `clam.locale`
+  的路子成立）、⌘/ 快捷键面板、⌥⌘D 诊断面板——**已经开着的窗口也当场跟着换，
+  不用重开**。`clamLocale` 缓存跟着写对（`defaults read io.wenbo.surfclam.dev`）。
+  **④ AX 复核（i2 留的债）已还清**：两种语言下 dump 出来**逐字相同**——
+  `sidebar.search` / `sidebar.list` / `sidebar.group.<workspaceId>` /
+  `sidebar.session.<sessionId>`，分组头那条**没有被拼两遍**（不是 `X-X`）。
+  **⑤ 通知那一轮没做**：待办要真有 agent 在跑才发得出来，`CLAM_NOTIFY_SELFTEST=1`
+  又要改环境重启整套，收益不抵折腾——i5 已经拿假 locale 源把四类通知的
+  zh→en 走过一遍，这里不硬凑。
+  **清查里揪出两处真漏网，都当场修了**（本条里程碑唯一的代码改动）：
+  ① **`clam-shortcuts` 整个 ns 没进 `FieldNotes`**——它是我们自己注册的 ns，
+  i4 建表时漏了，于是栏标题与 10 个字段全部退到 `SettingsFormat.humanize` 的
+  英文兜底，**中文界面下那张卡片从头到尾是英文**（`Clam Shortcuts` / `New Session`
+  / `Session Digits`…）。补了 `NamespaceNotes` 一条 + `FieldNotes` 11 条，键位名
+  与壳菜单逐字对齐，`sessionDigits` 的三个选项显示成 `⌘1–9` / `⌥⌘1–9` /「关闭」。
+  ② **出厂 preset 的名字不跟语言**：`agentPresets.list` 给的 `name` 是 preset
+  文件里写死的字（这台机器上是中文），而 dsh 的网页对 `trust === "system"` 的四个
+  内建 preset 改查自己的词典。结果是 en 界面下窗口副标题、mode 那格的菜单、
+  设置「通用」页的预设选择器、「智能体预设」页的清单与说明**全是中文**，
+  与同一屏上英文的网页对不上——正是不变量 2 禁止的分叉。照上游规则修：
+  node 侧只多投一个 `trust`（clam-header 的桥 `SCHEMA_VERSION` 3 → 4；
+  clam-settings 本来就投了），**显示词照旧全在 Swift 侧组装**，
+  `L.builtInPreset` / `L.builtInPresetSummary` 各收一张四条的表，
+  id 与措辞逐字对齐 `dsh-client-ui-agent-preset`；用户自己写的 preset 不翻
+  （上游明说 "without making user-authored metadata translatable"）。
+  顺带把 `PresetRow.displayName` 从计算属性改成收 `L` 的方法，排序另留一个
+  **不随语言变**的 `sortName`——换一门语言把清单重排一遍没有道理。
+  **偏离计划两处**：
+  ① 计划说 i6 只做「清查 + 审校表 + 截图」，实际改了代码。两条都是清查的直接产物，
+  且都小（各 ~30 行、都在既有表与既有约定里），当场修比记进遗留项诚实。
+  ② §5 那张表说「preset 名是数据，不翻」——i3 也是这么写的。**这条判断被推翻了**：
+  dsh 自己就翻内建那四个。表已就地更新，`HeaderToolbar` 里那条旧注释也改了。
+  **两条环境事实值得记下来**（都害我绕了远路，写进了 `.scratch/i18n/` 的脚本注释）：
+  **㋐ 屏幕锁着时这套验收全部失灵，而且失灵得很像 bug**：ScreenCaptureKit 报
+  `-3811 audio/video capture failure`（显示器睡着就取不到图，`caffeinate -u` 叫醒即可，
+  锁不锁反而不要紧），System Events 枚举不到窗口（菜单栏照常读得到），
+  **WKWebView 被整个挂起**——于是改 `~/.dsh/settings.yaml` 之后 node 半边秒切
+  （clam-notify 立刻打日志），页面那条投影却一动不动，看上去就是"页面订阅坏了"。
+  `caffeinate -u` 把显示器叫醒的**同一秒**投影就到了。判据：node 切了而壳没切，
+  先看显示器醒没醒，别去查订阅。
+  **㋑ 别对主窗口 `entire contents`**：里面挂着 WKWebView，那一趟会把 AX 服务卡死，
+  之后 app 与 System Events 双双读不出窗口，只能两边都重启。按 splitter group
+  收窄到侧边栏那半边就没事。（另两条小的：AppleScript 里 `line` 是保留字；
+  `osascript` 读 heredoc 时不当 UTF-8，脚本正文别出现非 ASCII。）
+  **一个与本计划无关、但验收时撞见的**：经 AX 点「设置…」时，原生设置窗口开出来的
+  同时页面里还弹了一层 web 设置 modal（`LayoutPlugin.swift` L34 那条注释说的就是
+  这个形状）。没查，也没改——它不是文案问题。

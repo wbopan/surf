@@ -55,8 +55,9 @@ import { SOURCE_SERVICES, createHeaderSource } from "./dsh-source.js";
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  * v1 = 只有 tabs（走页内桥，不经这里）。v2 = 加上面包屑 / mode / jobs。
  * v3 = `error` 帧结构化（`message` 不再带中文前缀，改配 `code`；i3 文案双语化）。
+ * v4 = preset option 带上 `trust`（出厂 preset 的名字要跟着语言走，i6）。
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /**
  * 桥这一侧的合并窗口。很短：数据源已经替我们把 I/O 那层的洪流合并掉了

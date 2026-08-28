@@ -123,13 +123,36 @@ struct L {
     }
 
     /// 坏掉的 preset 仍然列出（它占着那个 id），但标出来点不动。
-    /// **`label` 是 dsh 给的原样字符串，不翻**，只翻括号里那句。
+    /// **名字由调用方定好再递进来**（出厂的查 `builtInPreset`、用户自己写的原样用），
+    /// 这里只翻括号里那句。
     func presetUnavailable(_ label: String) -> String {
         t("\(label)（不可用）", "\(label) (Unavailable)")
     }
 
     /// 一个 preset 都没选中时的说法。
     var defaultPreset: String { t("默认", "Default") }
+
+    /// **随部署出厂的那四个 preset 的名字**（`trust == "system"`）。认不出就给 nil，
+    /// 调用方退回投影里那个 `label`。
+    ///
+    /// 这是**照抄上游的规则**，不是另立一份真相：`agentPresets.list` 给的 `name`
+    /// 是 preset 目录里那份文件写死的字（这台机器上是中文），而 dsh 的网页
+    /// 在 `presetDisplayText` 里对 `trust === "system"` 的四个改查自己的词典
+    /// ——不照做的话就会出现"网页写 Standard mode、原生写「标准模式」"，
+    /// 正是不变量 2（两半永远不许各说各话）禁止的那种分叉。用户自己写的 preset
+    /// 上游明说不翻（"without making user-authored metadata translatable"），
+    /// 这里也不翻。
+    ///
+    /// **id 与措辞都跟 `dsh-client-ui-agent-preset` 逐字对齐**，上游改了这里也要改。
+    func builtInPreset(_ id: String) -> String? {
+        switch id {
+        case "standard": return t("标准模式", "Standard mode")
+        case "code": return t("PTC 模式", "PTC mode")
+        case "minimal": return t("极简模式", "Minimal mode")
+        case "cordis": return t("创造模式", "Creator mode")
+        default: return nil
+        }
+    }
 
     // MARK: - 时长（`HeaderFormatting.duration` 的措辞半边）
 

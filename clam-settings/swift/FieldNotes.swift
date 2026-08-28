@@ -150,6 +150,31 @@ enum FieldNotes {
                                       .init("默认只数待批准与待回答——那两类是欠着的事。",
                                             "By default only approvals and questions are counted — those are the ones that owe you something.")),
         ],
+        // 键位名一律与壳菜单里那一条**逐字对齐**（`clam-app/host/Sources/Strings.swift`
+        // 的 `menuNewSession` 等）：这一栏改的就是那条菜单项的键，两处叫法不同
+        // 会让人以为改的是别的东西。菜单里带省略号的（重命名）在这儿不带——
+        // 省略号是"还要再问一步"的承诺，设置行本身不问。
+        "clam-shortcuts": [
+            "newSession": Note(.init("新建会话", "New Session")),
+            "prevSession": Note(.init("上一个会话", "Previous Session")),
+            "nextSession": Note(.init("下一个会话", "Next Session")),
+            "nextPendingSession": Note(.init("下一个待处理会话", "Next Pending Session")),
+            "archiveSession": Note(.init("归档会话", "Archive Session")),
+            "renameSession": Note(.init("重命名会话", "Rename Session")),
+            "focusSearch": Note(.init("聚焦搜索", "Focus Search")),
+            "openSettings": Note(.init("打开设置", "Open Settings")),
+            // 选项显示成真正按下去的样子而不是配置值：这一格挑的是修饰键，
+            // 「cmd」当着标签既不像键也不像话。
+            "sessionDigits": Note(.init("数字键跳转", "Jump by Number"),
+                                  .init("按住修饰键加 1～9 直接跳到第 N 个会话。",
+                                        "Hold the modifier and press 1–9 to jump straight to that session."),
+                                  options: ["cmd": .same("⌘1–9"),
+                                            "cmd+alt": .same("⌥⌘1–9"),
+                                            "off": .init("关闭", "Off")]),
+            "stopGenerating": Note(.init("停止生成", "Stop Generating"),
+                                   .init("在网页内匹配，不是菜单项；留空即关掉这个键。",
+                                         "Matched inside the web page rather than by a menu item. Leave it empty to turn the key off.")),
+        ],
 
         // ── 模型页 ───────────────────────────────────────────────────
         "agent-default-model": [
@@ -230,6 +255,15 @@ enum NamespaceNotes {
                             summary: .init("什么时候给你发桌面通知。",
                                            "When to send you a desktop notification."),
                             featured: ["enabled", "approval", "question", "done", "error"]),
+        // 精选 = 八条真的挂在菜单上的键。线下面那两条是**另一类东西**：
+        // `sessionDigits` 挑的是修饰键前缀而不是一个键，`stopGenerating`
+        // 由页面自己在 keydown 上匹配、根本不是菜单项。
+        "clam-shortcuts": Note(title: .init("快捷键", "Shortcuts"),
+                               summary: .init("只收「改了确实更好用」的那几条；⌘W、⌘Q 这类系统惯例刻意不给改。",
+                                              "Only the shortcuts worth rebinding. System conventions such as ⌘W and ⌘Q are deliberately left alone."),
+                               featured: ["newSession", "prevSession", "nextSession",
+                                          "nextPendingSession", "archiveSession",
+                                          "renameSession", "focusSearch", "openSettings"]),
     ]
 
     static func note(ns: String) -> Note? { table[ns] }

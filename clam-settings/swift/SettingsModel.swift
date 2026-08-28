@@ -76,7 +76,20 @@ struct PresetRow: Identifiable {
     /// 非 nil = 这个预设是坏的，值就是原因。**照样列出来**：它正是用户要来修的那个。
     let broken: String?
 
-    var displayName: String { name ?? id }
+    /// 显示名：出厂那四个查 `L`（上游网页也是这么干的），用户自己写的用文件里那份。
+    /// 判据与措辞见 `L.builtInPreset`。
+    func displayName(_ strings: L) -> String {
+        (isBuiltIn ? strings.builtInPreset(id) : nil) ?? name ?? id
+    }
+
+    /// 同上，详情页那句说明。
+    func summary(_ strings: L) -> String? {
+        (isBuiltIn ? strings.builtInPresetSummary(id) : nil) ?? description
+    }
+
+    /// 排序用的名字，**故意不随语言变**：换一门语言就把清单重排一遍没有道理，
+    /// 而这一列的顺序主要由 `order` 决定，名字只是同序时的次级判据。
+    var sortName: String { name ?? id }
     var isBuiltIn: Bool { trust == "system" }
 }
 
@@ -280,12 +293,14 @@ final class SettingsModel: ObservableObject {
                              order: item["order"] as? Int,
                              broken: item["broken"] as? String)
         }
-        // 排序照 Web：先内建后自定义，组内按 order（没有的排后面），再按显示名。
+        // 排序照 Web：先内建后自定义，组内按 order（没有的排后面），再按名字。
         // **不靠 host 给的顺序**——`list()` 是逐 root 扫出来的，root 顺序变了它就变。
+        // 名字用 `sortName` 而不是显示名：这里是解码期，没有 locale，而且换语言
+        // 重排清单本来就没道理（见 `PresetRow.sortName`）。
         presets.sort { a, b in
             if a.isBuiltIn != b.isBuiltIn { return a.isBuiltIn }
             let (oa, ob) = (a.order ?? Int.max, b.order ?? Int.max)
-            return oa == ob ? a.displayName < b.displayName : oa < ob
+            return oa == ob ? a.sortName < b.sortName : oa < ob
         }
     }
 

@@ -146,7 +146,7 @@ struct PresetPickerRow: View {
                         get: { current },
                         set: { model.set(ns: snapshot.ns, path: path, value: .string($0)) })) {
                         ForEach(model.presets) { preset in
-                            Text(preset.displayName).tag(preset.id)
+                            Text(preset.displayName(model.strings)).tag(preset.id)
                         }
                         if missing {
                             Text(model.strings.presetNotInList(current)).tag(current)

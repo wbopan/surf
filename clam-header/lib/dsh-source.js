@@ -351,6 +351,14 @@ export function createHeaderSource(ctx, log) {
 				label: typeof preset.name === "string" && preset.name !== "" ? preset.name : preset.id,
 				// 坏掉的 preset 仍然列出（它占着这个 id），但不该被选中。
 				broken: typeof preset.broken === "string" && preset.broken !== "",
+				// **随部署出厂的那几个的名字是要翻的**，用户自己写的不翻。
+				// 上游网页就是这么分的（`dsh-client-ui-agent-preset` 的
+				// `presetDisplayText`：`trust === "system"` 才去查词典，注释原话是
+				// "without making user-authored metadata translatable"），
+				// 而 `agentPresets.list` 给的 `name` 是**文件里那一份**，
+				// 不随语言变。只投 trust，具体叫什么由 Swift 侧的表说了算
+				// ——显示词一律在 Swift 组装，这里只管数据。
+				trust: preset.trust === "system" ? "system" : "user",
 			}));
 		if (options.length === 0) return null;
 		return {
