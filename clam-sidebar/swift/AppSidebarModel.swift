@@ -25,6 +25,10 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
 
     private let bridge: ClamBridge
     private let surface: ClamConversationSurface
+    /// 当前界面语言（`@Observable`，与视图共用同一个实例）。投影里那几处兜底
+    /// 文案（「未分组」「新会话」）随它走；读它的地方都在视图的 body 链上，
+    /// 于是切语言时列表自动重渲。
+    private let locale: ClamLocaleStore
     /// 写一行进壳的日志（`host.log`）。
     private let log: (String) -> Void
     private var lastLoggedCount = -1
@@ -34,12 +38,18 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     init(snapshot: SidebarSnapshot,
          bridge: ClamBridge,
          surface: ClamConversationSurface,
+         locale: ClamLocaleStore,
          log: @escaping (String) -> Void) {
         self.snapshot = snapshot
         self.bridge = bridge
         self.surface = surface
+        self.locale = locale
         self.log = log
     }
+
+    /// 当前语言下的文案表。**每次现算**，不存快照——存下来就得有人在语言变化时
+    /// 记得换，而现算天生不会漏。
+    var strings: L { L(locale.current) }
 
     // MARK: - 桥下行
 
@@ -54,33 +64,34 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
     }
 
     /// node 半边报回来的写操作失败。
-    func reportFailure(action: String, reason: String) {
-        let what = Self.actionLabels[action] ?? action
-        log("\(what)失败：\(reason)")
-        actionError = "\(what)失败：\(reason)"
+    ///
+    /// **协议是结构化的**（`{action, code?, message}`，见 `lib/index.js` 顶部）：
+    /// node 那边一个显示文案都不拼——它不知道界面是哪种语言，也不该知道。
+    /// `code` 是我们自己认领的失败（数据面没就绪之类），`message` 是上游那句原话。
+    ///
+    /// 日志固定用中文（`L(.zh)`）：读它的是蹲在终端前的人，跟着界面语言变
+    /// 只会让排错时对不上账。
+    func reportFailure(action: String, code: String?, message: String) {
+        let zh = L(.zh)
+        log(zh.actionFailed(action: action,
+                            reason: zh.failureReason(code: code, message: message)))
+        let ui = strings
+        actionError = ui.actionFailed(action: action,
+                                      reason: ui.failureReason(code: code, message: message))
     }
-
-    /// 动作名 → 中文说法。桥上传的是动作名（机器可读），文案归显示层。
-    private static let actionLabels: [String: String] = [
-        "archive": "归档会话",
-        "renameSession": "重命名会话",
-        "fork": "分叉会话",
-        "createWorkspace": "添加工作区",
-        "renameWorkspace": "重命名工作区",
-        "deleteWorkspace": "删除工作区",
-    ]
 
     // MARK: - SidebarModel
 
     var groups: [SidebarGroup] {
-        snapshot.groups.map { group in
+        let current = strings
+        return snapshot.groups.map { group in
             SidebarGroup(
                 id: group.id,
                 workspaceId: group.workspaceId,
                 // 兜底组在数据层没有标题（文案不归数据层管），显示层收口成
                 // web 同款的「未分组」。
-                title: group.workspaceId == nil ? "未分组" : group.title,
-                sessions: group.sessions.filter(visible).map(sessionRow)
+                title: group.workspaceId == nil ? current.ungrouped : group.title,
+                sessions: group.sessions.filter(visible).map { sessionRow($0, current) }
             )
         }
     }
@@ -148,10 +159,13 @@ final class AppSidebarModel: ObservableObject, SidebarModel {
 
     // MARK: - 转换
 
-    private func sessionRow(_ s: SidebarSnapshot.Session) -> SidebarSession {
-        SidebarSession(
+    /// **没有标题的会话在这里就填好兜底文案**（`SidebarSession` 是个不认识语言的
+    /// 值类型，而搜索也拿 `displayTitle` 比对——两处必须是同一个串）。
+    private func sessionRow(_ s: SidebarSnapshot.Session, _ strings: L) -> SidebarSession {
+        let title = s.title ?? ""
+        return SidebarSession(
             id: s.id,
-            title: s.title ?? "",
+            title: title.isEmpty ? strings.untitledSession : title,
             preview: s.preview ?? "",
             status: Self.statusIcon(s.status),
             updatedAt: s.date,

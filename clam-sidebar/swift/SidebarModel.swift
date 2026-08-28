@@ -54,10 +54,10 @@ public struct SidebarSession: Identifiable, Equatable {
         self.archived = archived
     }
 
-    public var displayTitle: String {
-        if blank || title.isEmpty { return "新会话" }
-        return title
-    }
+    /// 行上显示的标题。**兜底文案在投影层就填好了**
+    /// （`AppSidebarModel.sessionRow` 用 `L.untitledSession`）：它随语言变，
+    /// 而这里是个不认识语言的值类型；搜索也拿它比对，两处必须是同一个串。
+    public var displayTitle: String { title }
 }
 
 /// 按 Workspace 分组的会话组（`workspaceId == nil` = 未归组的兜底组）。

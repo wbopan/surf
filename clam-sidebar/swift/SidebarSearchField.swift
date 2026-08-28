@@ -32,7 +32,8 @@ import SwiftUI
 /// 会安静地什么都不画。
 struct SidebarSearchField: View {
     @Binding var text: String
-    var placeholder = "搜索"
+    /// 占位词由调用方给（文案表在 `Strings.swift`，这里不留字面量）。
+    let placeholder: String
 
     var body: some View {
         Representable(text: $text, placeholder: placeholder)
@@ -60,6 +61,9 @@ struct SidebarSearchField: View {
         func updateNSView(_ field: NSSearchField, context: Context) {
             // 只在真不一样时写：无条件赋值会在输入法组字期间把候选框打断。
             if field.stringValue != text { field.stringValue = text }
+            // 换语言时占位词要跟着换：`makeNSView` 只跑一次，光设在那里的话
+            // 语言变了框里还写着上一门语言的「搜索」。
+            if field.placeholderString != placeholder { field.placeholderString = placeholder }
         }
 
         func makeCoordinator() -> Coordinator { Coordinator(text: $text) }

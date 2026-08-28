@@ -1,5 +1,6 @@
 import AppKit
 import ClamLayout
+import ClamSDK
 import SwiftUI
 
 // 原生侧边栏。骨架仍然交给系统：`List(selection:)` + `.listStyle(.sidebar)` 给的是
@@ -42,10 +43,14 @@ import SwiftUI
 //
 // 右键菜单项按文案定位（AX 里是 NSMenuItem，挂不了 identifier）；
 // 工具栏的「筛选」「边栏」是 NSToolbarItem / 系统标准项，按 Title 定位。
+//
+// **identifier 一个字都不随语言变**：文案全部走 `L`（Strings.swift），
+// 上面这些 id 与「按时间」分段的 `TimeBuckets.Bucket` 一样是稳定英文串。
 
 /// 会话行：状态指示器 + 标题 + 两行摘要；选中/hover/键盘导航由 List 提供。
 struct SessionRow: View {
     let session: SidebarSession
+    let strings: L
     /// 所属工作区。**只在「按时间」视图里给**——那边没有分组头兜着，
     /// 不写出来就看不出这条会话是哪个项目的。给了它，两行的副行拆成
     /// 「工作区 / 摘要」各一行；不给就是完整的两行摘要。
@@ -61,7 +66,7 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            StatusIndicator(status: session.status)
+            StatusIndicator(status: session.status, strings: strings)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.displayTitle)
@@ -99,7 +104,7 @@ struct SessionRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .frame(maxHeight: .infinity)
-                    .help("已归档")
+                    .help(strings.archivedBadge)
             }
             // hover 且非 blank 时行尾出归档；点击即归档、无确认——归档非破坏性，
             // 日志留着，只是从列表消失（打开「显示已归档」还能看见）。
@@ -112,8 +117,8 @@ struct SessionRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("归档会话")
-                .accessibilityLabel(Text("归档会话"))
+                .help(strings.archiveSession)
+                .accessibilityLabel(Text(strings.archiveSession))
                 .accessibilityIdentifier("sidebar.session.\(session.id).archive")
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
@@ -139,10 +144,10 @@ struct SessionRow: View {
         .onHover { hovering = $0 }
         .accessibilityIdentifier("sidebar.session.\(session.id)")
         .contextMenu {
-            Button("重命名…", action: onRename)
-            Button("分叉会话", action: onFork)
+            Button(strings.renameEllipsis, action: onRename)
+            Button(strings.forkSession, action: onFork)
             Divider()
-            Button("归档会话", action: onArchive)
+            Button(strings.archiveSession, action: onArchive)
         }
     }
 }
@@ -155,6 +160,7 @@ struct SessionRow: View {
 /// 跟着染 accent 只会让人以为分组本身被选中了。
 struct GroupHeader: View {
     let group: SidebarGroup
+    let strings: L
     let count: Int
     let expanded: Bool
     let onToggle: () -> Void
@@ -207,8 +213,8 @@ struct GroupHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("在此工作区新建会话")
-            .accessibilityLabel(Text("在此工作区新建会话"))
+            .help(strings.newSessionInWorkspace)
+            .accessibilityLabel(Text(strings.newSessionInWorkspace))
             .accessibilityIdentifier("sidebar.group.\(group.id).new")
             .fixedSize()
             .opacity(hovering ? 1 : 0)
@@ -234,8 +240,8 @@ struct GroupHeader: View {
                         .animation(.easeInOut(duration: 0.15), value: expanded)
                 }
                 .buttonStyle(.plain)
-                .help(expanded ? "收起分组" : "展开分组")
-                .accessibilityLabel(Text(expanded ? "收起分组" : "展开分组"))
+                .help(expanded ? strings.collapseGroup : strings.expandGroup)
+                .accessibilityLabel(Text(expanded ? strings.collapseGroup : strings.expandGroup))
                 .accessibilityIdentifier("sidebar.group.\(group.id).toggle")
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
@@ -248,12 +254,12 @@ struct GroupHeader: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("新建会话") { surface.startSession(workspaceId: group.workspaceId) }
+            Button(strings.newSession) { surface.startSession(workspaceId: group.workspaceId) }
             // 兜底组（未分组）不是真工作区，没有可改可删的账。
             if group.workspaceId != nil {
                 Divider()
-                Button("重命名…", action: onRename)
-                Button("删除工作区…", action: onDelete)
+                Button(strings.renameEllipsis, action: onRename)
+                Button(strings.deleteWorkspaceEllipsis, action: onDelete)
             }
         }
     }
@@ -264,6 +270,10 @@ struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
     @ObservedObject var filter: SidebarFilterState
     let surface: ClamConversationSurface
+    /// 当前界面语言（`@Observable`，插件与 model 共用同一个实例）。
+    /// body 里读一下 `current` 就建立了观察依赖——切语言时整棵视图自动重渲，
+    /// **不需要 `withObservationTracking`**（那条路有静默死亡坑，CLAUDE.md）。
+    let locale: ClamLocaleStore
 
     /// 收起的分组（默认全部展开；搜索时强制展开命中组）。
     /// 逗号拼接持久化（组 id 无逗号）。
@@ -284,17 +294,17 @@ struct SidebarView<Model: SidebarModel>: View {
             }
         }
 
-        var dialogTitle: String {
+        func dialogTitle(_ strings: L) -> String {
             switch self {
-            case .session: return "重命名会话"
-            case .workspace: return "重命名工作区"
+            case .session: return strings.renameSessionTitle
+            case .workspace: return strings.renameWorkspaceTitle
             }
         }
 
-        var fieldLabel: String {
+        func fieldLabel(_ strings: L) -> String {
             switch self {
-            case .session: return "会话名称"
-            case .workspace: return "工作区名称"
+            case .session: return strings.sessionNameField
+            case .workspace: return strings.workspaceNameField
             }
         }
     }
@@ -304,18 +314,21 @@ struct SidebarView<Model: SidebarModel>: View {
         let title: String
     }
 
-    /// 「按时间」视图的一段。
+    /// 「按时间」视图的一段。**身份是 `bucket`（稳定英文 id），不是段标题**
+    /// ——标题随语言变，拿它当 id 的话切一次语言整个列表就换了身份。
     private struct TimeSection: Identifiable {
-        let id: String
-        let title: String
+        let bucket: TimeBuckets.Bucket
+        var id: String { bucket.rawValue }
         /// (会话, 所属组标题)
         let rows: [(session: SidebarSession, workspace: String)]
     }
 
-    init(model: Model, filter: SidebarFilterState, surface: ClamConversationSurface) {
+    init(model: Model, filter: SidebarFilterState, surface: ClamConversationSurface,
+         locale: ClamLocaleStore) {
         self.model = model
         self.filter = filter
         self.surface = surface
+        self.locale = locale
     }
 
     // MARK: - 数据裁剪
@@ -352,16 +365,16 @@ struct SidebarView<Model: SidebarModel>: View {
 
     /// 「按时间」视图：把所有过筛的会话摊平、按 updatedAt 倒序、分四段。
     private var timeSections: [TimeSection] {
-        var buckets: [String: [(session: SidebarSession, workspace: String)]] = [:]
+        var buckets: [TimeBuckets.Bucket: [(session: SidebarSession, workspace: String)]] = [:]
         for group in model.groups where !filter.hiddenGroups.contains(groupKey(group)) {
             for session in group.sessions where passes(session) {
                 buckets[TimeBuckets.of(session.updatedAt), default: []]
                     .append((session, group.title))
             }
         }
-        return TimeBuckets.order.compactMap { key in
-            guard let rows = buckets[key] else { return nil }
-            return TimeSection(id: key, title: key,
+        return TimeBuckets.order.compactMap { bucket in
+            guard let rows = buckets[bucket] else { return nil }
+            return TimeSection(bucket: bucket,
                                rows: rows.sorted { $0.session.updatedAt > $1.session.updatedAt })
         }
     }
@@ -384,10 +397,13 @@ struct SidebarView<Model: SidebarModel>: View {
 
     // MARK: - 布局
 
+    /// 当前语言下的文案。读它 = 读 `locale.current` = 建立观察依赖。
+    private var strings: L { L(locale.current) }
+
     var body: some View {
         VStack(spacing: 0) {
             // 36pt 的原生胶囊（开关在 SidebarSearchField 里，是 controlSize 而不是 frame）。
-            SidebarSearchField(text: $filter.query)
+            SidebarSearchField(text: $filter.query, placeholder: strings.searchPlaceholder)
                 .padding(.horizontal, 10)
                 .padding(.top, 12)
                 .padding(.bottom, 14)
@@ -401,23 +417,22 @@ struct SidebarView<Model: SidebarModel>: View {
             }
             addWorkspaceBar
         }
-        .alert(renameTarget?.dialogTitle ?? "", isPresented: renamePresented) {
-            TextField(renameTarget?.fieldLabel ?? "", text: $renameText)
-            Button("取消", role: .cancel) { renameTarget = nil }
-            Button("重命名") { commitRename() }
+        .alert(renameTarget?.dialogTitle(strings) ?? "", isPresented: renamePresented) {
+            TextField(renameTarget?.fieldLabel(strings) ?? "", text: $renameText)
+            Button(strings.cancel, role: .cancel) { renameTarget = nil }
+            Button(strings.rename) { commitRename() }
         }
-        .alert("删除工作区", isPresented: deletePresented, presenting: deleteTarget) { target in
-            Button("取消", role: .cancel) { deleteTarget = nil }
-            Button("删除", role: .destructive) {
+        .alert(strings.deleteWorkspaceTitle, isPresented: deletePresented, presenting: deleteTarget) { target in
+            Button(strings.cancel, role: .cancel) { deleteTarget = nil }
+            Button(strings.delete, role: .destructive) {
                 model.deleteWorkspace(id: target.id)
                 deleteTarget = nil
             }
         } message: { target in
-            Text("将把「\(target.title)」从工作区列表中移除。文件夹与会话记录会保留，"
-                 + "其会话将显示在「未分组」下。")
+            Text(strings.deleteWorkspaceMessage(target.title))
         }
-        .alert("操作失败", isPresented: errorPresented, presenting: model.actionError) { _ in
-            Button("好", role: .cancel) { model.actionError = nil }
+        .alert(strings.actionFailedTitle, isPresented: errorPresented, presenting: model.actionError) { _ in
+            Button(strings.ok, role: .cancel) { model.actionError = nil }
         } message: { reason in
             Text(reason)
         }
@@ -444,7 +459,7 @@ struct SidebarView<Model: SidebarModel>: View {
             filter.mode = mode
         } label: {
             HStack(spacing: 4) {
-                Text(mode.title)
+                Text(mode.title(strings))
                     .font(.system(size: 11, weight: .medium))
                 if let count {
                     Text("\(count)")
@@ -502,6 +517,7 @@ struct SidebarView<Model: SidebarModel>: View {
                         }
                     } header: {
                         GroupHeader(group: group,
+                                    strings: strings,
                                     count: group.sessions.count,
                                     expanded: isExpanded(group.id),
                                     onToggle: { toggleGroup(group.id) },
@@ -540,7 +556,7 @@ struct SidebarView<Model: SidebarModel>: View {
                     }
                 } header: {
                     HStack(spacing: 0) {
-                        Text(section.title)
+                        Text(strings.timeBucket(section.bucket))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
@@ -576,6 +592,7 @@ struct SidebarView<Model: SidebarModel>: View {
                      showsDivider: Bool) -> some View {
         SessionRow(
             session: session,
+            strings: strings,
             workspace: workspace,
             onRename: { beginRename(.session(id: session.id, title: session.displayTitle)) },
             onFork: { model.forkSession(id: session.id) },
@@ -598,7 +615,7 @@ struct SidebarView<Model: SidebarModel>: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
             if filter.isNarrowed || searching {
-                Button("清除筛选") {
+                Button(strings.clearFilters) {
                     filter.query = ""
                     filter.mode = .all
                     filter.hiddenGroups = []
@@ -613,11 +630,11 @@ struct SidebarView<Model: SidebarModel>: View {
     }
 
     private var emptyText: String {
-        if searching { return "没有匹配「\(filter.query)」的会话" }
+        if searching { return strings.noSearchResults(filter.query) }
         switch filter.mode {
-        case .pending: return "没有待处理的会话"
+        case .pending: return strings.noPendingSessions
         default:
-            return filter.isNarrowed ? "当前筛选下没有会话" : "还没有会话"
+            return filter.isNarrowed ? strings.noSessionsInFilter : strings.noSessions
         }
     }
 
@@ -671,8 +688,8 @@ struct SidebarView<Model: SidebarModel>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("添加工作区")
-            .accessibilityLabel(Text("添加工作区"))
+            .help(strings.addWorkspace)
+            .accessibilityLabel(Text(strings.addWorkspace))
             .accessibilityIdentifier("sidebar.addWorkspace")
             Spacer(minLength: 0)
         }
@@ -685,13 +702,14 @@ struct SidebarView<Model: SidebarModel>: View {
     /// 原生直接用 NSOpenPanel，代价是**默认 app 与 dsh 同机**——当前架构本来就如此。
     private func addWorkspace() {
         let model = self.model
+        let strings = self.strings
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "添加"
-        panel.message = "选择要作为工作区的文件夹"
+        panel.prompt = strings.choosePanelPrompt
+        panel.message = strings.chooseWorkspaceFolder
         let adopt: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
             model.createWorkspace(path: url.path)
@@ -710,14 +728,24 @@ struct SidebarView<Model: SidebarModel>: View {
 /// 独立成 enum 而不是塞进 `SidebarView`：**泛型类型里放不了 static 存储属性**
 /// （`SidebarView` 对 Model 泛型），swiftc 会直接拒编。
 enum TimeBuckets {
-    /// 固定顺序。照遍历顺序攒会让「更早」插到「昨天」前面。
-    static let order = ["今天", "昨天", "前 7 天", "更早"]
+    /// 分段的**身份**。rawValue 是稳定英文 id：段的 `Identifiable.id` 与
+    /// 将来任何自动化定位都取它，显示名走 `L.timeBucket(_:)`——
+    /// 「标识与文案解耦」是本仓库的纪律（CLAUDE.md），换语言后它成了正确性问题。
+    enum Bucket: String, CaseIterable {
+        case today
+        case yesterday
+        case lastSevenDays
+        case earlier
+    }
 
-    static func of(_ date: Date) -> String {
+    /// 固定顺序。照遍历顺序攒会让「更早」插到「昨天」前面。
+    static let order: [Bucket] = [.today, .yesterday, .lastSevenDays, .earlier]
+
+    static func of(_ date: Date) -> Bucket {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "今天" }
-        if calendar.isDateInYesterday(date) { return "昨天" }
+        if calendar.isDateInToday(date) { return .today }
+        if calendar.isDateInYesterday(date) { return .yesterday }
         let days = calendar.dateComponents([.day], from: date, to: Date()).day ?? 0
-        return days <= 7 ? "前 7 天" : "更早"
+        return days <= 7 ? .lastSevenDays : .earlier
     }
 }

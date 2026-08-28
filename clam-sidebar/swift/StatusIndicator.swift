@@ -19,6 +19,8 @@ import SwiftUI
 /// 符号 13pt 居中——两者光学重心对齐，行与行之间不会左右晃。
 struct StatusIndicator: View {
     let status: SidebarSessionStatus
+    /// 只用来读 AX label——界面上这里一个字都没有，全是符号与转轮。
+    let strings: L
 
     /// 状态槽的宽度。会话行、分组头的图标槽都用它对齐。
     static let slot: CGFloat = 16
@@ -62,11 +64,11 @@ struct StatusIndicator: View {
 
     private var label: String {
         switch status {
-        case .running: return "运行中"
-        case .pendingApproval: return "待批准"
-        case .pendingQuestion: return "待回答"
-        case .failed: return "出错了"
-        case .done: return "已跑完"
+        case .running: return strings.statusRunning
+        case .pendingApproval: return strings.statusPendingApproval
+        case .pendingQuestion: return strings.statusPendingQuestion
+        case .failed: return strings.statusFailed
+        case .done: return strings.statusDone
         case .idle: return ""
         }
     }

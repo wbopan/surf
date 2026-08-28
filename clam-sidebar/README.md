@@ -48,6 +48,32 @@ DSHKit 也是随 bundle 分发的共享 dylib；M10 之后连这个例外都不�
 
 归档曾经是**例外**（v2 及以前 node 半边直接滤掉，理由是"那是数据事实"）。
 v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 node 那边的话开关就够不着了。
+
+## 文案：一张表，两种语言（i2）
+
+**Swift 半边所有用户可见的字都在 `swift/Strings.swift`**（`struct L`，zh / en
+并排同一行）。语言跟着 dsh 的 `locale` 设置走，本插件不存任何语言偏好：
+插件 `activate` 里建一个 `ClamLocaleStore(bus: host.events)`（订粘性主题
+`clam.locale`），视图 body 读 `L(locale.current)` 就建立了观察依赖，切语言自动重渲
+——**不用 `withObservationTracking`**（静默死亡坑）。权威计划见
+`docs/clam-i18n-plan.md`。
+
+三条纪律：
+
+- **日志不翻**：`host.log(...)` 一律中文（读它的是蹲在终端前的人）。要在日志里
+  写动作名就显式取 `L(.zh)`，见 `AppSidebarModel.reportFailure`。
+- **标识与文案解耦**：`sidebar.*` 那些 accessibilityIdentifier、筛选胶囊的
+  `Mode.rawValue`、「按时间」分段的 `TimeBuckets.Bucket` 全是稳定英文串。
+  换语言后这从"纪律"变成了正确性——分段一度拿中文段名当 `Identifiable.id`。
+- **node 半边不产出显示文案**：`error` 帧是 `{action, code?, message}`，
+  Swift 用 `L.actionFailed` 组「归档会话失败：<原因>」。以前 `dsh-source.js` 的
+  `call(..., what)` 把中文动作名拼进 Error message 推到原生 alert 上，界面
+  切成英文也改不掉——那条路 v5 断根了。
+
+工具栏那枚「筛选」不在 SwiftUI 里：`label` / `tooltip` 是贡献槽的**拓扑键**，
+只在注册那一刻被读走，所以插件另订一次 `clam.locale`，语言一变**重新贡献**
+同一条 `(owner, id)`（就地覆盖、位置不变、整条工具栏重建）。菜单内容是每次
+弹出前现填的，那一半自己就跟上了。
 现在归档只是行上的一个 `archived: true`，行照常下来，由 `SidebarFilterState` 决定露不露。
 
 ## 副行摘要（`preview`）
@@ -85,7 +111,7 @@ v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 n
 `SidebarFilterState`（Swift 半边，`UserDefaults` 持久化）握着四样东西：
 
 - `mode`：列表的组织轴。**全部 / 按时间 / 待处理**三枚胶囊。
-  「按时间」把工作区整个换成日期分段（今天 / 昨天 / 前 7 天 / 更早），
+  「按时间」把工作区整个换成日期分段（今天 / 昨天 / 过去 7 天 / 更早），
   副行也随之拆成「工作区 / 摘要」各一行——那边没有分组头兜着。
   「待处理」筛的是 `SidebarSessionStatus.needsAttention`——待批准 / 待回答 /
   出错 / 跑完了，四类都算，见下面「状态点从哪来」。

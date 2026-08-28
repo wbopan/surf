@@ -203,9 +203,12 @@ test("titleOf / forkSession", async () => {
 	await sleep(500);
 });
 
-test("上游的错误翻成能给用户看的一句话", async () => {
+test("上游的错误原样抛出，不拼任何显示文案", async () => {
+	// **不再拼「重命名工作区：」那个中文前缀**（计划 §8-4）：它会经 error 频道
+	// 泄漏到原生 alert 上，界面切成英文也改不掉。这里只抛上游那句原话，
+	// 「X 失败：原因」由 Swift 按界面语言组（swift/Strings.swift）。
 	await assert.rejects(() => source.renameWorkspace("ws1", "x"),
-		(error) => error.message === "重命名工作区：名字重了");
+		(error) => error.message === "名字重了" && error.clamCode === undefined);
 });
 
 test("dispose 之后不再推送", () => {

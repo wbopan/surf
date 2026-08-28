@@ -292,3 +292,41 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   ③ `BootstrapViewController` 的两个按钮标题（拷贝/重试）改由调用方每次递入，
   `MainWindowController` 新增 `BootstrapPhase` 记"在演哪一幕"而不是记文案
   ——这是"语言变更后能照原样重画"的最小代价，顺带把 `guideShown` 变成计算属性。
+- **2026-08-28 · i2（clam-sidebar 文案双语化）· 完成。** 新增
+  `clam-sidebar/swift/Strings.swift`（`struct L`，47 条：41 个属性 + 6 个方法，
+  其中 `timeBucket` / `actionName` / `failureReason` 三个方法各自收着一小张表，
+  实际串数约 60）。侧边栏 Swift 半边的会话行 / 分组头 / 右键菜单 / 搜索框 /
+  筛选胶囊 / 时间分段 / 状态 AX label / 三个 alert / NSOpenPanel / 空态 /
+  工具栏「筛选」菜单全部改从它取；`host.log` 的中文一条没动。
+  插件 `activate` 里建 `ClamLocaleStore(bus: host.events)`，一份实例同时给
+  `AppSidebarModel`（投影里的「未分组」「新会话」兜底）与 `SidebarView`
+  （body 读 `L(locale.current)`，`@Observable` 自动重渲，没有
+  `withObservationTracking`）。工具栏那条贡献不在 SwiftUI 里，另订一次
+  `clam.locale` 后**重新贡献**同一个 `(owner, id)`（label 是拓扑键，就地覆盖 +
+  整条重建，位置不变）。
+  **断根 node 错误泄漏（§8-4）**：`dsh-source.js` 的 `call()` 去掉 `what` 参数，
+  只抛上游原话；自己认领得了的失败改抛新增的 `SourceError(code, …)`
+  （`apiMissing` / `forkNoChild`），`lib/index.js` 的两处 `push("error")` 统一成
+  `{action, code?, message}`，Swift 用 `L.actionFailed` + `L.failureReason`
+  组「归档会话失败：X」/「Failed to archive the session: X」。
+  桥 `SCHEMA_VERSION` 4 → 5。日志（node 的 `log.warn`、Swift 的 `host.log`）
+  仍是中文，失败那行显式取 `L(.zh)`。
+  文案同时按 Apple 简中风格打磨，改动较大的 9 条在表里以 `// 原：…` 标出。
+  验证：`swiftc` 按壳 `CompilerService` 的参数形状**全量编出 dylib**
+  （`-emit-library`，ClamSDK + ClamLayout 世代 module 都接上）**成功、无新增警告**
+  （`SidebarFilter.swift` 那条 actor-isolated 警告在 HEAD 上就有，已对照确认）；
+  `node --check` 三个改动 JS 通过，`node --test clam-sidebar/test/*.test.js` 18/18 绿
+  （改了一条断言：上游错误不再带中文前缀）。
+  **偏离计划三处**：
+  ① 计划说"塞进现有 @Observable model"，但 `AppSidebarModel` 是 Combine 的
+  `ObservableObject`，而 `SidebarModel` 是 **public** 协议、`L` 是 internal 类型
+  ——往协议里加 `var strings: L` 过不了访问控制。改成把 `ClamLocaleStore`
+  同时传给 model 与视图（视图多一个 `let locale`），观察语义一模一样。
+  ② `error` 帧比计划多一个可选的 `code`：计划只写了 `{action, message}`，
+  但"数据面尚未就绪"这类**我们自己合成**的失败没有上游原话可转，光留 message
+  等于换个地方泄漏中文。`code` 是稳定 id，Swift 查表出文案，认不出就退回 message。
+  ③ 顺手把「按时间」分段的 id 从中文段名换成 `TimeBuckets.Bucket` 枚举
+  （`today` / `yesterday` / `lastSevenDays` / `earlier`）：它当着
+  `Identifiable.id`，中文串会随语言变。AX identifier 一个都没动（`sidebar.group.*`
+  取的是 workspaceId，与分段无关），但**本 worktree 没有在跑的实例，没能 dump 一次
+  AX 复核分组头的 `.accessibilityElement(children: .ignore)` 收口，留待 i6 截图验收**。

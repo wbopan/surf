@@ -22,7 +22,13 @@
  * |---|---|---|
  * | `snapshot` | `{version, groups:[{id, workspaceId, title, sessions:[…]}]}` | 数据变化时（见 `schedulePush`），以及被 `snapshot` 动作请求时 |
  * | `forked` | `{sourceId, sessionId}` | `fork` 完成，供 Swift 切到子会话 |
- * | `error` | `{action, message}` | 任一写动作抛错（Swift 弹一次 alert） |
+ * | `error` | `{action, code?, message}` | 任一写动作抛错（Swift 弹一次 alert） |
+ *
+ * **`error` 帧里一个显示文案都没有**（计划 §8-4）：`action` 是动作 id、`code` 是
+ * 我们自己认领得了的失败原因码（`notReady` / `apiMissing` / `forkNoChild`，
+ * 见 `dsh-source.js` 的 `SourceError`），`message` 是上游那句原话。
+ * 「归档会话失败：<原因>」这句是 Swift 那边按界面语言组的
+ * （`swift/Strings.swift`）——node 不知道界面是哪种语言，也不该知道。
  *
  * 会话行的字段：`{id, title, preview, status, updatedAt, blank, isSubagent, archived}`。
  * `preview` 是副行摘要（尾部一条消息的文本，取不到时为 null，见 `dsh-source.js`
@@ -76,9 +82,10 @@ const COALESCE_MS = 30;
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  * v1 = M6 的"没有数据面"，v2 = M10 的投影协议，v3 = 副行摘要 `preview` +
  * 归档不再在数据层滤除（新增 `archived`），v4 = `status` 多了 `pendingQuestion`
- * / `failed` / `done` 三个取值（经 `clamPending`，见 `withPending`）。
+ * / `failed` / `done` 三个取值（经 `clamPending`，见 `withPending`），
+ * v5 = `error` 帧结构化（`message` 不再带中文前缀，改配 `code`；i2 文案双语化）。
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /**
  * `clamPending` 的原因 → 投影里的 `status`。
@@ -280,16 +287,23 @@ export default createSwiftPlugin({
 	expose: Object.fromEntries(ACTIONS.map((action) => [action, async (payload, api) => {
 		const handler = RUNTIME.get(api)?.[action];
 		if (handler === undefined) {
-			api.push("error", { action, message: "会话数据面尚未就绪" });
+			// 这一条没有上游原话可转，只有我们自己的原因码；`message` 是给日志
+			// 与万一 Swift 不认得这个码时兜底用的技术串，不是给用户看的句子。
+			api.push("error", { action, code: "notReady",
+				message: "session data plane is not ready" });
 			return;
 		}
 		try {
 			await handler(payload ?? {});
 		} catch (error) {
 			const message = errorText(error);
+			// 日志照旧中文（读它的是蹲在终端前的人，不跟界面语言走）。
 			api.ctx.logger("clam-sidebar").warn(`${action} 失败：${message}`);
 			process.stderr.write(`clam-sidebar: ${action} 失败：${message}\n`);
-			api.push("error", { action, message });
+			const code = typeof error?.clamCode === "string" ? error.clamCode : undefined;
+			api.push("error", code === undefined
+				? { action, message }
+				: { action, code, message });
 		}
 	}])),
 });

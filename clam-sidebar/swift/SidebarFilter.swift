@@ -23,11 +23,13 @@ final class SidebarFilterState: ObservableObject {
         case time
         case pending
 
-        var title: String {
+        /// 胶囊上的字。**rawValue 才是身份**（`sidebar.chips.<mode>` 与
+        /// UserDefaults 都存它），显示名随语言走。
+        func title(_ strings: L) -> String {
             switch self {
-            case .all: return "全部"
-            case .time: return "按时间"
-            case .pending: return "待处理"
+            case .all: return strings.filterAll
+            case .time: return strings.filterTime
+            case .pending: return strings.filterPending
             }
         }
     }

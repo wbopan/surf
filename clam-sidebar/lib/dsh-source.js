@@ -146,7 +146,7 @@ export function createSessionSource(ctx, log) {
 
 		async archiveSession(sessionId) {
 			const value = await call("workspace", "archiveSession",
-				{ sessionId: normalizeSessionId(sessionId) }, "归档会话");
+				{ sessionId: normalizeSessionId(sessionId) });
 			// 回包就是完整的归档集合，直接采信；行立刻消失，不等重取。
 			if (Array.isArray(value?.archivedSessionIds)) {
 				archived = new Set(value.archivedSessionIds.map(normalizeSessionId));
@@ -157,7 +157,7 @@ export function createSessionSource(ctx, log) {
 
 		async renameSession(sessionId, title) {
 			await call("sessions", "rename",
-				{ sessionId: normalizeSessionId(sessionId), title }, "重命名会话");
+				{ sessionId: normalizeSessionId(sessionId), title });
 			scheduleRefetch(true);
 		},
 
@@ -168,27 +168,27 @@ export function createSessionSource(ctx, log) {
 		 */
 		async forkSession(sessionId) {
 			const value = await call("sessions", "fork",
-				{ sessionId: normalizeSessionId(sessionId) }, "分叉会话");
+				{ sessionId: normalizeSessionId(sessionId) });
 			const childId = value?.sessionId;
 			if (typeof childId !== "string" || childId === "") {
-				throw new Error("分叉会话：上游没有回子会话 id");
+				throw new SourceError("forkNoChild", "fork returned no child session id");
 			}
 			scheduleRefetch(true);
 			return childId;
 		},
 
 		async createWorkspace(path) {
-			await call("workspace", "create", { path }, "添加工作区");
+			await call("workspace", "create", { path });
 			scheduleRefetch(true);
 		},
 
 		async renameWorkspace(workspaceId, title) {
-			await call("workspace", "rename", { workspaceId, title }, "重命名工作区");
+			await call("workspace", "rename", { workspaceId, title });
 			scheduleRefetch(true);
 		},
 
 		async deleteWorkspace(workspaceId) {
-			await call("workspace", "delete", { workspaceId }, "删除工作区");
+			await call("workspace", "delete", { workspaceId });
 			scheduleRefetch(true);
 		},
 
@@ -349,8 +349,8 @@ export function createSessionSource(ctx, log) {
 		inFlight = (async () => {
 			try {
 				const [sessions, workspaceList] = await Promise.all([
-					call("sessions", "list", {}, "拉取会话列表"),
-					call("workspace", "list", {}, "拉取工作区列表"),
+					call("sessions", "list", {}),
+					call("workspace", "list", {}),
 				]);
 				if (disposed) return;
 				rows = new Map((sessions?.items ?? [])
@@ -423,7 +423,7 @@ export function createSessionSource(ctx, log) {
 	async function previewOf(sessionId) {
 		try {
 			const value = await call("sessions", "history",
-				{ sessionId, maxMessages: 1 }, "读取会话摘要");
+				{ sessionId, maxMessages: 1 });
 			const entries = Array.isArray(value?.events) ? value.events : [];
 			// **先找最后一条 assistant/message**：副行要的是"它上次回了什么"。
 			// 倒扫时不分角色的话，用户刚发出一句、模型还没答的那一刻，副行会翻成
@@ -456,17 +456,43 @@ export function createSessionSource(ctx, log) {
 		}
 	}
 
-	/** 一次 apiProxy 调用：拼信封、拆 `{ok, value|error}`、失败翻成中文 Error。 */
-	async function call(domain, method, payload, what) {
+	/**
+	 * 一次 apiProxy 调用：拼信封、拆 `{ok, value|error}`、失败抛 Error。
+	 *
+	 * **抛出来的 message 就是上游那句原话，不加任何中文前缀**（i18n 断根，
+	 * 计划 §8-4）：这条 message 会经 `error` 频道原样送到 Swift，那边按界面语言
+	 * 组「归档会话失败：<原话>」。以前这里拼的是 `${what}：${原话}`，于是
+	 * 一句中文文案从 node 泄漏到了原生 alert 上，界面切成英文也改不掉。
+	 *
+	 * 我们自己认领得了的失败（不是上游给的原话）挂一个 `clamCode`，
+	 * 由 Swift 的 `L.failureReason` 翻成人话——见 `SourceError`。
+	 * 调用点想在日志里写中文，自己写（日志不跟界面语言走）。
+	 */
+	async function call(domain, method, payload) {
 		const api = ctx.apiProxy?.[domain];
 		if (api?.[method] === undefined) {
-			throw new Error(`${what}：apiProxy.${domain}.${method} 不存在（dsh 版本变了？）`);
+			throw new SourceError("apiMissing",
+				`apiProxy.${domain}.${method} is unavailable`);
 		}
 		const response = await api[method]({ rpcId: randomUUID(), payload });
 		const result = response?.result;
 		if (result?.ok === true) return result.value;
 		const error = result?.error;
-		throw new Error(`${what}：${error?.message ?? error?.code ?? "上游没有说明原因"}`);
+		throw new Error(error?.message ?? error?.code ?? "");
+	}
+}
+
+/**
+ * 带机器可读原因码的失败。**文案不在这儿**：`clamCode` 经桥的 `error` 频道
+ * 送到 Swift，那边查自己的表（`swift/Strings.swift` 的 `failureReason`）。
+ * `message` 只是给日志看的技术串，不是给用户看的句子。
+ */
+export class SourceError extends Error {
+	constructor(code, message) {
+		super(message);
+		this.name = "SourceError";
+		/** @type {string} */
+		this.clamCode = code;
 	}
 }
 

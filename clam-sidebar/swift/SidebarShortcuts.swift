@@ -101,14 +101,15 @@ final class SidebarShortcuts {
 
     private func renameCurrent() {
         guard let session = currentSession() else { return NSSound.beep() }
+        let strings = model.strings
         let alert = NSAlert()
-        alert.messageText = "重命名会话"
+        alert.messageText = strings.renameSessionTitle
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.stringValue = session.displayTitle
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        alert.addButton(withTitle: "好")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: strings.ok)
+        alert.addButton(withTitle: strings.cancel)
         present(alert) { [model] response in
             guard response == .alertFirstButtonReturn else { return }
             let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

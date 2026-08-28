@@ -42,8 +42,14 @@ final class SidebarPlugin: ClamPlugin {
             .flatMap { $0 as? [String: Any] }
             .flatMap(SidebarSnapshot.decode) ?? .empty
 
+        // 界面语言。真相是 dsh 的 `locale` 设置，壳把它当粘性事件广播
+        // （`clam.locale`），所以这一句订上的瞬间就已经是当前值——初值只兜住
+        // "壳还没发过"那一刻（决议链见 docs/clam-i18n-plan.md §3）。
+        let locale = ClamLocaleStore(bus: host.events)
+
         let model = AppSidebarModel(snapshot: seed, bridge: host.bridge,
-                                    surface: surface, log: { host.log($0) })
+                                    surface: surface, locale: locale,
+                                    log: { host.log($0) })
         // 选中高亮活过热替换：真相在 dsh 侧（页面会把 currentSession 报回来），
         // 这里存的只是"页面还没报之前先亮哪一行"的装饰状态。
         model.selectedSessionId = host.store.string("selectedSessionId")
@@ -68,8 +74,11 @@ final class SidebarPlugin: ClamPlugin {
                 model.activate(sessionId: childId)
 
             case "error":
+                // 载荷是结构化的：动作 id + 可选的原因码 + 上游那句原话。
+                // **一个显示文案都不从 node 来**（计划 §8-4），组句在 `L` 里。
                 model.reportFailure(action: payload["action"] as? String ?? "",
-                                    reason: payload["message"] as? String ?? "未知原因")
+                                    code: payload["code"] as? String,
+                                    message: payload["message"] as? String ?? "")
 
             default:
                 break // 未知频道忽略（协议向前兼容，同桥的纪律）
@@ -98,7 +107,7 @@ final class SidebarPlugin: ClamPlugin {
         }.kept(by: handle)
 
         host.register(slot: "sidebar") {
-            AnyView(SidebarView(model: model, filter: filter, surface: surface))
+            AnyView(SidebarView(model: model, filter: filter, surface: surface, locale: locale))
         }.kept(by: handle)
 
         // 工具栏的「筛选」。**clam-layout 那格原本是「新建会话」**——新建的入口
@@ -114,31 +123,62 @@ final class SidebarPlugin: ClamPlugin {
                 Self.populate(menu: menu, model: model, filter: filter)
             }
         }
-        host.contribute(to: LayoutToolbar.slot,
-                        id: "filter",
-                        order: -100,
-                        metadata: [
-                            "label": "筛选",
-                            "symbol": "line.3.horizontal.decrease",
-                            "tooltip": "筛选会话",
-                            "menu": buildMenu,
-                        ]) {
-            // 兜底视图：系统认不出那个 SF Symbol 时才用得上。菜单路线走不了，
-            // 退化成"把筛选清空"这一个动作——比一颗点不动的按钮有用。
-            AnyView(
-                Button {
-                    MainActor.assumeIsolated {
-                        filter.hiddenGroups = []
-                        filter.showArchived = false
-                        filter.mode = .all
+        // 菜单的内容是**每次弹出前**现填的（`populate` 读 `model.strings`），
+        // 所以那一半不用管；要重新贡献的是 `label` / `tooltip` 这些**拓扑键**
+        // ——它们只在注册那一刻被读走一次，label 一变整条工具栏重建。
+        //
+        // **撤销句柄存在闭包捕获的这个 var 里，不 `.kept(by: handle)`**：那样会让
+        // 订阅闭包捕获 `handle`，而订阅本身又由 handle 按住——一个谁也放不掉谁的环，
+        // 旧世代永远退不了休（它还会在下次换语言时拿陈旧的视图工厂重新贡献）。
+        // 现在的链是：handle → 订阅 disposable；总线 → 订阅闭包 → 这个 var。
+        // handle 一析构，订阅撤销、闭包释放、这份 disposable 跟着析构，
+        // 那时若已被新世代覆盖则 token 对不上、空转（见 ClamContributions.register）。
+        var filterContribution: ClamDisposable?
+        let contributeFilter: (L) -> Void = { strings in
+            // 先注册新的（就地覆盖同 `(owner, id)`）再撤旧句柄：反过来会先把
+            // 自己那条摘掉，工具栏闪一下少一格。旧句柄此刻 token 已对不上，
+            // `dispose()` 是空操作——写出来只为让"谁负责撤销"一眼可见。
+            let previous = filterContribution
+            filterContribution = host.contribute(
+                to: LayoutToolbar.slot,
+                id: "filter",
+                order: -100,
+                metadata: [
+                    "label": strings.filterLabel,
+                    "symbol": "line.3.horizontal.decrease",
+                    "tooltip": strings.filterTooltip,
+                    "menu": buildMenu,
+                ]) {
+                // 兜底视图：系统认不出那个 SF Symbol 时才用得上。菜单路线走不了，
+                // 退化成"把筛选清空"这一个动作——比一颗点不动的按钮有用。
+                AnyView(
+                    Button {
+                        MainActor.assumeIsolated {
+                            filter.hiddenGroups = []
+                            filter.showArchived = false
+                            filter.mode = .all
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
                     }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                .buttonStyle(.borderless)
-                .help("清除筛选")
-                .accessibilityIdentifier("toolbar.sidebarFilter")
-            )
+                    .buttonStyle(.borderless)
+                    .help(strings.clearFilters)
+                    .accessibilityIdentifier("toolbar.sidebarFilter")
+                )
+            }
+            previous?.dispose()
+        }
+        // 先按当前值贡献一次（壳万一没发过那条粘性事件，这枚按钮也得在）。
+        contributeFilter(L(locale.current))
+
+        // 换语言就**重新贡献**同一条（`(owner, id)` 相同 = 就地覆盖，位置不变）。
+        // 这是既有机制：拓扑键变了本来就该整条重建，绕过它去原地改 label 是错的。
+        // 这里不走 `withObservationTracking`（静默死亡坑）——工具栏不在 SwiftUI 里，
+        // 直接订总线那条粘性主题最省事，`ClamLocaleStore` 那份留给视图用。
+        host.events.subscribe(ClamEventBus.Topic.locale) { payload in
+            guard let raw = payload["locale"] as? String,
+                  let next = ClamLocale(rawValue: raw) else { return }
+            MainActor.assumeIsolated { contributeFilter(L(next)) }
         }.kept(by: handle)
 
         // 请求一份 fresh 全量。**每代都要问**：node 半边只在数据变化时推，
@@ -154,6 +194,8 @@ final class SidebarPlugin: ClamPlugin {
     @MainActor
     private static func populate(menu: NSMenu, model: AppSidebarModel, filter: SidebarFilterState) {
         let groups = model.groups
+        // 每次弹出前现取：菜单内容不是拓扑，不必重新贡献就能跟上语言。
+        let strings = model.strings
         if !groups.isEmpty {
             // 这一段**不加分区标题**：四个带勾的工作区名自己已经说清是什么，
             // 而 AppKit 在菜单**首项**上的分区标题不渲染（`.sectionHeader` 和
@@ -167,13 +209,13 @@ final class SidebarPlugin: ClamPlugin {
             menu.addItem(.separator())
         }
 
-        menu.addItem(MenuActionTarget.item("显示已归档", checked: filter.showArchived) {
+        menu.addItem(MenuActionTarget.item(strings.showArchived, checked: filter.showArchived) {
             MainActor.assumeIsolated { filter.showArchived.toggle() }
         })
 
         if filter.isNarrowed {
             menu.addItem(.separator())
-            menu.addItem(MenuActionTarget.item("清除筛选") {
+            menu.addItem(MenuActionTarget.item(strings.clearFilters) {
                 MainActor.assumeIsolated {
                     filter.hiddenGroups = []
                     filter.showArchived = false
