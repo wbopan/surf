@@ -132,7 +132,10 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         config.applicationNameForUserAgent = "Clam/\(shortVersion)"
         // 网页 → 原生通道：插件 v2 桥（ready / currentSession 上报）
         config.userContentController.add(WKScriptMessageHandlerProxy(self), name: "clam")
-        let wv = WKWebView(frame: .zero, configuration: config)
+        applyAppearancePreferences(config.preferences)
+        // 用子类而不是 WKWebView：它覆写 willOpenMenu，把右键菜单里 Reload /
+        // 前进后退 / 在新窗口打开这类浏览器味的导航项裁掉（Native/ClamWebView.swift）。
+        let wv = ClamWebView(frame: .zero, configuration: config)
         wv.setValue(false, forKey: "drawsBackground") // 透明 WebView
         wv.underPageBackgroundColor = .clear
         wv.navigationDelegate = self
@@ -140,12 +143,43 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // （详见 Native/WebPolicy.swift 顶注）。
         wv.uiDelegate = webPolicy
         wv.allowsMagnification = true
+        #if DEBUG
+        // Safari → 开发 → 本机 里能开 Inspector。调材质/查 computed style 必备。
+        // 只在 Debug 开：Release 里开着等于把整个页面交给任何人翻，
+        // 而且 WebKit 的右键菜单只有 inspectable 时才加 Inspect Element。
+        wv.isInspectable = true
+        #endif
         // 主 frame 橡皮筋不在原生侧处理：页面滚动由插件注入的
         // overflow:hidden + overscroll-behavior 控制（页面本就不可滚动，
         // 触摸板过度滚动残留的 elastic 拉伸可接受）。曾试过 SPI
         // _setRubberBandingEnabled: 全关四边，会在底部滚动时引发内容闪动。
         return wv
     }()
+
+    /// 两个 WebKit 私有偏好开关，都带 `responds(to:)` 守卫，探测失败就静默跳过。
+    ///
+    /// **为什么敢用私有 API**：本仓库不上架、ad-hoc 签名（计划 §0.2）。风险只剩
+    /// WebKit 升级改名，而**两个开关的失效方向都是安全的**——
+    ///
+    /// - `useSystemAppearance` 打开的是 `-apple-visual-effect` 那组平台钩子
+    ///   （真材质、系统 vibrancy）。没打开时页面侧 `@supports
+    ///   (-apple-visual-effect: …)` 探测为假，clam-nativeify 的手绘玻璃栈照常生效。
+    ///   实测这是干脆的全有全无：关着时 `CSS.supports` 九个值全 false、
+    ///   computed 回读成空串，材质层什么都不画（docs/spikes/apple-visual-effect）。
+    ///   所以两层探测各自独立降级，谁失效都不会留下"画了一半"的表面。
+    /// - `shouldAllowUserInstalledFonts` 关掉用户自装字体（手册 §1.4）。dsh 走的是
+    ///   `-apple-system` 系统字体栈，用户装了同名字体会把正文渲染换掉。
+    ///   WKPreferences 没有对应的公开 API（SDK 头文件里没有，只有 tbd 里的
+    ///   `_WKPreferencesSetShouldAllowUserInstalledFonts` 私有符号），所以走 KVC。
+    ///   守卫失败就是维持 WebKit 默认（允许），只是回到现状。
+    private func applyAppearancePreferences(_ prefs: WKPreferences) {
+        if prefs.responds(to: NSSelectorFromString("_setUseSystemAppearance:")) {
+            prefs.setValue(true, forKey: "useSystemAppearance")
+        }
+        if prefs.responds(to: NSSelectorFromString("_setShouldAllowUserInstalledFonts:")) {
+            prefs.setValue(false, forKey: "shouldAllowUserInstalledFonts")
+        }
+    }
 
     init() {
         super.init(window: nil)

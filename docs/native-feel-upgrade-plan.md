@@ -20,7 +20,8 @@
 | `UseSystemAppearance` 私有 feature 存在（601 个 feature，默认关） | 附录 B 探测脚本在本机跑通 | P2 的开关有的放矢 |
 | dsh 全局写死 `-webkit-font-smoothing: antialiased` | grep dsh-web-frontend 构建产物 | 字重偏细是 dsh 造成的，P1 必须覆盖回 `subpixel-antialiased` |
 | dsh 字体栈是 `-apple-system` 系统栈（仅 KaTeX 是 web 字体） | 同上 | 手册 §3.2 的 40 条 Inter 光学字距表**不适用**，白捡 |
-| `--dsw-alias-button-primary-fill` / `--dsw-alias-brand-primary` 存在 | 同上 | `_primary` 高光写死蓝色的死结可用相对颜色解（P1） |
+| 发送键 `_primary` 的底色走 `--dsw-alias-button-info-fill` → `--dsw-static-deepseek-500 #4176e6`（浅）/ `-400 #679efe`（深） | grep `dsh-client-ui-conversation` + `dsh-client-ui-theme` 的构建产物 | `_primary` 高光写死蓝色的死结可用相对颜色解（P1）。**不是 `--dsw-alias-button-primary-fill`**——那条走 `--dsw-alias-brand-primary` → `neutral-bluish`，浅色下是近黑的 `#0f1115`，发送键没在用它 |
+| `--dsw-alias-label-primary` 存在且随主题翻面（浅 `#0f1115` / 深 `#f9fafb`） | 同上 | P1 的 `::selection` / `caret-color` 从它派生 |
 | dsh 无 `color-scheme` / `caret-color` / `::selection`，滚动条仅两处局部样式 | 同上 | P1 的补课项不与 dsh 冲突 |
 | 壳侧无 Inspector、无外观处理、无 document-start 注入、右键菜单未动 | 通读 clam-app/host/Sources | P2/P4/P5 的落点 |
 
@@ -65,12 +66,18 @@ P4 独立于材质线。
    `input, textarea { caret-color: var(--dsw-alias-label-primary) }`（token 名先
    核实存在，README 纪律）。
 5. **`_primary` 高光解死结**：`--clam-glass-glow-c` 眼下写死 `0 192 255` / `0 203 255`
-   （dsh 换主题色会偏色，README:380-382 自认）。改成从
-   `var(--dsw-alias-button-primary-fill)` 用相对颜色取通道：发光层的
-   `rgb(var(--clam-glass-glow-c) / calc(…))` 改写为
-   `rgb(from var(--dsw-alias-button-primary-fill) r g b / calc(…))` 形态，或把
-   `--clam-glass-glow-c` 定义成 `@property` + relative color 中转。保持浅/深两档
-   peak/decay 不变，只换色相来源。
+   （dsh 换主题色会偏色，README 自认）。**动手时核出计划这条写错了 token**：发送键
+   的底色是 `--dsw-alias-button-info-fill`（`#4176e6` / `#679efe`），不是
+   `--dsw-alias-button-primary-fill`（那条是近黑的 neutral-bluish）——也就是说写死的
+   青色**今天就已经偏色**，不是将来才会踩的隐患。
+   做法：`--clam-glass-glow-c` 从「通道三元组」改成普通 `<color>` 并 `@property`
+   注册（`inherits: true`，initial `#fff`，失效即退回白 = 无色玻璃高光），发光层写
+   `rgb(from var(--clam-glass-glow-c) r g b / calc(…))`；`_primary` 那条派生成
+   `oklch(from var(--dsw-alias-button-info-fill) calc(l + 0.12) c h)`。
+   `+0.12` 由系统实测反推（蓝浅 L .646→.765、蓝深 .673→.792，两组都是 +0.12），
+   并顺带解释了「R 通道恒为 0」：抬亮后彩度出域，CSS 色域映射沿 OKLCh 收彩度、
+   落在 R=0 那面边界。峰值/衰减两个旋钮不变；**深色档那行常量删掉**——dsh 的 token
+   自己翻面，派生式跟着翻。
 6. **按压时序**：手册量的原生行为是「按下即时、松开缓动」——按下态
    `transition-duration: 0s`（现在是 90ms），松开沿用 `--clam-dur-fast`。
    `--clam-dur-press` 变量随之退休或归零。
@@ -234,3 +241,41 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
 ## §7 执行日志
 
 - 2026-08-28 计划定稿。立场三条由用户定调（跟随 dsh / 优先原生渲染 / 截图裁决）。
+- 2026-08-28 **P2 完成**（壳侧开关 + spike）。壳：`MainWindowController` 的 webView
+  懒加载处加 `#if DEBUG isInspectable`，并抽出 `applyAppearancePreferences(_:)`
+  带 `responds(to:)` 守卫开 `useSystemAppearance`、关
+  `shouldAllowUserInstalledFonts`（WKPreferences 无公开 API，SDK 头文件里没有，
+  只有 tbd 的私有符号，所以走 KVC；两个 selector 本机实测都 responds）。
+  spike 在 `docs/spikes/apple-visual-effect/`，三个问题的答案：
+  ① **不透明窗口里材质照常采样身后的页面内容**（不是黑块）——透明窗口不是前提，
+  P3 可以走；② `CSS.supports` 干脆翻转（关掉时九个值全 false、材质层什么都不画），
+  **但 `-apple-system-*` 颜色关键字不受这个开关管**（手册 §1.1 那句在本机不成立），
+  对 P4 是白捡；③ **失活时材质自己一个像素都不变**（两张图取样值逐位相同），
+  所以 P3 的 `data-clam-blur` → `-apple-visual-effect: none` 回落是必需项而非优化，
+  且 `-subdued` 与 `media-controls` 只差几个色阶、不足以表达失活。
+  **"开关对 dsh 页面其余渲染有无副作用"没答**——spike 是自造静态页，
+  待 `./dev` 起真 App 走查表单/代码块/图片。**P3 仍等用户看过对比截图再动工。**
+- 2026-08-28 **P5 完成**（右键菜单薄版）。新增
+  `clam-app/host/Sources/Native/ClamWebView.swift`，覆写 `willOpenMenu` 裁掉
+  Reload / GoBack / GoForward / Open*InNewWindow 七项，其余（含 identifier 为
+  nil 的）一律保留——**黑名单而非白名单，失效方向才安全**。
+  identifier 字面量从真菜单转储里读回来（spike 的 `CLAM_SPIKE_DUMP_MENU`），
+  因为这些常量没有公开头文件、`dlsym` 也取不到。三条实测：Services / Ask Siri
+  是 AppKit 在 `willOpenMenu` **之后**自己加的（不经我们的手）；AppKit 会自己
+  折叠连续分隔符（我们仍收一轮，为的是行首那种没验过的情形）；**把菜单裁空不会
+  露出空框**，所以 Release 下空白处右键什么都不弹，正是原生行为。
+- 2026-08-28 **P1 完成**（`clam-nativeify/lib/client.js` + `tools/dump-css.mjs` +
+  README）。9 个条目全做，另有三处偏离/顺手，都已就地更新本文与 README：
+  1. 计划第 5 项的 token 名写错了：发送键走 `--dsw-alias-button-info-fill` 而不是
+     `--dsw-alias-button-primary-fill`（源码为准，§1 与 §3 已改）。
+  2. **`tools/dump-css.mjs` 在 P1 之前就是坏的**，两处：① `ctx.inject` 不在桩里，
+     `apply()` 最后一行必抛 TypeError、脚本 exit 1（"验收：dump-css 括号平衡"这条
+     此前根本跑不通）；② 桩把 `textContent` 存进一个标量，后写的字体 style 把主样式
+     整个盖掉，dump 出来只有 6 条规则、却照常打印"括号配对正确"——**校验器在假绿**。
+     两处都修了（外加 `getAttribute`，第 8 项的 token 守卫要读）。现在 417 行 45 条规则。
+  3. 第 9 项「顺手账」多修了两处同源脱节：README 的发光旋钮表（`.55/.012/.025` →
+     定稿的 `.795/.06`）连带下面那段"深色上下不等强、现在恢复了"的叙述（代码里早已
+     眼调回等强）；client.js 里"那五个按钮"的同一处笔误。
+  未做：`caret-color` 一条在多数输入框里是 no-op（`auto` = currentColor 已经对了），
+  仍然按计划加了——理由写在代码注释里（dsh 有几处输入框把 color 调淡）。
+  视觉验收（四态截图 + 普通浏览器零影响）交由用户跑真 App。

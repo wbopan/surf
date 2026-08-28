@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>apple-visual-effect spike</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    /* 彩色渐变 + 斜条纹：材质如果真在采样"身后的页面内容"，
+       胶囊底下必然带着渐变的色相与条纹的走向；如果只是一块黑/灰，
+       那就说明不透明窗口下材质采不到页面。 */
+    background:
+      repeating-linear-gradient(115deg,
+        rgba(255,255,255,.10) 0 14px, rgba(0,0,0,.10) 14px 28px),
+      linear-gradient(135deg, #ff5f6d 0%, #ffc371 28%, #24c6dc 62%, #514a9d 100%);
+    font: 13px/1.5 -apple-system, system-ui, sans-serif;
+    color: #fff;
+    -webkit-font-smoothing: subpixel-antialiased;
+    user-select: none; cursor: default;
+    padding: 28px 32px;
+    box-sizing: border-box;
+  }
+  h1 { font-size: 17px; margin: 0 0 4px; font-weight: 600; }
+  .sub { opacity: .85; margin: 0 0 22px; }
+
+  .row { display: flex; align-items: center; gap: 16px; margin: 0 0 10px; flex-wrap: wrap; }
+  .row-label { width: 100%; font-size: 11px; opacity: .8; margin-top: 14px; letter-spacing: .02em; }
+
+  /* 材质挂在空子元素上、内容浮在上面（手册 §1.1 的 Raycast 模式）。 */
+  .pill {
+    position: relative; isolation: isolate;
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 38px; padding: 0 20px; border-radius: 9999px;
+    font-weight: 500; white-space: nowrap;
+  }
+  .pill > .fx {
+    position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+    pointer-events: none; overflow: hidden; will-change: transform;
+  }
+  .fx-media   { -apple-visual-effect: -apple-system-glass-material-media-controls; }
+  .fx-subdued { -apple-visual-effect: -apple-system-glass-material-subdued; }
+  .fx-glass   { -apple-visual-effect: -apple-system-glass-material; }
+  .fx-clear   { -apple-visual-effect: -apple-system-glass-material-clear; }
+  .fx-blur    { -apple-visual-effect: -apple-system-blur-material; }
+
+  /* 对照组：纯 CSS 手绘玻璃（clam-nativeify 现在走的那条路的简化版）。 */
+  .fx-css {
+    background: rgba(255,255,255,.16);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.35),
+                inset 0 1px 0 rgba(255,255,255,.45),
+                0 2px 8px rgba(0,0,0,.18);
+  }
+  .fx-none { background: rgba(0,0,0,.28); }
+
+  /* 大面板：材质在大面积下的样子（胶囊太小看不出折射）。 */
+  .panel {
+    position: relative; isolation: isolate;
+    border-radius: 18px; padding: 18px 20px; margin-top: 18px;
+    max-width: 560px;
+  }
+  .panel > .fx { position: absolute; inset: 0; z-index: -1; border-radius: inherit; }
+  .panel h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
+  .vib { -apple-visual-effect: -apple-system-vibrancy-label; }
+
+  /* 探测结果表。故意用等宽字体，截图里好读。 */
+  #probe {
+    margin-top: 20px; font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(0,0,0,.32); border-radius: 10px; padding: 12px 14px;
+    max-width: 620px; white-space: pre;
+  }
+  .ok  { color: #7dffa8; }
+  .bad { color: #ff9a9a; }
+
+  /* 对齐基准点：sample.swift 靠这两枚纯品红方块定位视口原点。
+     截图工具在窗口激活/失活时带的阴影厚度不一样（实测 2000×1504 vs
+     2110×1598），不给基准点就没法把两张图对齐着量。 */
+  .fid { position: fixed; width: 8px; height: 8px; background: #ff00ff; z-index: 99; }
+  .fid-tl { left: 0; top: 0; }
+  .fid-br { right: 0; bottom: 0; }
+
+  /* 失活态：**刻意不给材质写任何覆盖规则**——问题 ③ 要看的正是
+     材质自己在窗口失活时变不变。这里只把状态显示在标题里。 */
+  #winstate::after { content: "窗口：激活"; }
+  [window-blurred] #winstate::after { content: "窗口：失活（材质无 CSS 覆盖）"; }
+</style>
+</head>
+<body>
+  <div class="fid fid-tl"></div><div class="fid fid-br"></div>
+  <h1>-apple-visual-effect · 不透明窗口 spike</h1>
+  <p class="sub"><span id="winstate"></span> · 背景是页面自己画的彩色渐变 + 斜条纹</p>
+
+  <div class="row-label">glass 家族（材质）</div>
+  <div class="row">
+    <span class="pill"><span class="fx fx-media"></span>media-controls</span>
+    <span class="pill"><span class="fx fx-subdued"></span>subdued</span>
+    <span class="pill"><span class="fx fx-glass"></span>glass-material</span>
+    <span class="pill"><span class="fx fx-clear"></span>clear</span>
+  </div>
+
+  <div class="row-label">对照组（传统 blur 材质 / 纯 CSS 手绘 / 无效果）</div>
+  <div class="row">
+    <span class="pill"><span class="fx fx-blur"></span>blur-material</span>
+    <span class="pill"><span class="fx fx-css"></span>纯 CSS backdrop-filter</span>
+    <span class="pill"><span class="fx fx-none"></span>纯色 28% 黑</span>
+  </div>
+
+  <div class="panel">
+    <span class="fx fx-glass"></span>
+    <h2 class="vib">大面板 · -apple-system-glass-material</h2>
+    <div class="vib" id="panel-text">这段文字用 -apple-system-vibrancy-label。<br>
+      面板底下压着斜条纹——材质若在采样页面内容，条纹会被折射/模糊而不是原样穿过。<br>
+      <!-- 给右键菜单转储用：链接右键菜单里才会出现 OpenLinkInNewWindow 那类导航项 -->
+      <a id="probe-link" href="https://example.com/" style="color:#fff">一个外链（给菜单转储用）</a></div>
+  </div>
+
+  <div id="probe">正在探测…</div>
+
+<script>
+  const values = [
+    "-apple-system-glass-material",
+    "-apple-system-glass-material-subdued",
+    "-apple-system-glass-material-media-controls",
+    "-apple-system-glass-material-media-controls-subdued",
+    "-apple-system-glass-material-clear",
+    "-apple-system-blur-material",
+    "-apple-system-blur-material-ultra-thin",
+    "-apple-system-vibrancy-label",
+    "none",
+  ];
+  const lines = [];
+  lines.push("CSS.supports('-apple-visual-effect', …)");
+  for (const v of values) {
+    const ok = CSS.supports("-apple-visual-effect", v);
+    lines.push(`  ${ok ? "✔" : "✘"}  ${v}`);
+  }
+  lines.push("");
+  lines.push("-apple-system-* 颜色关键字");
+  for (const c of ["-apple-system-label", "-apple-system-blue", "-apple-system-control-background"]) {
+    lines.push(`  ${CSS.supports("color", c) ? "✔" : "✘"}  ${c}`);
+  }
+  lines.push("");
+  // computed style 回读：属性被 UA 接受时 getComputedStyle 会把它读回来，
+  // 不接受时是空串——这是比 CSS.supports 更贴近"真的生效了吗"的一层。
+  const fx = document.querySelector(".fx-media");
+  lines.push("computed(-apple-visual-effect) of .fx-media = " +
+    JSON.stringify(getComputedStyle(fx).getPropertyValue("-apple-visual-effect")));
+  lines.push("navigator.userAgent = " + navigator.userAgent.slice(-60));
+  document.getElementById("probe").textContent = lines.join("\n");
+</script>
+</body>
+</html>
