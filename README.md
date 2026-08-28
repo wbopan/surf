@@ -73,7 +73,8 @@ clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具
                    client 半边装 window.__clam 动作桥 + 收起 web 侧边栏
 clam-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边
                    （订 dsh 的内部 API，投影经桥推给 Swift；Swift 只管画）
-clam-nativeify/    让 dsh Web UI 摸起来像原生 App 的样式插件（纯 client 半边，有 HMR）
+clam-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS（有 HMR），
+                   另有一个薄 Swift 载荷让原生侧跟随 dsh 的 ui-theme
 docs/              迁移计划、ABI 实测结论、可复跑的 spike
 ```
 

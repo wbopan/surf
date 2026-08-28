@@ -49,5 +49,8 @@
     - id: clam-settings
       name: "@wenbo/clam-settings"
 
+    # 原生化：九成价值在 client 半边那段 CSS（页面一侧），另有一个薄 Swift 载荷
+    # 把 dsh 的 ui-theme 投给原生侧（NSAppearance + 窗口底色）。它 inject
+    # clamBridge，真正的时序仍由 cordis 的依赖解析保证，排在这里只是诊断树好读。
     - id: ui-clam-nativeify
       name: "@wenbo/clam-nativeify"

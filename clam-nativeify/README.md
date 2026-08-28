@@ -1,9 +1,10 @@
 # clam-nativeify
 
-clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
+clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**三面包**：
 
-- `lib/index.js`（node 半边）：只干一件事——注册设置命名空间 `clam-nativeify`（唯一一项是「对话区字号」）。走运行时嵌套 `ctx.inject(["settings"])`，缺席即退到默认值。
-- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/clam-nativeify/client.js` 送达页面。**几乎全部实现在这里**。
+- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/clam-nativeify/client.js` 送达页面。**九成实现在这里**。
+- `lib/index.js`（node 半边）：两件事——① 注册设置命名空间 `clam-nativeify`（唯一一项是「对话区字号」），走运行时嵌套 `ctx.inject(["settings"])`，缺席即退到默认值；② 登记 `swift/` 载荷，并把 dsh 的 `ui-theme` 偏好投影下去（见「原生侧跟随 dsh 主题」）。
+- `swift/`（原生半边）：不占槽、不贡献界面，只按投影设 `NSApp.appearance` 与主窗口底色。缺席即回到"系统外观与 dsh 主题各行其是"。
 
 **本包自己不声明 `dsh.bundle`、包内也没有 `cordis.patch.yml`。** 编排权集中在伞包
 `@wenbo/surfclam` 的那张表上（`surfclam/cordis.patch.yml` 里的 `ui-clam-nativeify` row），
@@ -11,10 +12,17 @@ clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
 
 ## 职责边界
 
-**只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事**，实现基本是注入一段 CSS
-（外加一段十行的 JS 把窗口焦点态映射到 `<html data-clam-blur>`，见「四态」一节），
-零跨插件契约。**唯一的设置项是对话区字号**，见下面「字体」一节；除它之外没有配置，
-服务依赖也只有那一个可选的 `settings` / `settingsScope`（缺席即退到默认值，见同一节）。
+**只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事**，页面一侧的实现基本是注入
+一段 CSS（外加一段十行的 JS 把窗口焦点态映射到 `<html data-clam-blur>`，见「四态」
+一节），零跨插件契约。**唯一的设置项是对话区字号**，见下面「字体」一节；除它之外
+没有配置，页面一侧的服务依赖也只有那一个可选的 `settings` / `settingsScope`
+（缺席即退到默认值，见同一节）。
+
+**唯一越出页面的一件事是主题**：原生侧的 `NSAppearance` 与窗口底色此前跟系统走，
+与 dsh 的 `ui-theme` 互不知情，一撞就穿帮——见下面「原生侧跟随 dsh 主题」。
+那条线的代价是本包多了一个薄 Swift 载荷（因而多一条硬依赖 `clamBridge`），
+但它仍然只读不写：**主题的真相始终在 dsh，这里一个偏好都不存。**
+
 门控只有一条：`navigator.userAgent` 含
 `Clam/`（带斜杠，防普通子串误命中；壳经 `applicationNameForUserAgent` 声明）。
 终端 `dsh web` / 普通浏览器共用同一 web profile 时零影响。
@@ -653,6 +661,79 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 窗口里控件通常也不响应 hover，实际撞不上，但没验证过）。
 
 
+## 原生侧跟随 dsh 主题
+
+计划 `docs/native-feel-upgrade-plan.md` P4。缺口是**两套主题源互不知情**：
+
+- dsh 设浅色而系统是深色时，原生侧边栏、工具栏、设置窗口是深的，网页正文是浅的
+  ——一眼穿帮，而且没有任何办法在 dsh 里把它掰过来。
+- 窗口 `backgroundColor` 是壳设的 `.windowBackgroundColor`（跟系统），
+  首帧与 resize 时会从窗口底下漏出一条与页面不同的颜色。
+
+**方向：dsh 是权威，原生侧跟随**（计划 §0.1「不另建主真相来源」）。所以这里既不
+提供改主题的入口，也不存任何偏好——用户改主题的地方仍然只有 dsh 设置里那一处
+（原生设置窗口里的「外观」读的也是同一个 ns）。
+
+### 读法（权威坐标）
+
+| 项 | 值 | 核实处 |
+|---|---|---|
+| 设置 ns | `ui-theme` | `@deepseek-ai/dsh-client-ui-theme/lib/index.js` 的 `THEME_SETTINGS_NAMESPACE` |
+| 键名 | `preference` | 同上 `THEME_PREFERENCE_FIELD` |
+| 取值 | `light` / `dark` / `system`（默认 `system`） | 同上 `THEME_PREFERENCES` / `DEFAULT_PREFERENCE` |
+| 现成消费者 | clam-settings 通用页 | `clam-settings/swift/SettingsTabs.swift` 的 `GeneralRow(ns: "ui-theme", path: ["preference"])` |
+
+我们**只读不注册**（ns 的主人是那个插件，重复 register 会 fail loud）：
+`ctx.get("settings")?.get("ui-theme")` 现读现算，变化订全局的 `settings/updated`
+事件按 ns 过滤——非 owner 拿不到 `SettingsScope`，那是 `register` 的返回值。
+
+### 桥协议
+
+| 方向 | 频道/动作 | 载荷 |
+|---|---|---|
+| 下行 `push` | `theme` | `{theme: "light"｜"dark"｜"system", bgBase: {light, dark}}` |
+| 上行 `send` | `theme` | `{}`（现读现推一份） |
+
+**Swift 每代 activate 问一次**，node 只在设置变化时推。这不只是照抄「桥不给新世代
+补发」那条纪律，还堵着一个真实的时序洞：`ui-theme` 是别的插件在它自己的
+`inject(["settings"])` 里注册的，跟我们的挂载没有先后保证——挂载那一刻读完全可能
+读到"尚未注册"，而 `settings/updated` 只在**变化**时发，用户不动设置就永远等不到。
+壳的 activate 远晚于整棵插件树挂载完，那一刻现读必然读得到。
+
+### `bgBase` 为什么由 node 投而不是两边各写一份
+
+窗口底色要跟的是**页面实际画出来的那个色**：
+
+- 浅色 `#FFFFFF`：dsh 的 `--dsw-alias-bg-base` → `--dsw-static-neutral-bluish-00` = `#fff`，我们不覆盖。
+- 深色 `#1E1E1E`：dsh 自己是 `--dsw-static-neutral-bluish-950` = `#151517`，
+  但 `client.js` 把它**重映射**成了 `#1E1E1E`（见上面「深色档页面底色定成 #1E1E1E」）。
+  跟 dsh 的原值就会差出一条肉眼可见的边。
+
+所以值走投影，Swift 那边不写死。**改 client.js 里那条重映射时，`lib/index.js` 的
+`BG_BASE` 必须同步改。**
+
+### Swift 那边的两条纪律
+
+- **`activate` 返回 follower 而不是 handle**：不占槽的插件没有 registry → 视图闭包
+  → model 那条天然强引用链，返回 handle 的话 follower 当场被 ARC 回收，
+  日志照常打印"上线"、然后所有 `[weak self]` 回调静默变 nil。
+- **没有 deinit、没有"恢复原状"**：`NSApp.appearance` 与 `window.backgroundColor`
+  是进程/窗口级状态而不是租来的资源，新一代 activate 按新投影重设即可收敛。
+  （「别把清理逻辑只挂在析构上」——热替换时旧 handle 的 deinit 实测经常根本不跑。）
+
+窗口底色做成 `NSColor(name:dynamicProvider:)` 的**动态色**而不是当场解析成静态色：
+`system` 档下系统深浅一翻，它自己跟着翻，不用再去订
+`AppleInterfaceThemeChangedNotification` 或 KVO `effectiveAppearance`。
+
+刷色的目标窗口判据是「**它装着壳那个 WebView**」（`ClamObjects.Key.webView` 的
+`.window`），不是 `NSApp.mainWindow`——后者会在 clam-settings 那扇窗打开时指过去，
+把一扇不显示网页的窗户也刷成页面底色。
+
+### 退休语义
+
+把 `ui-clam-nativeify` 从伞包的编排表里摘掉，**当前那个壳进程会保持最后一次设定**
+（我们不在析构里恢复，理由见上）。壳重启即回到 `.windowBackgroundColor` + 系统外观。
+
 ## 不在这里的
 
 - **`window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消**：那些是原生分栏接管
@@ -669,19 +750,20 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 
   「用网页侧边栏、但把它打扮成原生」这个中间态不存在，别再往回加。
 
-## 安装（web profile）
+## 安装
 
-```bash
-# 装了 pnpm 的话，用官方入口（自动 reconcile 进 bundles）：
-dsh plugin --profile web add link:~/.dsh/profiles/plugins/clam-nativeify
+**跟着伞包走，没有单装路径。** 仓库根 `./dev` 会把本包连同其余 clam-* 一起 link
+进 profile；装哪些、什么顺序由伞包 `@wenbo/surfclam` 的 `cordis.patch.yml` 决定
+（本包是那张表里的 `ui-clam-nativeify` row）。
 
-# 没有 pnpm：在 profile 目录手动等价操作
-cd ~/.dsh/profiles/web
-npx pnpm add link:~/.dsh/profiles/plugins/clam-nativeify
-# 然后把 "clam-nativeify" 追加进 package.json 的 dsh.profile.bundles
-```
+> **P4 之后本包不能再单独塞进一个普通 web profile 了**：它现在带 Swift 载荷，
+> 因而硬依赖同一张表里的 `clamBridge`（`createSwiftPlugin` 自动加的）。桥不在
+> = 整个插件不挂载 = 连 CSS 都没有。这是有意的取舍：桥不在就意味着没有壳，
+> 而没有壳的话这段 CSS 本来也无处施展（UA 门控挡着，普通浏览器里一行都不生效）。
+> 与 clam-layout 同一个赌注。
 
-装/删/改后重启 harness（壳应用菜单 ⌘⇧R）。
+装/删/改 node 半边或编排表后必须重启 dsh（官方在 web bundle 下 disable 了 node 侧
+HMR）；只改 `lib/client.js` 有 HMR，约 0.5s 自动重载；只改 `swift/` 存盘即热替换。
 
 ## 看真正注入的那段 CSS
 

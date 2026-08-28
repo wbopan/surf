@@ -163,11 +163,18 @@ color-scheme 等新规则都在门控内）。
 **归属**：clam-nativeify——「摸起来像原生」正是它的宪章，缺席即回到现状（两套
 主题源各行其是），符合「缺席即退化」。代价是它不再纯 CSS：长出 swift 半边。
 
-- **node 半边**（lib/index.js）：运行时嵌套 inject 订 dsh 的 `ui-theme` 设置
-  （具体 ns/键名以 dsh 源码为准——clam-settings 的 swift 侧已在消费它，照抄其
-  读法），经 `createSwiftPlugin`（clam-bridge 的 `./plugin` 出口）投影
+- **node 半边**（lib/index.js）：运行时嵌套 inject 订 dsh 的 `ui-theme` 设置，
+  经 `createSwiftPlugin`（clam-bridge 的 `./plugin` 出口）投影
   `{ theme: "light"|"dark"|"system", bgBase: { light, dark } }`。设置服务缺席时
   不投影 = swift 半边保持系统外观，无害降级。
+  **动手时核出的权威坐标**（`@deepseek-ai/dsh-client-ui-theme/lib/index.js`）：
+  ns `ui-theme`、键 `preference`、值 `light|dark|system`、默认 `system`；
+  clam-settings 通用页读的是同一处（`swift/SettingsTabs.swift` 的 `GeneralRow`）。
+  **只读不注册**（ns 的主人是那个插件），因而拿不到 `SettingsScope`：读走
+  `ctx.get("settings")?.get(ns)`，变化订全局 `settings/updated` 按 ns 过滤。
+  另：`settings/updated` 只在变化时发，而 `ui-theme` 的注册与我们的挂载没有先后
+  保证——所以还要一条「Swift 每代 activate 问一次、node 现读现推」，否则
+  "挂载时读不到 + 用户不动设置" 这一格永远投不出去。
 - **swift 半边**（新增 swift/）：收投影设
   `NSApp.appearance = nil | NSAppearance(named: .aqua / .darkAqua)`；同时把
   `window.backgroundColor` 设成 dsh 主题 base 底色（深色 `#1E1E1E`，与 client.js
@@ -175,11 +182,12 @@ color-scheme 等新规则都在门控内）。
   注意「不占槽的插件没有生命周期锚」坑：`activate` 返回持有者对象；
   「清理别挂析构」坑:appearance 是进程级状态,新一代 activate 时按投影重设即可,
   换代天然收敛。
-- **顺手（可选子项）**：swift 半边订 `didBecomeKey/didResignKey`，
-  `ClamEventBus.emitSticky` 一条窗口 key 态，client.js 订到就用它打
-  `data-clam-blur`（语义精确：分得清 app 失活/窗口非 key/遮挡），
-  `document.hasFocus()` 降级保留（收不到事件就维持现状，零契约哲学不破）。
-  注意 client 半边收壳事件需经页内桥——评估成本，高就砍掉这个子项。
+- ~~**顺手（可选子项）**：swift 半边订 `didBecomeKey/didResignKey`，把窗口 key 态
+  打到页面供 `data-clam-blur` 用。~~ **已砍**（理由见 §7 的 P4 条第 4 点）：
+  `data-clam-blur` 归 client.js 的 `watchWindowFocus` 用实例 token 管着（P1 第 8 项
+  刚修的 HMR 坑），再开一条壳侧写入路径就是两个写者共用一个属性——要么把 token
+  送出页面（契约变重），要么"壳到了就以壳为准"（token 语义破掉，坑原样回来）。
+  而收益只是把 `document.hasFocus()` 换成语义更准的窗口 key 态，今天的行为已经对。
 
 **验收**：dsh 设 dark + 系统 light（及反向）各截一张——侧边栏、工具栏、正文
 同色温；设置滑到 `system` 跟系统翻面；杀掉 nativeify（从 patch 表摘行）回现状。
@@ -279,3 +287,42 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
   未做：`caret-color` 一条在多数输入框里是 no-op（`auto` = currentColor 已经对了），
   仍然按计划加了——理由写在代码注释里（dsh 有几处输入框把 color 调淡）。
   视觉验收（四态截图 + 普通浏览器零影响）交由用户跑真 App。
+- 2026-08-28 **P4 完成**（原生侧跟随 dsh 主题）。clam-nativeify 从"双半边"长成
+  **三半边**：`lib/index.js` 改用 `createSwiftPlugin` 登记新增的 `swift/` 载荷，
+  新增 `swift/NativeifyPlugin.swift`（不占槽、不贡献界面，`activate` 返回 follower
+  当锚），配套改 `package.json`（`files` 加 `swift`）、伞包编排表那行的注释、
+  CLAUDE.md 的插件简介、根 README、本包 README（新增「原生侧跟随 dsh 主题」一节）。
+  **`ui-theme` 的权威读法**（核实自 `@deepseek-ai/dsh-client-ui-theme/lib/index.js`
+  与 `clam-settings/swift/SettingsTabs.swift`）：ns `ui-theme` / 键 `preference` /
+  值 `light|dark|system`（默认 `system`）。我们**只读不注册**——ns 的主人是那个插件，
+  重复 register 会 fail loud；非 owner 也拿不到 `SettingsScope`（那是 register 的
+  返回值），所以变化订全局 `settings/updated` 按 ns 过滤，读走 `ctx.get("settings")
+  ?.get("ui-theme")`（正是 dsh 自己 `readPreference(ctx)` 的写法）。
+  四处偏离/补充：
+  1. **计划说"就绪即投影"不够**——`ui-theme` 是别的插件在它自己的
+     `inject(["settings"])` 里注册的，与我们的挂载无先后保证；挂载那一刻读完全
+     可能读到"尚未注册"，而 `settings/updated` **只在变化时发**，用户不动设置就
+     永远等不到。补法照 clam-notify 的纪律：Swift 每代 activate 发一个 `theme`
+     动作，node 现读现推。壳的 activate 远晚于插件树挂载完，那一刻必然读得到。
+  2. **`bgBase` 的浅色值不是 dsh 的原值。** 深色 dsh 自己是 `#151517`
+     （`--dsw-static-neutral-bluish-950`），而 client.js 早就把 `--dsw-alias-bg-base`
+     重映射成了 `#1E1E1E`；窗口要跟的是页面**实际画出来的**那个色，所以投影里
+     写的是我们的覆盖值。浅色 `#FFFFFF`（`neutral-bluish-00`，我们没覆盖）。
+     两处同源，README 里记了"改一处必须改另一处"。
+  3. 窗口底色做成 `NSColor(name:dynamicProvider:)` 的**动态色**，`system` 档下
+     系统翻面它自己跟着翻，省掉一条 `AppleInterfaceThemeChangedNotification`
+     或 `effectiveAppearance` KVO。刷色目标窗口的判据是「装着壳那个 WebView」
+     而不是 `NSApp.mainWindow`（后者在 clam-settings 开窗时会指过去）。
+  4. **可选子项（窗口 key 态经壳打到页面）砍掉。** 理由是协调不干净：
+     `data-clam-blur` 现在由 client.js 的 `watchWindowFocus` 用**实例 token**
+     管着（P1 第 8 项刚修的 HMR 坑），再开一条壳侧写入路径就是两个写者共用一个
+     属性——要么壳侧也得懂 token（把 token 送出页面，契约立刻变重），要么改成
+     "壳到了就以壳为准"（token 语义破掉，HMR 坑原样回来）。收益又只是把
+     `document.hasFocus()` 换成语义更准的窗口 key 态，而 WKWebView 本来就把承载
+     窗口的激活/失活映射成页面 focus/blur——今天的行为已经对。client.js 里那段
+     "刻意不走让壳注入那条路、零依赖"的注释因此原样保留，没有自相矛盾。
+  验证：`node --check` 过；Swift 用真 ClamSDK 全量类型检查过
+  （`swiftc -typecheck -I clam-app/host/build-sdk -target arm64-apple-macos27.0`）。
+  **留给真 App 的**：dsh 设 dark + 系统 light（及反向）各截一张看侧边栏/工具栏/正文
+  同色温；滑到 `system` 跟系统翻面；resize 与冷启动首帧不闪底色；clam-settings
+  那扇窗没被刷成页面底色。
