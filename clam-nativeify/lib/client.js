@@ -121,11 +121,32 @@ window.__ModuleLoader__.load({
 		const blurSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-blur] ' + sel).join(",\n");
 		// 切焦点那一帧用的「禁过渡」选择器，同样得逐条加前缀。
 		const nofxSolid = SOLID_BUTTONS.map((sel) => ':root[data-clam-nofx] ' + sel).join(",\n");
-		// 真材质接管的那组（P3）。**只在窗口激活时接管** —— 失活整个交还给手绘四态，
-		// 理由见文件末尾 @supports 块的注释。前缀同样逐条加，逗号串上只写一次只命中第一条。
-		const materialNeutral = NEUTRAL.map((sel) => ':root:not([data-clam-blur]):not([data-clam-reduce]) ' + sel).join(",\n");
-		const materialNeutralFx = NEUTRAL.map((sel) => ':root:not([data-clam-blur]):not([data-clam-reduce]) ' + sel + '::before').join(",\n");
+		// 真材质接管的两块表面共用的三层门控里的后两层（第一层是 @supports）。
+		// **只在窗口激活时接管** —— 失活整个交还给手绘四态/dsh 原样，理由见文件末尾
+		// @supports 块的注释。
+		const MATERIAL_GATE = ':root:not([data-clam-blur]):not([data-clam-reduce]) ';
+		// 前缀同样逐条加，逗号串上只写一次只命中第一条。
+		const materialNeutral = NEUTRAL.map((sel) => MATERIAL_GATE + sel).join(",\n");
+		const materialNeutralFx = NEUTRAL.map((sel) => MATERIAL_GATE + sel + '::before').join(",\n");
 		const reduceNeutral = NEUTRAL.map((sel) => ':root[data-clam-reduce] ' + sel).join(",\n");
+		// 真材质接管的第二块表面（P6）：composer 输入卡片。**不是按钮**，所以不进
+		// NEUTRAL —— 它没有 hover / 按下两级层次、不吃 `--clam-tint`，与按钮组共用的
+		// 只有上面那三层门控。选择器与字号那条同源（见 `_card` 的 `:has(textarea)`
+		// 注释：`_card` 后缀跨档复用，光靠它会误伤设置页与警告卡）。
+		const COMPOSER_CARD = '[class*="_card"]:has(textarea)';
+		// 卡片的座位。sticky bottom + 一层 36px 渐变实底，正是"内容滚到卡片跟前就
+		// 淡出"的那层 —— 材质要采样身后滚过的正文，它必须让位，见块内注释。
+		const COMPOSER_SEAT = '[class*="_composerSeat"]';
+		// **换档只改这一行。** 候选值见 docs/spikes/apple-visual-effect/index.html
+		// 的 `values` 数组（本机九个全 ✔）：
+		//   -apple-system-glass-material                        面板/popover 档
+		//   -apple-system-glass-material-subdued                同上，收敛一档
+		//   -apple-system-glass-material-media-controls         胶囊控件档（按钮组用的就是它）
+		//   -apple-system-glass-material-media-controls-subdued
+		//   -apple-system-glass-material-clear                  最透的一档
+		//   -apple-system-blur-material                         传统 NSVisualEffectView 那套
+		//   -apple-system-blur-material-ultra-thin
+		const CARD_MATERIAL = "-apple-system-glass-material";
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -1241,6 +1262,67 @@ window.__ModuleLoader__.load({
 					"  pointer-events: none;",
 					"  overflow: hidden;",
 					"  -apple-visual-effect: -apple-system-glass-material-media-controls;",
+					"}",
+
+					// ===== composer 输入卡片（计划 P6）=====
+					//
+					// 第二块真材质表面，和按钮组共用上面那三层门控（@supports /
+					// data-clam-reduce / data-clam-blur），但**档位不同**：按钮走
+					// `-media-controls`（Safari 视频控件那一档胶囊材质），卡片走
+					// `-apple-system-glass-material` —— 面板/popover 档。它比胶囊档
+					// 更"厚"，正是一整张 780px 宽输入卡该有的浓度：太透的话身后滚过的
+					// 正文会顶穿到你正在敲的字里去。
+					// 两个档位写在同一个 `@supports` 里，因为 spike 实测九个值**同进
+					// 同退**（开关一关九个全 ✘），一道门就够，不必为每个档位各开一道。
+					//
+					// ── 为什么必须动 `_composerSeat` ──
+					//
+					// 卡片自己是 `background: var(--dsw-specific-input-major)` 的实底
+					// （浅 `#fff` / 深 `#2c2c2e`），退成透明是显然的一步。但只退这一层
+					// **看不出任何区别**：卡片坐的那个 sticky 座位自带一层
+					// `linear-gradient(180deg, transparent 0, var(--dsw-alias-bg-base) 36px)`
+					// 的实底渐变 —— 那是 dsh 用来让正文"滚到卡片跟前就淡出"的幕布。
+					// 材质隔着它采样，采到的是一块平的底色，于是玻璃只剩一点色偏，
+					// 折射什么都没有。**这一层不让位，整件事就是白做的。**
+					//
+					// 让位不能让整块：卡片下缘到窗口底之间还坐着统计行（"5 turns ·
+					// 8 steps · …"那条）和 `_root` 的 padding-bottom，它们自己都是
+					// 透明底、指望着幕布垫背。整块透明的话正文会从卡片底下钻出来、
+					// 半截字压在统计行背后（实测过，8px 盖不住），比幕布还脏。所以
+					// 幕布改成"只剩最底下 36px"：卡片背后全透（正文照常滚过去被材质
+					// 折射），卡片以下仍是实底。36px 抄的是 dsh 幕布自己的渐变终点，
+					// 正好罩住统计行那一层。
+					//
+					// 横向不用管：正文列 748px，卡片 780px（`--dsh-chat-content-width`
+					// + 32），卡片天然比正文宽 16px/侧，正文不会从两边漏出来。
+					MATERIAL_GATE + COMPOSER_SEAT + " {",
+					"  background: linear-gradient(to top, var(--dsw-alias-bg-base) 0 36px, transparent 36px);",
+					"}",
+					MATERIAL_GATE + COMPOSER_CARD + " {",
+					// dsh 那条是 `background:` 简写、不带 !important，长手同名属性
+					// 特异性更高即可盖住（按钮那组要 !important 是因为被盖的是我们
+					// 自己写的 !important，不是同一回事）。
+					"  background-color: transparent;",
+					// `position: relative` **刻意不重复声明**：dsh 自己就写着，而且是
+					// 承重的 —— `_input`（那个透明的 textarea）与 `_backdrop`（真正
+					// 画出你敲的字的那层）都是 `position:absolute; inset:0`，认的就是
+					// 卡片这个包含块。它不可能在 dsh 自己不先崩掉的情况下消失。
+					// isolation 则必须我们出：让 z-index:-1 的 fx 层落在卡片自己的
+					// 层叠上下文底部，而不是穿到座位那层背后去。
+					"  isolation: isolate;",
+					"}",
+					// fx 层。挂 ::before 的理由同按钮组（材质不认元素 border-radius，
+					// 直接挂卡片会画成一个 22px 圆角外的方块），另加一条：dsh 已经拿
+					// `_cardWorkspaceTrigger::after` 画那圈虚线描边了，::before 才是空位。
+					MATERIAL_GATE + COMPOSER_CARD + "::before {",
+					"  content: '';",
+					"  position: absolute;",
+					"  inset: 0;",
+					"  border-radius: inherit;",
+					"  z-index: -1;",
+					"  pointer-events: none;",
+					"  overflow: hidden;",
+					`  -apple-visual-effect: ${CARD_MATERIAL};`,
 					"}",
 					"}",
 				];

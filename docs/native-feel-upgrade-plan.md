@@ -376,3 +376,14 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
   **另发现一个待查问题：对 clam-nativeify/lib/client.js 的 HMR 重载会赔掉整棵
   client 插件树**（web header / rail 复现、新样式不上、⌘R 或重启壳恢复；冷启动
   一切正常）。两次复现，机制未定位——修 P3 期间一律用「重启壳」代替 HMR。
+- 2026-08-28 P6 composer 液态玻璃 + header 带子裁决。①composer 输入卡片成为第二块
+  真材质表面：`-apple-system-glass-material` 面板档、`::before` fx 层、与按钮组共用
+  三层门控；关键机制是 `_composerSeat` 的 36px 渐变幕布改成只留底部 36px 实底——
+  卡片背后全透供材质采样身后滚过的正文，统计行仍有实底垫背（8px 试过，盖不住
+  统计行、正文漏半截字）。材质自带边缘高光，用户看过真机后拍板保留。②header
+  那条带子拿系统材质（blur 两档 + glass 家族）逐档换进真带子对比（截图
+  .scratch/t0~t3 浅、d1~d2 深），用户裁决**维持手绘纯 CSS 模糊原样**：系统档全部
+  自带罩色或玻璃造型，"默认无色、纯模糊"只有手绘做得到。带子文件零改动。
+  ③过程注记：两个 Opus 子代理并行开工，验证循环偏慢被用户叫停，主会话收尾；
+  nativeify 与 header 的 client.js HMR 砸树 bug 再次复现两回（§7 上一条已记录），
+  均以重启壳恢复。
