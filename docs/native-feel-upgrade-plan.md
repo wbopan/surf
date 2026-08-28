@@ -387,3 +387,10 @@ NSMenu 桥；`:focus-visible` 焦点环（先核实 dsh 自己的 focus 样式�
   ③过程注记：两个 Opus 子代理并行开工，验证循环偏慢被用户叫停，主会话收尾；
   nativeify 与 header 的 client.js HMR 砸树 bug 再次复现两回（§7 上一条已记录），
   均以重启壳恢复。
+- 2026-08-28 P7 头档：浮层毛玻璃。所有泡泡（下拉/popover/补全列表）只换背景：
+  `role="menu"` / `role="listbox"` + 语义后缀 `_menu` 的 token 尾匹配
+  （`$="_menu"` + `*="_menu "`，不误伤 `_menuItem`），经 `::before` fx 层上
+  `-apple-system-blur-material`。纪律：浮层**绝不覆写 position**（它们自己是
+  absolute/fixed，覆写即打回文档流）。档位真机两连裁：标准档 → ultra-thin
+  （"太厚了"）→ 回标准档（thin "很难看"），标准档定案。其余（圆角/阴影/边框/
+  交互）零改动。

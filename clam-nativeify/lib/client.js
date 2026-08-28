@@ -147,6 +147,27 @@ window.__ModuleLoader__.load({
 		//   -apple-system-blur-material                         传统 NSVisualEffectView 那套
 		//   -apple-system-blur-material-ultra-thin
 		const CARD_MATERIAL = "-apple-system-glass-material";
+		// 第三块真材质表面（P7 头档）：浮层（下拉菜单 / popover / 补全列表）。
+		// **只换背景，其余（圆角/阴影/边框/尺寸/交互）一律不动**——用户 2026-08-28
+		// 裁决，档位选的是系统毛玻璃标准档（NSMenu 最像的那档），刻意不用 glass
+		// 家族：泡泡要"常规"，不要液态玻璃的边缘高光。
+		//
+		// 选择器两路并举：ARIA role 是语义一等公民（model picker 是 role="menu"，
+		// 命令面板与 @ 补全是 role="listbox"），但 dsh 的 role 覆盖不全——jobs /
+		// subagent / workspace 三家的 popover 只有哈希类。好在语义后缀 `_menu` 是
+		// 稳定约定（`_7KE1Ra_menu` / `QsffPG_menu` / `ZKlsPq_menu`…），按 **token
+		// 精确尾匹配**收：`$="_menu"`（最后一个类）+ `*="_menu "`（后面还有类），
+		// 不会命中 `_menuItem` / `_menuOpen` 这类衍生名。
+		const FLOAT_SURFACES = [
+			'[role="menu"]',
+			'[role="listbox"]',
+			'[class$="_menu"]',
+			'[class*="_menu "]',
+		];
+		const materialFloat = FLOAT_SURFACES.map((sel) => MATERIAL_GATE + sel).join(",\n");
+		const materialFloatFx = FLOAT_SURFACES.map((sel) => MATERIAL_GATE + sel + '::before').join(",\n");
+		// 两档都上真机看过（用户实时裁决）：ultra-thin "很难看"，标准档定案。
+		const FLOAT_MATERIAL = "-apple-system-blur-material";
 
 		/**
 		 * ===== 原生字体度量：两个旋钮 =====
@@ -1323,6 +1344,29 @@ window.__ModuleLoader__.load({
 					"  pointer-events: none;",
 					"  overflow: hidden;",
 					`  -apple-visual-effect: ${CARD_MATERIAL};`,
+					"}",
+
+					// ===== 浮层毛玻璃（P7 头档，见 FLOAT_SURFACES 的注释）=====
+					//
+					// 与前两块表面的差别只有一处纪律：**绝不写 `position`**。浮层容器
+					// 自己就是 absolute/fixed 定位的（它靠这个浮在锚点旁），覆写成
+					// relative 等于把菜单打回文档流。已定位元素天然是 ::before 的
+					// 包含块，fx 层不需要我们补锚。
+					// `background-color: transparent` 不带 !important：dsh 那边是
+					// `background:` 简写、无 !important，三层门控前缀的特异性足够。
+					materialFloat + " {",
+					"  background-color: transparent;",
+					"  isolation: isolate;",
+					"}",
+					materialFloatFx + " {",
+					"  content: '';",
+					"  position: absolute;",
+					"  inset: 0;",
+					"  border-radius: inherit;",
+					"  z-index: -1;",
+					"  pointer-events: none;",
+					"  overflow: hidden;",
+					`  -apple-visual-effect: ${FLOAT_MATERIAL};`,
 					"}",
 					"}",
 				];
