@@ -418,12 +418,20 @@ window.__ModuleLoader__.load({
 		 *
 		 *   --clam-glass-glow-t / -b   最外一像素的峰值（上下可以不等，深色下确实不等）
 		 *   --clam-glass-glow-d        每向内一像素乘的衰减系数，越小掉得越快
+		 *   --clam-glass-glow-c        发光的颜色（`<color>`，无色玻璃是白，带色玻璃
+		 *                              从 dsh 的按钮色相对派生，见 tinted 那条规则）
+		 *
+		 * **颜色走 `rgb(from <色> r g b / <alpha>)` 而不是"通道三元组 + alpha"。**
+		 * 三元组那种写法（`rgb(var(--c) / …)`，--c 是 "255 255 255"）省一层解析，
+		 * 代价是这个变量再也塞不进一个 `var(--某个真颜色)` —— 带色按钮的高光就只能
+		 * 写死。相对颜色语法把"取通道"这件事挪进 CSS 自己，于是变量恢复成一个普通
+		 * `<color>`，谁都能往里塞。
 		 *
 		 * 实测（浅色 peak .55 / decay .45，相对白底）：−1 → −3 → −4（本体）；decay 调到
 		 * .55 就摊成 −1 → −2 → −3 → −4。深色 peak .025 / decay .45：+8 → +4 → +2 → +1 → 0，
 		 * 标准的对半衰减。
 		 *
-		 * alpha 里的 calc 连乘（`rgb(255 255 255 / calc(var(--a)*var(--d)*var(--d)))`）
+		 * alpha 里的 calc 连乘（`rgb(from #fff r g b / calc(var(--a)*var(--d)*var(--d)))`）
 		 * 在 WKWebView 里实测可用，三次连乘也对得上字面量。
 		 *
 		 * @returns {string[]} box-shadow 层，每行末尾带逗号
@@ -432,8 +440,8 @@ window.__ModuleLoader__.load({
 			const out = [];
 			for (let k = 1; k <= 4; k++) {
 				const decay = "*var(--clam-glass-glow-d)".repeat(k - 1);
-				out.push(`    inset 0 ${k}px 0 rgb(var(--clam-glass-glow-c) / calc(var(--clam-glass-glow-t)${decay})),`);
-				out.push(`    inset 0 -${k}px 0 rgb(var(--clam-glass-glow-c) / calc(var(--clam-glass-glow-b)${decay})),`);
+				out.push(`    inset 0 ${k}px 0 rgb(from var(--clam-glass-glow-c) r g b / calc(var(--clam-glass-glow-t)${decay})),`);
+				out.push(`    inset 0 -${k}px 0 rgb(from var(--clam-glass-glow-c) r g b / calc(var(--clam-glass-glow-b)${decay})),`);
 			}
 			return out;
 		}
@@ -463,8 +471,21 @@ window.__ModuleLoader__.load({
 			return () => document.removeEventListener("pointerdown", onDown, { capture: true });
 		}
 
+		/**
+		 * 实例 token。**client 半边 HMR 的重载顺序是「新实例先启、旧实例后清」**
+		 * （CLAUDE.md 踩坑记录），所以任何写在 documentElement / window 上的全局
+		 * 状态都必须带上写它的那一代的身份，cleanup 只收自己那份 —— 否则旧实例
+		 * 退场时会顺手抹掉新实例刚装好的属性，症状是"偶发失效、⌘R 就好"。
+		 * 同文件里字体那张 style 用的是 `fontStyle === style` 的对象身份守卫，
+		 * 属性值没法存对象引用，所以这里存一个随机串（同 clam-layout 的 makeToken）。
+		 */
+		function makeToken() {
+			try { return "nf" + Math.random().toString(36).slice(2, 10); } catch { return "nf0"; }
+		}
+
 		function watchWindowFocus() {
 			const root = document.documentElement;
+			const token = makeToken();
 			// **激活 ↔ 失活必须是瞬时的，不能补间。** 窗口换焦点时系统是重绘，不是动画；
 			// 而按钮上挂着 box-shadow / background-color / filter 的过渡（那是给 hover 和
 			// 按下用的），焦点一变就会顺带把整摞玻璃层做成 160ms 淡入淡出 —— 一眼假。
@@ -473,9 +494,14 @@ window.__ModuleLoader__.load({
 			// **读一次 offsetHeight 强制刷新样式**，让新值以「无过渡」落定 → 摘掉标记。
 			// 那次读取是整段的关键，删了就等于没加：不强制刷新，浏览器会把加标记、改值、
 			// 摘标记合成一次样式计算，过渡照旧发生。
+			//
+			// **属性值写实例 token**（CSS 那边一律是 `[data-clam-blur]` 存在性匹配，
+			// 不看值，所以带值不影响任何选择器）。sync() 内部那对 set/remove 是同一段
+			// 同步代码，自己摘自己，不需要校验；需要校验的是下面的 cleanup。
 			const sync = () => {
-				root.setAttribute("data-clam-nofx", "");
-				root.toggleAttribute("data-clam-blur", !document.hasFocus());
+				root.setAttribute("data-clam-nofx", token);
+				if (document.hasFocus()) root.removeAttribute("data-clam-blur");
+				else root.setAttribute("data-clam-blur", token);
 				void root.offsetHeight;
 				root.removeAttribute("data-clam-nofx");
 			};
@@ -485,8 +511,12 @@ window.__ModuleLoader__.load({
 			return () => {
 				removeEventListener("focus", sync);
 				removeEventListener("blur", sync);
-				root.removeAttribute("data-clam-blur");
-				root.removeAttribute("data-clam-nofx");
+				// **只清自己写的那份。** 无条件 removeAttribute 会在 HMR 换代时
+				// 砍掉新实例刚刚打上的 data-clam-blur —— 页面明明失焦，按钮却停在
+				// 激活态那摞玻璃上，而且要等到下一次 focus/blur 才自愈（窗口一直
+				// 待在后台的话就永远不自愈）。这正是 CLAUDE.md 那条坑的形状。
+				if (root.getAttribute("data-clam-blur") === token) root.removeAttribute("data-clam-blur");
+				if (root.getAttribute("data-clam-nofx") === token) root.removeAttribute("data-clam-nofx");
 			};
 		}
 
@@ -512,26 +542,83 @@ window.__ModuleLoader__.load({
 					// contain 切断滚动链（自身仍可滚、自身边界仍有原生回弹）。
 					"html, body { overflow: hidden !important; overscroll-behavior: none !important; }",
 					"body * { overscroll-behavior: contain !important; }",
+
+					// ===== 字形渲染：把 dsh 抽细的那一档还回去 =====
+					//
+					// dsh 在 `body` 上写死 `-webkit-font-smoothing: antialiased`
+					// （构建产物 index-*.css 里唯一一条，grep 过）。那个关键字强制灰度
+					// 抗锯齿并把字干整体抽细一档，于是 WebView 那半边的字比壳的原生
+					// 侧边栏细，并排就是两套字——本插件存在的理由当场作废一半。
+					//
+					// `subpixel-antialiased` 的实效是"别动，交给系统"：Mojave 之后
+					// macOS 全局就是灰度 AA，这个关键字不会真的去做次像素渲染，只是把
+					// WebKit 从"强制抽细"那条路上放下来，渲染结果与 `auto` 一致。
+					//
+					// **不打 `!important`**：`html body`(0,0,2) 稳压 dsh 的 `body`(0,0,1)，
+					// 和下面字体那层 token 重映射是同一个取胜办法（README 的既定纪律：
+					// 核实过特异性够用之后不留保险，留着只会把将来的失效掩盖过去）。
+					"html body { -webkit-font-smoothing: subpixel-antialiased; }",
+
+					// ===== UA 层跟着 dsh 主题翻面，而不是跟系统 =====
+					//
+					// 表单控件、原生滚动条、默认 ::selection 底色这些都归 UA 画，认的是
+					// `color-scheme`；不设就等于跟系统外观走。dsh 设浅色而系统是深色时，
+					// 页面里会冒出一个深色的下拉菜单/滚动条，正文却是白的——一眼穿帮。
+					// dsh 自己零处 `color-scheme`（grep 过构建产物），这条纯补课、不冲突。
+					//
+					// 特异性：`:has()` 取参数里最具体的那条算，`html:has(body[data-ds-dark-theme])`
+					// 是 (0,1,2)，稳压上一条 `html`(0,0,1)，不靠源码顺序。
+					"html { color-scheme: light; }",
+					"html:has(body[data-ds-dark-theme]) { color-scheme: dark; }",
+
 					// UI 文本不可选中（壳应用观感）：全局关掉 user-select，
 					// 输入类控件（composer 输入框等）恢复可选以便编辑。
-					"body { -webkit-user-select: none !important; user-select: none !important; }",
-					"input, textarea, [contenteditable] { -webkit-user-select: text !important; user-select: text !important; }",
+					//
+					// `cursor: default` 是同一件事的另一半：原生 App 的 chrome 上光标
+					// 永远是箭头，只有可编辑/可选的文字才给 I 型光标。cursor 是可继承的，
+					// 但**元素自己身上的声明永远压过继承来的值**——`a:any-link` 的
+					// UA `cursor: pointer`、`input`/`textarea` 的 UA `cursor: auto`、
+					// dsh 给按钮写的 `cursor: pointer` 全都不受影响，所以这一条只咬
+					// "没人管过的那些纯文字"，正是要的效果。dsh 在 html/body/* 上零处
+					// cursor（grep 过），同特异性不打架，不用 `!important`。
+					"body { -webkit-user-select: none !important; user-select: none !important; cursor: default; }",
+					// 光标色钉在 dsh 的正文前景 alias 上。`caret-color` 的默认值 `auto`
+					// = currentColor，多数输入框里它已经是对的；但 dsh 有几处输入框自己
+					// 把 color 调淡（占位/次级），那时插入点会跟着变灰，而 macOS 的插入点
+					// 从来是全对比度的。所以显式钉死，而不是靠 currentColor 撞运气。
+					"input, textarea, [contenteditable] { -webkit-user-select: text !important; user-select: text !important; caret-color: var(--dsw-alias-label-primary); }",
 					// 对话历史必须可复制：放开会话消息流与右侧 details 内容区。
 					// _flowItem = ui-conversation 每条消息的容器（用户气泡/助手
 					// markdown/思考/错误行全在其子树内；user-select 的 auto 随父
 					// 生效，整棵子树一起放开）；_contentColumn = ui-trajectory 的
 					// 工具调用详情内容列；pre/code 兜底放开所有代码块。
-					'[class*="_flowItem"], [class*="_contentColumn"], pre, code { -webkit-user-select: text !important; user-select: text !important; }',
+					// 这几块正是上面 `cursor: default` 唯一该让开的地方：能选的文字
+					// 就得给 I 型光标，否则"看着不能选、其实能选"，比不改更糟。
+					'[class*="_flowItem"], [class*="_contentColumn"], pre, code { -webkit-user-select: text !important; user-select: text !important; cursor: text; }',
+
+					// 选中色从**前景色**派生，不是从强调色（手册 §3.3 的配方，也是
+					// macOS 的实际做法：非 key 窗口里的选中就是一层中性淡底）。
+					// `--dsw-alias-label-primary` 是 dsh 的正文前景 alias，浅色
+					// `#0f1115` / 深色 `#f9fafb`，两档都在 dsh-client-ui-theme 里核过
+					// 存在且随主题翻面——所以这一条自己不带任何颜色常量，dsh 换主题
+					// 它跟着换。dsh 零处 `::selection`（grep 过），这是纯补课。
+					"::selection { background-color: rgb(from var(--dsw-alias-label-primary) r g b / 20%); }",
 
 					// ===== 按钮原生化（macOS 26 / Tahoe 观感）=====
 					//
 					// **只作用于"实体按钮"**，见文件头的 SOLID_BUTTONS 白名单。
 					//
-					// 三条 Apple 动效常数。曲线取自 SwiftUI 全系基准（起步快、收尾极缓）；
-					// 按下切到 80ms 让它跟手，松开回到 320ms 留余韵。
+					// 两条 Apple 动效常数。曲线取自 SwiftUI 全系基准（起步快、收尾极缓）。
+					//
+					// **按下这一档不在这里，因为它是 0s。** 手册量原生控件得到的行为是
+					// 「按下即时、松开缓动」——按下那一刻状态直接落定，只有松手才走曲线。
+					// 这里原来有第三个常数 `--clam-dur-press: 90ms`：短，但仍是一段补间，
+					// 所以按下去总差着一帧的"黏"。现在 `:active` 那条直接写
+					// `transition-duration: 0s`，**只有"进入按下"这个方向瞬时**，
+					// 离开 :active 时那条规则不再命中，自动回到下面这两档。
+					// 一个恒等于 0 的旋钮没有存在价值，`--clam-dur-press` 随之退休。
 					":root {",
 					"  --clam-ease: cubic-bezier(0.32, 0.72, 0, 1);",
-					"  --clam-dur-press: 90ms;",
 					"  --clam-dur-fast: 160ms;",
 					"  --clam-dur: 320ms;",
 					// 玻璃表面，三层：**硬描边** + 上缘镜面高光 + 整圈 Fresnel 暗带。
@@ -649,8 +736,9 @@ window.__ModuleLoader__.load({
 					"  --clam-glass-edge-w: 0.25px;",
 					// 发光的颜色。无色玻璃是白的；**带色玻璃不是** —— 系统蓝键的峰值是 #00C0FF，
 					// R 通道从头到尾是 0，白色叠加会把 R 拉起来，对不上（红键同理，峰值 #FF5762）。
-					// 所以留成变量：真要给某个带色按钮上玻璃，换成同色系更亮的一档，别用白。
-					"  --clam-glass-glow-c: 255 255 255;",
+					// 所以留成变量：带色按钮换成同色系更亮的一档，别用白（见下面 tinted 那条）。
+					// 这里是一个普通 `<color>`，不是通道三元组——理由见 glowLayers() 注释。
+					"  --clam-glass-glow-c: #fff;",
 					"  --clam-glass-glow-t: 0.795;",
 					"  --clam-glass-glow-b: 0.795;",
 					"  --clam-glass-glow-d: 0.45;",
@@ -762,7 +850,8 @@ window.__ModuleLoader__.load({
 					// 把控件整个去饱和（实测：带色玻璃连色相都不剩，退成平灰），发送键那圈强调蓝
 					// 还亮着就穿帮。grayscale(1) 对已经中性的玻璃层是空操作，只咬有色的内容。
 					//
-					// 只给白名单里那五个按钮，不给整页：系统灰的是**控件**，正文该什么色还是什么色。
+					// 只给白名单里那几条选择器（眼下 6 条），不给整页：系统灰的是**控件**，
+					// 正文该什么色还是什么色。
 					blurSolid + " {",
 					"  filter: grayscale(1);",
 					"}",
@@ -840,21 +929,37 @@ window.__ModuleLoader__.load({
 					// 硬边几何叠层只在底色与高光颜色接近时才连续，底色一饱和立刻变成条带，
 					// 那圈"贴上去的白帽子"就是这么来的。**改底色不改高光等于没修。**
 					//
-					// 值取自系统实测的 .glassEffect(.regular.tint(.blue))：峰值是同色系更亮的一档
-					// （浅 #00C0FF / 深 #00CBFF），不是白 —— 蓝键的 R 通道从头到尾是 0，
-					// 掺白会把 R 拉起来，对不上。衰减也比无色档慢（.5 对 .45）。
+					// **高光的色相来源是 dsh 自己，不再写死。** 这里以前是两行常量
+					// （浅 `0 192 255` / 深 `0 203 255`，抄自系统 .glassProminent 的蓝键
+					// 实测峰值 #00C0FF / #00CBFF），理由是"高光变量吃通道三元组，塞不进
+					// 一个 var(--色)"。三元组换成相对颜色之后这个借口没了，而它本来就
+					// 是错的 —— dsh 的发送键根本不是系统那支饱和蓝：
 					//
-					// 这里写死了蓝：dsh 的强调色藏在 --dsw-alias-brand-primary → neutral-bluish
-					// 的别名链后面，而高光变量吃的是"通道三元组"（配 rgb(... / calc(...))），
-					// 塞不进一个 var(--色)。dsh 换主题色的话这圈边会偏色，到那时再说。
+					//   button[class*="_primary"] 的 background 走 --dsw-alias-button-info-fill
+					//     → --dsw-static-deepseek-500 #4176e6（浅）/ -400 #679efe（深）
+					//
+					// （**不是** 计划文档写的 --dsw-alias-button-primary-fill：那条走
+					//   --dsw-alias-brand-primary → neutral-bluish，浅色下是近黑的 #0f1115，
+					//   dsh 的发送键没在用它。以源码为准，计划已就地更正。）
+					//
+					// 也就是说写死的青色高光**今天就已经偏色**（#00C0FF 压在 #4176e6 上），
+					// 不是"dsh 哪天换主题色才会出问题"的隐患。
+					//
+					// 派生方式：`oklch(from <fill> calc(l + 0.12) c h)` —— 保色相保彩度、
+					// 只把感知亮度抬 0.12。这个模型是从系统实测反推的，两组数都对得上：
+					//   蓝 #0092FF(L .646) → #00C0FF(L .765)   ΔL ≈ +0.12
+					//   蓝深 #009EFF(L .673) → #00CBFF(L .792)  ΔL ≈ +0.12
+					// 顺带解释了 README 记的那条"R 通道从头到尾是 0"：抬亮之后彩度出了
+					// sRGB 色域，CSS 的色域映射沿 OKLCh 收彩度、落在 R=0 那面边界上，
+					// 于是 R 自然留在 0。白色叠加做不到这一点，所以那条路本来就不通。
+					//
+					// **深色档不再单独给一行**：dsh 的 token 自己就随主题翻面，派生式跟着
+					// 翻，少一处要维护的常量。峰值/衰减两个旋钮原样不动（.6 / .5）。
 					tinted + " {",
-					"  --clam-glass-glow-c: 0 192 255;",
+					"  --clam-glass-glow-c: oklch(from var(--dsw-alias-button-info-fill) calc(l + 0.12) c h);",
 					"  --clam-glass-glow-t: 0.6;",
 					"  --clam-glass-glow-b: 0.6;",
 					"  --clam-glass-glow-d: 0.5;",
-					"}",
-					"body[data-ds-dark-theme] " + tinted + " {",
-					"  --clam-glass-glow-c: 0 203 255;",
 					"}",
 
 					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，
@@ -873,7 +978,12 @@ window.__ModuleLoader__.load({
 					// 只是摊得很开）。这一行留着是为了把"不收拢"写在用它的地方，改回收拢就调它。
 					"  --clam-press-r: 150%;",
 					"  --clam-press-a: var(--clam-press-glow);",
-					"  transition-duration: var(--clam-dur-press) !important;",
+					// **按下即时、松开缓动**（手册量原生控件得来的时序）。这条只在
+					// :active 命中时生效，所以它只压住"进入按下"那一次；松手时规则
+					// 不再命中，上面 solid 那条 transition 的 --clam-dur / -fast
+					// 原样接管，余韵不受影响。`!important` 是必须的：上面那条
+					// transition 简写自己就是 !important 的。
+					"  transition-duration: 0s !important;",
 					"}",
 
 					// 按下时手指底下泛起一片亮光，松手淡掉。渐变中心跟着指针走。
@@ -911,6 +1021,21 @@ window.__ModuleLoader__.load({
 					"  inherits: false;",
 					"  initial-value: transparent;",
 					"}",
+					// 发光色也得注册，理由和 --clam-tint 完全一样、而且更硬：带色按钮
+					// 那条值是**相对颜色派生式**（`oklch(from var(--dsw-alias-button-info-fill) …)`），
+					// 一旦 dsh 改名或那个 token 没注入，它就是"计算值时无效"。不注册的话
+					// 无效会一路传染到引用它的 `rgb(from …)`，**整条 box-shadow 连带失效、
+					// 玻璃表面直接消失，且静默无报错**。注册成 `<color>` 之后无效值只会
+					// 退到 initial-value / 继承值，也就是白 —— 退回无色玻璃的高光，
+					// 正是"失效方向安全"该有的样子。
+					//
+					// **`inherits: true` 是必须的**：这个变量声明在 `:root` 上、用在按钮上，
+					// 注册成不继承会让 :root 那行彻底够不着按钮（README 记过的那类静默失效）。
+					"@property --clam-glass-glow-c {",
+					"  syntax: \"<color>\";",
+					"  inherits: true;",
+					"  initial-value: #fff;",
+					"}",
 					solid + " {",
 					// !important 是必须的：`background` 简写会把 background-image 一起清掉，
 					// dsh 只要在哪条更具体的规则里用了简写（发送键那种实心色最容易），亮光就
@@ -943,6 +1068,34 @@ window.__ModuleLoader__.load({
 					"@media (prefers-reduced-motion: reduce) {",
 					"  " + solidActive + " { scale: 1 !important; }",
 					"  " + solidActive + " { --clam-press-r: 100% !important; }",
+					"}",
+
+					// 尊重"降低透明度"（系统设置 → 辅助功能 → 显示）。它的语义是
+					// **"别让我透过控件看背景"**，玻璃的两根支柱都得让位：材质那层
+					// backdrop-filter 直接关掉，半透明的底色换成不透明近似色。
+					//
+					// **四态的变量结构一个字不动**，只在这里把四处 --clam-glass-fill
+					// 各自换成它在自己那档背景上的合成结果 —— 所以关掉透明之后颜色是
+					// "看起来一样"，而不是"变成另一块灰"。逐条算式（alpha 合成在 sRGB
+					// 里做，见上面 --clam-glass-fill 那段的实测）：
+					//
+					//   浅·激活  rgba(252,252,252,.5272) 压白底 255 → 253.5 → #FDFDFD
+					//   浅·失活  rgba(0,0,0,.059)        压白底 255 → 240.0 → #F0F0F0
+					//   深·激活  rgba(255,255,255,.137)  压 #1E1E1E(30) →  60.8 → #3D3D3D
+					//   深·失活  rgba(255,255,255,.094)  压 #1E1E1E(30) →  51.2 → #333333
+					//
+					// 四条选择器与它们各自覆盖的那条**同特异性**，靠源码顺序取胜 ——
+					// 这个 @media 块排在整张表最后，所以稳赢。
+					// backdrop-filter 那条同理（选择器逐字等于上面 neutral 那条）。
+					//
+					// 不管 `_primary`：它本来就没有 backdrop-filter，底色也是 dsh 自己
+					// 画的实色，本就不透明。
+					"@media (prefers-reduced-transparency: reduce) {",
+					"  :root { --clam-glass-fill: #FDFDFD; }",
+					"  body[data-ds-dark-theme] { --clam-glass-fill: #3D3D3D; }",
+					"  :root[data-clam-blur] body { --clam-glass-fill: #F0F0F0; }",
+					"  :root[data-clam-blur] body[data-ds-dark-theme] { --clam-glass-fill: #333333; }",
+					"  " + neutral + " { backdrop-filter: none; }",
 					"}",
 				];
 				style.textContent = rules.join("\n");

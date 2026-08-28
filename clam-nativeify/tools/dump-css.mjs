@@ -24,15 +24,24 @@ const src = readFileSync(join(here, "..", "lib", "client.js"), "utf8");
 Object.defineProperty(globalThis, "navigator",
 	{ value: { userAgent: "Mozilla/5.0 Clam/1.0" }, configurable: true, writable: true });
 
-let css = null;
-const el = () => ({ setAttribute() {}, removeAttribute() {}, toggleAttribute() {}, remove() {},
+// **两张 style 都要收**（主样式 + 字体那张，见 client.js 的 STYLE_ID /
+// FONT_STYLE_ID）。这里以前是一个标量，于是后写的字体 style 把主样式整个盖掉，
+// dump 出来只剩 6 条规则 —— 而括号平衡、前缀完整这些恰恰全在主样式那边，
+// 等于校验器什么都没校验到。改成每个 style 元素各存各的、最后按创建顺序拼。
+const sheets = [];
+// `getAttribute` 是 watchWindowFocus 的 cleanup 要用的（实例 token 守卫）；桩里
+// 缺了它 effect 就会抛，CSS 照样能 dump 出来但会多打一行"effect 抛错"。
+const el = () => ({ setAttribute() {}, removeAttribute() {}, toggleAttribute() {},
+                    getAttribute() { return null; }, remove() {},
                     appendChild() {}, offsetHeight: 0, style: {}, textContent: "" });
 globalThis.window = { __ModuleLoader__: { load: (m) => { globalThis.__mod = m.factory(); } },
                       addEventListener() {}, removeEventListener() {} };
 globalThis.document = {
 	documentElement: el(), head: el(), body: el(), getElementById: () => null,
 	createElement: () => { const e = el();
-		Object.defineProperty(e, "textContent", { set: (v) => { css = v; }, get: () => css });
+		const slot = sheets.length; sheets.push("");
+		Object.defineProperty(e, "textContent",
+			{ set: (v) => { sheets[slot] = v; }, get: () => sheets[slot] });
 		return e; },
 	addEventListener() {}, removeEventListener() {}, hasFocus: () => true, querySelectorAll: () => [],
 };
@@ -40,8 +49,15 @@ globalThis.addEventListener = () => {};
 globalThis.removeEventListener = () => {};
 
 (0, eval)(src);
-globalThis.__mod.apply({ effect: (f) => { try { f(); } catch (e) { console.error("effect 抛错:", e.message); } } });
-if (css === null) { console.error("没抓到 CSS —— apply() 大概在 UA 门控那儿就 return 了"); process.exit(1); }
+// `inject` 是空实现而不是"立刻回调"：那条运行时嵌套 inject 订的是可选的
+// settingsScope，不回调 = 服务缺席，正是这个桩该模拟的那一档（字号停在默认值，
+// 两张 style 照常装上）。少了它整个 apply() 会在最后一行抛 TypeError。
+globalThis.__mod.apply({
+	effect: (f) => { try { f(); } catch (e) { console.error("effect 抛错:", e.message); } },
+	inject: () => {},
+});
+if (!sheets.length) { console.error("没抓到 CSS —— apply() 大概在 UA 门控那儿就 return 了"); process.exit(1); }
+const css = sheets.join("\n");
 
 let depth = 0, bad = 0, line = 0;
 for (const l of css.split("\n")) {
