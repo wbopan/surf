@@ -994,11 +994,19 @@ window.__ModuleLoader__.load({
 					//
 					// **深色档不再单独给一行**：dsh 的 token 自己就随主题翻面，派生式跟着
 					// 翻，少一处要维护的常量。峰值/衰减两个旋钮原样不动（.6 / .5）。
+					// ——2026-08 用户裁决：**发送键保持 dsh 原样，不叠任何手绘玻璃面。**
+					// 上面那大段 oklch 派生高光（`oklch(from --dsw-alias-button-info-fill
+					// calc(l + 0.12) c h)`，从系统 .glassProminent 反推的 +0.12 模型）在
+					// spike 台上和「实心蓝原样」「蓝色液态玻璃」并排比过，用户选了原样——
+					// 手绘的上下高光再准也"有一点点怪"，而 dsh 自己画的平色没毛病。
+					// 派生模型的推导留在 git 历史与 README 里，将来想上蓝玻璃（蓝画在
+					// fx 层 + subdued/media 材质）spike 台的「发送键变体」一节随时可复跑。
+					//
+					// 保留的只有行为反馈：按压变暗（tint）/scale、深色档按压泛光、失活
+					// grayscale——这些系统按钮也有，不属于"外观发明"。
 					tinted + " {",
-					"  --clam-glass-glow-c: oklch(from var(--dsw-alias-button-info-fill) calc(l + 0.12) c h);",
-					"  --clam-glass-glow-t: 0.6;",
-					"  --clam-glass-glow-b: 0.6;",
-					"  --clam-glass-glow-d: 0.5;",
+					"  --clam-surface: inset 0 0 0 100px var(--clam-tint);",
+					"  --clam-glass-drop: transparent;",
 					"}",
 
 					// 按压：容器 scale，**内容跟着容器一起走**。`scale` 是可继承的形变，

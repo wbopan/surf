@@ -53,6 +53,30 @@
   }
   .fx-none { background: rgba(0,0,0,.28); }
 
+  /* 发送键变体台：白底（贴近 dsh 输入框环境）上的 36px 圆形强调键。
+     问题：实心蓝 + 手绘高光（现状）能不能换成"蓝色液态玻璃"
+     （macOS 26 .glassProminent 的路数 / Raycast 给 tinted 控件用 subdued）。
+     tint 的给法试两条：蓝画在按钮本体上（材质在 z-index:-1 的 fx 层）、
+     蓝直接画在 fx 层自己身上（和材质同层合成）。 */
+  .send-bench { margin-top: 18px; background: #fff; border-radius: 14px;
+                padding: 14px 16px; color: #333; max-width: 640px; }
+  .send-bench .cap { font-size: 10px; color: #888; text-align: center; margin-top: 6px; }
+  .send-bench .cell { display: inline-flex; flex-direction: column; align-items: center; margin-right: 18px; }
+  .send { position: relative; isolation: isolate;
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 36px; height: 36px; border-radius: 9999px;
+          color: #fff; font-size: 16px; font-weight: 600; }
+  .send > .fx { position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+                pointer-events: none; overflow: hidden; }
+  .s-solid { background: #4176e6; }
+  .bg40 { background: rgba(65,118,230,.40); }
+  .bg55 { background: rgba(65,118,230,.55); }
+  .bg75 { background: rgba(65,118,230,.75); }
+  .fx-tint-sub   { background: rgba(65,118,230,.55);
+                   -apple-visual-effect: -apple-system-glass-material-subdued; }
+  .fx-tint-media { background: rgba(65,118,230,.55);
+                   -apple-visual-effect: -apple-system-glass-material-media-controls; }
+
   /* 大面板：材质在大面积下的样子（胶囊太小看不出折射）。 */
   .panel {
     position: relative; isolation: isolate;
@@ -103,6 +127,19 @@
     <span class="pill"><span class="fx fx-blur"></span>blur-material</span>
     <span class="pill"><span class="fx fx-css"></span>纯 CSS backdrop-filter</span>
     <span class="pill"><span class="fx fx-none"></span>纯色 28% 黑</span>
+  </div>
+
+  <div class="send-bench">
+    <div class="row-label" style="color:#666; margin-top:0;">发送键变体（白底 · 圆 36px · 蓝 #4176e6）</div>
+    <div class="row" style="margin-top:10px;">
+      <span class="cell"><span class="send s-solid">↑</span><span class="cap">实心蓝<br>（现状）</span></span>
+      <span class="cell"><span class="send bg75"><span class="fx fx-subdued"></span>↑</span><span class="cap">subdued<br>+蓝.75</span></span>
+      <span class="cell"><span class="send bg55"><span class="fx fx-subdued"></span>↑</span><span class="cap">subdued<br>+蓝.55</span></span>
+      <span class="cell"><span class="send bg40"><span class="fx fx-subdued"></span>↑</span><span class="cap">subdued<br>+蓝.40</span></span>
+      <span class="cell"><span class="send bg55"><span class="fx fx-media"></span>↑</span><span class="cap">media<br>+蓝.55</span></span>
+      <span class="cell"><span class="send"><span class="fx fx-tint-sub"></span>↑</span><span class="cap">蓝在fx层<br>subdued</span></span>
+      <span class="cell"><span class="send"><span class="fx fx-tint-media"></span>↑</span><span class="cap">蓝在fx层<br>media</span></span>
+    </div>
   </div>
 
   <div class="panel">
