@@ -52,7 +52,7 @@ const COALESCE_MS = 30;
  * 本插件与 Swift 半身之间数据形状的版本。**改了 item 字段就 +1**——它折进
  * contentHash，Swift 那半边会被强制重编，不会出现新 node 配旧 Swift 的认知分裂。
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * `clamPending` 里原因的重要性次序（越靠前越该管）。
@@ -139,32 +139,71 @@ export default createSwiftPlugin({
 			},
 		});
 
+		// 界面语言：跟随 dsh 的 `locale` 设置（`locale.js` 里那条决议链）。
+		// **本插件的用户文案是全仓唯一写在 JS 里的一份**（标题/正文/按钮由 node
+		// 组好，Swift 那边收到什么画什么），所以语言得在这边自己算一遍。
+		//
+		// **必须排在下面那个 settings 块前面**：ns 的 description 在注册那一刻定死
+		// 语言（见那儿的注释），而两个块都是 `ctx.inject(["settings"])`，
+		// 回调按登记顺序跑——这一个先跑完，`locale.current` 才是决议后的值。
+		//
+		// 语言变了**不重组已有的通知**（计划 §5）：屏幕上那条改文案就等于撤下重发，
+		// 会再响一次。新通知自然用新语言——`inbox.js` 每次组行时现读。
+		const locale = createLocaleSource(ctx, (next) => {
+			log.info(`界面语言切到 ${next}（新通知起跟随；已发出的不追改）`);
+		});
+		log.info(`界面语言：${locale.current}`);
+
 		// 设置走**运行时嵌套 inject**，不写进插件顶层的 `inject`：写上去就是硬依赖，
 		// dsh 哪天没挂 settings 会让整条通知线安静地不挂载。缺席时退到默认值，
 		// 其余一切照旧（与 clam-nativeify 同一条纪律）。
 		ctx.inject(["settings"], (scoped) => {
+			// **description 的语言在注册这一刻定死，运行中切语言不追改**
+			// （计划 §7）：schema 的 `.description()` 没有翻译钩子，上游自己的
+			// registry-held text 也是同样的限制，重启 dsh 后对齐。
+			// 这几行只进 dsh 页内设置对话框；原生设置窗口那边的文案在
+			// `clam-settings/swift/Strings.swift`。
+			const zh = locale.current === "zh";
 			const scope = scoped.settings.register(SETTINGS_NS, z.object({
 				enabled: z.boolean().default(true)
-					.description("关掉之后一条系统通知都不发。侧边栏那枚「待处理」胶囊不受影响"
-						+ "——关的是打扰，不是事实。"),
+					.description(zh
+						? "关掉之后一条系统通知都不发。侧边栏那枚「待处理」胶囊不受影响"
+							+ "——关的是打扰，不是事实。"
+						: "Send no system notifications at all. The Pending filter in the sidebar is "
+							+ "unaffected: this turns off the interruption, not the fact."),
 				approval: z.boolean().default(true)
-					.description("需要批准工具执行时通知。"),
+					.description(zh ? "需要批准工具执行时通知。"
+						: "Notify when a tool call needs approval."),
 				question: z.boolean().default(true)
-					.description("Agent 提问时通知。"),
+					.description(zh ? "Agent 提问时通知。"
+						: "Notify when the agent asks a question."),
 				done: z.boolean().default(true)
-					.description("一个回合跑完时通知。"),
+					.description(zh ? "一个回合跑完时通知。"
+						: "Notify when a turn finishes."),
 				error: z.boolean().default(true)
-					.description("Agent 出错时通知。"),
+					.description(zh ? "Agent 出错时通知。"
+						: "Notify when the agent runs into an error."),
 				actionableApproval: z.boolean().default(true)
-					.description("允许直接在通知上点「允许一次」。关掉之后通知上只剩「拒绝」与「打开查看」，"
-						+ "放行必须进 app 看清上下文再点。"),
+					.description(zh
+						? "允许直接在通知上点「允许一次」。关掉之后通知上只剩「拒绝」与「打开查看」，"
+							+ "放行必须进 app 看清上下文再点。"
+						: "Allow approving right from the notification. When off, the notification "
+							+ "offers only Deny and Open, so granting always happens in the app, "
+							+ "with the full context in view."),
 				sound: z.boolean().default(true)
-					.description("通知带提示音。"),
+					.description(zh ? "通知带提示音。" : "Play a sound with each notification."),
 				doneWhenForeground: z.boolean().default(false)
-					.description("app 在前台（但你正看着别的会话）时也报「回合结束」。"
-						+ "待批准/待回答不受这一项影响——那两类任何时候都会通知。"),
+					.description(zh
+						? "app 在前台（但你正看着别的会话）时也报「回合结束」。"
+							+ "待批准/待回答不受这一项影响——那两类任何时候都会通知。"
+						: "Also report finished turns while the app is in front and you are looking "
+							+ "at another session. Approvals and questions ignore this setting: "
+							+ "those always notify."),
 				badgeIncludesDone: z.boolean().default(false)
-					.description("Dock 角标把未读的「回合结束」「出错」也算进去（默认只数待批准与待回答）。"),
+					.description(zh
+						? "Dock 角标把未读的「回合结束」「出错」也算进去（默认只数待批准与待回答）。"
+						: "Count unread finished turns and errors in the Dock badge as well "
+							+ "(by default it counts only approvals and questions)."),
 			}), {
 				// 改完立刻生效：node 侧订着这个 ns，值一变就把新的一份随 inbox 推下去。
 				applies: "live",
@@ -177,24 +216,13 @@ export default createSwiftPlugin({
 			}), "clam-notify 设置订阅");
 		});
 
-		// 界面语言：跟随 dsh 的 `locale` 设置（`locale.js` 里那条决议链）。
-		// **本插件的用户文案是全仓唯一写在 JS 里的一份**（标题/正文/按钮由 node
-		// 组好，Swift 那边收到什么画什么），所以语言得在这边自己算一遍。
-		//
-		// i0 只把管线接通、把值持有住；真正拿它选文案是 i5 的事
-		// （`docs/clam-i18n-plan.md` §9）。语言一变就要重组 inbox 并重推——
-		// 那一步等文案表落地再加，现在加了也只是空转。
-		const locale = createLocaleSource(ctx, (next) => {
-			log.info(`界面语言切到 ${next}（通知文案下一版起跟随）`);
-		});
-		log.info(`界面语言：${locale.current}`);
-
 		// 宿主服务同样走作用域 inject：最坏情况是一条通知都没有 + 终端一行 warn，
 		// 而不是整个插件（连同 Swift 半身）安静地不挂载。
 		ctx.inject(SOURCE_SERVICES, (inner) => {
 			inbox = createInbox(
 				{ titleOf: (id) => source?.titleOf(id) },
 				() => settings,
+				() => locale.current,
 				() => schedulePush(),
 			);
 			source = createMuxSource(inner, log, {

@@ -433,3 +433,46 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   `改不动/填不了 → 无法修改/暂时不可用`、`在 Finder 中显示 → 在访达中显示` 等），
   供 i6 汇总审校表。**「语言」那一行的选项不翻**（`中文` / `English`），
   就地留注说明：照 dsh 的 `LOCALES`，语言选择器列别人的语言时用那门语言的自述名。
+- **2026-08-28 · i5（clam-notify 文案 + 页内 description）· 完成。** 新增
+  `clam-notify/lib/strings.js`（`strings(locale)`，**16 个键**：14 条串 + 2 个带插值
+  的函数，zh/en 两张表共 32 串）。通知的按钮 / 标题 / 正文 / 输入框占位与提交按钮
+  全部改从它取；`mux-source.js` 那句「未知错误」**整个删掉**——它现在只转上游原话，
+  说不出话就给空串，兜底句由 `inbox.js` 用当前语言补（与 i2 断根 `what` 参数同一条
+  纪律：wire 层不组用户文案）。`log.*` 的中文一条没动。
+  **每条 item 记下自己的语言**（`item.locale`，组它那一刻定死）：语言变了
+  **不重组已有的行**（计划 §5——改文案 = 撤下重发 = 再响一次），
+  `refresh()` 重算按钮时按**那一行自己的语言**，不会出现「标题中文、按钮英文」。
+  **Swift 侧两处按"让 node 带下来"处理**（任务书优先项）：
+  `NotifyTextInput` 加一个 `label` 字段（就是那颗「其他…」按钮的名字），
+  `NotifyCenter.makeCategory` 改用 `input.label`；`decode` 里 `button` 的
+  `?? "发送"` 兜底一并删掉——`label` / `button` 缺一个就整条 textInput 不解，
+  其余按钮照画。桥 `SCHEMA_VERSION` 1 → 2。
+  **页内 description 推广到三个包**（§7，共 27 对 zh/en）：clam-notify 9、
+  clam-app 的 `Config` 6 + `clam-shortcuts` ns 10、clam-bridge 2，一律行内三目
+  （`zh ? … : …`），与各文件现状最贴。共用的只有**纯函数**：新增
+  `clam-bridge/lib/locale.js`（`LOCALES` / `FALLBACK` / `localeFromTag` /
+  `environmentLocale`），`clam-notify/lib/locale.js` 改成 import 它、只留
+  `createLocaleSource`。**放在 clam-bridge 而不是 clam-notify**：本仓库 clam-* 的
+  相对 import 箭头全指向 clam-bridge，反过来会把"缺席即无通知"的可选插件变成
+  特权插件的硬依赖。接线各家自己写（clam-app 里 12 行的 `resolveLocale(scoped)`）。
+  验证：`node --check` 八个 JS 全过；`strings.js` 的键集自校验用一份删掉 `send`
+  的副本跑了一遍，确实在 `import` 时 throw（`文案表 en 与 zh 对不上：缺 send`）；
+  三个包的模块级求值真 import 过一轮（Config 的 en description 打出来核对）；
+  拿假 locale 源跑了一轮 inbox（四类通知 zh → 切 en → `refresh()`，行为如上）；
+  `swiftc` 按壳 `CompilerService` 的参数形状全量编出 dylib（ClamSDK + 现编的
+  ClamLayout 都接上）**成功**，警告数与 HEAD 基线逐条相同（`NotifyCenter.swift:60`
+  那条 actor-isolated 警告改动前就有）；`node --test clam-sidebar/test/*.test.js`
+  18/18 绿；`clam-notify/` 与三处 description 里已无残留单语中文（注释/日志除外）。
+  **偏离计划三处**：
+  ① **模块级 `Config` 的 description 只到得了决议链的第二级**（环境推导）。
+  clam-app 与 clam-bridge 的 `Config` 是模块级常量，cordis 实例化插件时就要读它，
+  那一刻没有任何 ctx，`ctx.settings.get("locale")` 无从谈起。`clam-shortcuts` /
+  `clam-notify` 两个 ns 在 `apply` 里注册，够得着 ctx，走完整决议链。
+  只有"系统语言 ≠ dsh 的 locale 设置"时两者才会差一门语言，而它们长在页内设置
+  对话框的不同卡片上；对照上游"registry-held text 一门语言都不翻"，这已经更进一步。
+  ② **description 不进 `strings.js`**（计划 §7 说"或内联三目"，取了后者）：
+  那张表是"通知文案"，有一道键集自校验闸；description 是三个包各自的东西，
+  搬进去反而要为 clam-app / clam-bridge 各造一张表。三个包因此写法一致。
+  ③ **`inbox.js` 多了一个 `item.locale` 字段**（计划没提）。理由见上：
+  没有它，"语言变了 + 设置也变了"会拼出半个语言的通知。它也随 item 上桥，
+  Swift 不读——`signatureOf` 不含它，不会造成重发。

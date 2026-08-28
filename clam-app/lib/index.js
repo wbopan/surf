@@ -27,25 +27,49 @@ import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import z from "@deepseek-ai/schemastery";
+import { environmentLocale, localeFromTag } from "../../clam-bridge/lib/locale.js";
 
 export const name = "clam-app";
 
 /** webServer 决定了 endpoint 里的 host/port，没有它这个插件无事可做。 */
 export const inject = ["webServer"];
 
+/**
+ * `Config` 那几条 description 用哪门语言（计划 §7）。
+ *
+ * **只到得了环境推导那一级**：`Config` 是模块级常量，cordis 实例化插件时就要读它，
+ * 那一刻没有任何 ctx，`ctx.settings.get("locale")` 无从谈起。下面的
+ * `clam-shortcuts` ns 在 `apply` 里注册，够得着 ctx，所以它走完整的决议链
+ * （`resolveLocale`）。两者在绝大多数机器上是同一个答案——只有"系统语言与 dsh 的
+ * locale 设置不一致"时才会差一门语言，而这两张表长在页内设置对话框的不同卡片上。
+ */
+const CONFIG_LOCALE = environmentLocale();
+
 export const Config = z.object({
 	configuration: z.union([z.const("Debug"), z.const("Release")]).default("Debug")
-		.description("xcodebuild 配置。Debug 产物是 “Surfclam Dev.app”，Release 是 “Surfclam.app”。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "xcodebuild 配置。Debug 产物是 “Surfclam Dev.app”，Release 是 “Surfclam.app”。"
+			: "The xcodebuild configuration. Debug produces “Surfclam Dev.app”, Release produces “Surfclam.app”."),
 	build: z.boolean().default(true)
-		.description("源码 hash 变化或产物缺失时自动 xcodebuild；关掉则只探测既有产物。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "源码 hash 变化或产物缺失时自动 xcodebuild；关掉则只探测既有产物。"
+			: "Run xcodebuild whenever the source hash changes or the app is missing. When off, only look for an existing build."),
 	launch: z.boolean().default(true)
-		.description("产物就绪且 app 尚未运行时自动拉起。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "产物就绪且 app 尚未运行时自动拉起。"
+			: "Launch the app once the build is ready, unless it is already running."),
 	watch: z.boolean().default(true)
-		.description("dsh 运行期间盯着壳源码，变了就后台重建并经桥提示「有新版」。需要 build 也开着。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "dsh 运行期间盯着壳源码，变了就后台重建并经桥提示「有新版」。需要 build 也开着。"
+			: "Watch the shell sources while dsh runs: rebuild in the background on any change and offer the new build through the bridge. Requires Build."),
 	watchIntervalMs: z.number().step(1).min(300).default(2000)
-		.description("盯壳源码的轮询间隔。先比 mtime/size 签名，签名变了才读内容算 hash。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "盯壳源码的轮询间隔。先比 mtime/size 签名，签名变了才读内容算 hash。"
+			: "How often to poll the shell sources. Modification time and size are compared first; contents are hashed only when that signature changes."),
 	restartOnRebuild: z.boolean().default(false)
-		.description("重建成功后不等用户点，直接让壳退出并重拉（开发期方便，会丢页面状态）。"),
+		.description(CONFIG_LOCALE === "zh"
+			? "重建成功后不等用户点，直接让壳退出并重拉（开发期方便，会丢页面状态）。"
+			: "After a successful rebuild, quit and relaunch the shell instead of waiting for you to click. Handy while developing, but the page state is lost."),
 });
 
 /** 壳的 Application Support 根目录，与 Swift 侧 `ClamPaths.appSupport` 必须一致。 */
@@ -110,7 +134,8 @@ const INSTALLED_RELEASE = "/Applications/Surfclam.app";
 const SHORTCUTS_NAMESPACE = "clam-shortcuts";
 
 /**
- * 键位表 schema。
+ * 键位表 schema。**是个函数**，因为 description 的语言在注册那一刻才定得下来
+ * （计划 §7；`.description()` 没有翻译钩子，运行中切语言不追改，重启 dsh 后对齐）。
  *
  * **默认值的真相在壳里那张表**（`MainWindowController` 的 command → 默认 spec），
  * 不在这里：壳建第一版菜单时页面还没加载完，根本没有任何设置值可用，所以它必须
@@ -126,33 +151,42 @@ const SHORTCUTS_NAMESPACE = "clam-shortcuts";
  * 只收"改了确实更好用"的那些。系统惯例（⌘W/⌘Q/⌘H/⌘M、编辑菜单、⌘R、⌥⌘S、
  * ⌘±0、⌥⌘D、⌘⇧R、⌘/）**刻意不进设置**——它们能改只会更难用。
  */
-const ShortcutsSettings = z.object({
-	newSession: z.string().default("cmd+n")
-		.description("新建会话。"),
-	prevSession: z.string().default("cmd+shift+[")
-		.description("切到上一个会话（顺序与侧边栏列表当前显示的一致）。"),
-	nextSession: z.string().default("cmd+shift+]")
-		.description("切到下一个会话（顺序与侧边栏列表当前显示的一致）。"),
-	nextPendingSession: z.string().default("cmd+alt+a")
-		.description("跳到下一个待处理会话（有东西在等你回答的那些）。"),
-	archiveSession: z.string().default("cmd+shift+backspace")
-		.description("归档当前会话。"),
-	renameSession: z.string().default("cmd+alt+r")
-		.description("重命名当前会话。"),
-	focusSearch: z.string().default("cmd+alt+f")
-		.description("把光标送进侧边栏搜索框。"),
-	openSettings: z.string().default("cmd+,")
-		.description("打开设置窗口。"),
-	// ⌘1-9 是九个键位，逐个开成字段既啰嗦又留下"第 3 个和第 7 个撞车"这类
-	// 无人校验的坑，所以整组只给一个前缀选择；`off` = 九个都不装。
-	sessionDigits: z.union([z.const("cmd"), z.const("cmd+alt"), z.const("off")])
-		.default("cmd")
-		.description("用数字键直接跳到第 1～9 个会话时按的修饰符；off = 不装这组快捷键。"),
-	// 这一条不进壳的菜单：页面自己在 keydown 上匹配（原生菜单项拦不住
-	// WebView 里的输入焦点）。见 clam-layout/lib/client.js 的 escStop。
-	stopGenerating: z.string().default("esc")
-		.description("停止当前会话正在生成的回复（在网页内匹配，不是菜单项）。留空 = 关掉这个键。"),
-});
+const shortcutsSettings = (locale) => {
+	const zh = locale === "zh";
+	return z.object({
+		newSession: z.string().default("cmd+n")
+			.description(zh ? "新建会话。" : "Start a new session."),
+		prevSession: z.string().default("cmd+shift+[")
+			.description(zh ? "切到上一个会话（顺序与侧边栏列表当前显示的一致）。"
+				: "Go to the previous session, in the order the sidebar is showing."),
+		nextSession: z.string().default("cmd+shift+]")
+			.description(zh ? "切到下一个会话（顺序与侧边栏列表当前显示的一致）。"
+				: "Go to the next session, in the order the sidebar is showing."),
+		nextPendingSession: z.string().default("cmd+alt+a")
+			.description(zh ? "跳到下一个待处理会话（有东西在等你回答的那些）。"
+				: "Jump to the next session that is waiting for you."),
+		archiveSession: z.string().default("cmd+shift+backspace")
+			.description(zh ? "归档当前会话。" : "Archive the current session."),
+		renameSession: z.string().default("cmd+alt+r")
+			.description(zh ? "重命名当前会话。" : "Rename the current session."),
+		focusSearch: z.string().default("cmd+alt+f")
+			.description(zh ? "把光标送进侧边栏搜索框。"
+				: "Move the cursor to the sidebar search field."),
+		openSettings: z.string().default("cmd+,")
+			.description(zh ? "打开设置窗口。" : "Open the settings window."),
+		// ⌘1-9 是九个键位，逐个开成字段既啰嗦又留下"第 3 个和第 7 个撞车"这类
+		// 无人校验的坑，所以整组只给一个前缀选择；`off` = 九个都不装。
+		sessionDigits: z.union([z.const("cmd"), z.const("cmd+alt"), z.const("off")])
+			.default("cmd")
+			.description(zh ? "用数字键直接跳到第 1～9 个会话时按的修饰符；off = 不装这组快捷键。"
+				: "The modifier held with 1–9 to jump straight to that session; off installs no such shortcuts."),
+		// 这一条不进壳的菜单：页面自己在 keydown 上匹配（原生菜单项拦不住
+		// WebView 里的输入焦点）。见 clam-layout/lib/client.js 的 escStop。
+		stopGenerating: z.string().default("esc")
+			.description(zh ? "停止当前会话正在生成的回复（在网页内匹配，不是菜单项）。留空 = 关掉这个键。"
+				: "Stop the reply the current session is generating. Matched inside the web page rather than by a menu item; leave empty to turn the key off."),
+	});
+};
 
 /** 上次构建时的源码 hash，与产物同处 build/ 下——产物被清掉时它一起消失，语义自洽。 */
 const hashMarkerPath = (configuration) =>
@@ -219,7 +253,7 @@ export function apply(ctx, config) {
 	// 窗口（「插件 → 插件配置」把 `describe()` 里的每个 ns 一视同仁地列出来），
 	// 以及 dsh 自己的页内设置对话框。
 	ctx.inject(["settings"], (scoped) => {
-		scoped.settings.register(SHORTCUTS_NAMESPACE, ShortcutsSettings, {
+		scoped.settings.register(SHORTCUTS_NAMESPACE, shortcutsSettings(resolveLocale(scoped)), {
 			// 改完立刻生效，不需要重启：client 半边订着这个 ns，值一变就重推给壳，
 			// 壳原地重建整条主菜单。界面据此标注"立即生效"。
 			applies: "live",
@@ -236,6 +270,30 @@ export function apply(ctx, config) {
 			// 到这儿说明是意料之外的异常（预期内的失败都已在内部记过日志并返回）。
 			logger.warn(`clam-app 启动流程异常：${errorText(error)}`);
 		});
+}
+
+/**
+ * 此刻是哪门界面语言（计划 §3 末段那条 node 侧决议链）。
+ *
+ * `locale` ns 是 dsh-client-locale 单占的，**只读不注册**（重复 register 会
+ * fails loud）；`preference` 缺省是**有语义的**——那时 dsh 自己也走环境推导，
+ * 所以这里跟着退到 `environmentLocale()`。规则那一半是共用的
+ * （`clam-bridge/lib/locale.js`），接线这一半各家自己写：这里只要一个瞬时值，
+ * clam-notify 要的是一个活的读取口。
+ *
+ * @param {{settings: {get: (ns: string) => unknown}}} scoped 已经注入了 settings 的 ctx。
+ */
+function resolveLocale(scoped) {
+	try {
+		const section = scoped.settings.get("locale");
+		const preference = section && typeof section === "object"
+			? /** @type {{preference?: unknown}} */ (section).preference
+			: undefined;
+		return localeFromTag(preference) ?? environmentLocale();
+	} catch {
+		// ns 还没注册就读不到——退环境推导，绝不因为一句 description 赔掉注册。
+		return environmentLocale();
+	}
 }
 
 /**

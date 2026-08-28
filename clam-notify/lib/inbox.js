@@ -36,8 +36,17 @@
  * ——系统通知会被撤下，历史那一行留着（置灰）。表有上限（`HISTORY_LIMIT`），
  * 超了从最老的已办开始丢。
  *
+ * ## 语言
+ *
+ * 每条 item 的文案在**组它的那一刻**按当时的界面语言渲染，并把语言 id 一起记在
+ * 行上（`item.locale`）。语言后来变了**不追改已有的行**（计划 §5）：屏幕上那条
+ * 通知的文案变了就等于撤下重发，会再响一次、再跳一次——为一个已经看过的提醒
+ * 打扰第二次不划算。`refresh()` 重算按钮时按**那一行自己的语言**，
+ * 免得出现「标题中文、按钮英文」的半拉子。
+ *
  * @module clam-notify/inbox
  */
+import { strings } from "./strings.js";
 
 /** 已办的行最多留多少（待办不受限——待办是真相，不能丢）。 */
 const HISTORY_LIMIT = 50;
@@ -56,9 +65,10 @@ const MAX_OPTION_ACTIONS = 4;
 /**
  * @param {{titleOf: (id:string) => string|undefined}} source 用来查会话标题。
  * @param {() => object} readSettings 当前设置（随时可能变，每次组 item 时现读）。
+ * @param {() => string} readLocale 当前界面语言（同上，现读；见顶部「语言」一节）。
  * @param {() => void} onChange 集合变了（Swift 该收新的一份了）。
  */
-export function createInbox(source, readSettings, onChange) {
+export function createInbox(source, readSettings, readLocale, onChange) {
 	/** id → item。插入序 = Map 的迭代序，正是我们要的时间序。 */
 	const items = new Map();
 	/** sessionId → 是否在跑。`turn/end` 之后还 running 说明只是回合间暂停。 */
@@ -83,7 +93,7 @@ export function createInbox(source, readSettings, onChange) {
 
 		onPending(event) {
 			const settings = readSettings();
-			const item = buildPending(event, source, settings);
+			const item = buildPending(event, source, settings, readLocale());
 			if (item === undefined) return;
 			items.set(item.id, item);
 			trim();
@@ -138,6 +148,8 @@ export function createInbox(source, readSettings, onChange) {
 		onTurnEnd({ sessionId }) {
 			// **还在跑就是回合间暂停，不是完成**（旧实现这一条判对了，留着）。
 			if (running.get(sessionId) === true) return;
+			const locale = readLocale();
+			const L = strings(locale);
 			const item = {
 				id: `done.${sessionId}`,
 				kind: "done",
@@ -145,9 +157,10 @@ export function createInbox(source, readSettings, onChange) {
 				sessionTitle: source.titleOf(sessionId) ?? null,
 				createdAt: Date.now(),
 				state: "pending",
-				title: source.titleOf(sessionId) ?? "任务完成",
-				body: "回合已结束",
-				actions: [OPEN_ACTION],
+				locale,
+				title: source.titleOf(sessionId) ?? L.doneTitle,
+				body: L.doneBody,
+				actions: [openAction(L)],
 				textInput: null,
 				importance: "passive",
 				meta: {},
@@ -158,6 +171,8 @@ export function createInbox(source, readSettings, onChange) {
 		},
 
 		onAgentError({ sessionId, message }) {
+			const locale = readLocale();
+			const L = strings(locale);
 			const item = {
 				id: `error.${sessionId}`,
 				kind: "error",
@@ -165,9 +180,11 @@ export function createInbox(source, readSettings, onChange) {
 				sessionTitle: source.titleOf(sessionId) ?? null,
 				createdAt: Date.now(),
 				state: "pending",
-				title: "Agent 出错",
-				body: clip(message),
-				actions: [OPEN_ACTION],
+				locale,
+				title: L.errorTitle,
+				// 上游没给原话时才轮到我们说话——`mux-source.js` 一个字都不组。
+				body: clip(message) || L.errorBody,
+				actions: [openAction(L)],
 				textInput: null,
 				importance: "interrupt",
 				meta: {},
@@ -207,13 +224,18 @@ export function createInbox(source, readSettings, onChange) {
 			if (changed) onChange();
 		},
 
-		/** 设置变了：已在表里的行重算一遍按钮（如「直接批准」被关掉）。 */
+		/**
+		 * 设置变了：已在表里的行重算一遍按钮（如「直接批准」被关掉）。
+		 *
+		 * 用**这一行自己的语言**重算，不是此刻的语言：这一行的标题与正文早在组它
+		 * 那一刻就定死了（顶部「语言」一节），拿新语言重算按钮只会拼出半拉子。
+		 */
 		refresh() {
 			const settings = readSettings();
 			let changed = false;
 			for (const item of items.values()) {
 				if (item.kind !== "approval" || item.state !== "pending") continue;
-				const next = approvalActions(settings);
+				const next = approvalActions(settings, strings(item.locale));
 				if (JSON.stringify(next) === JSON.stringify(item.actions)) continue;
 				item.actions = next;
 				changed = true;
@@ -236,18 +258,23 @@ export function createInbox(source, readSettings, onChange) {
 	}
 }
 
-/** 「打开查看」——四类通知都有它，且**只有它**带 foreground（会把 app 拉到前台）。 */
-const OPEN_ACTION = { id: "open", label: "打开查看", style: "foreground" };
+/**
+ * 「打开查看」——四类通知都有它，且**只有它**带 foreground（会把 app 拉到前台）。
+ * @param {ReturnType<typeof strings>} L
+ */
+function openAction(L) {
+	return { id: "open", label: L.open, style: "foreground" };
+}
 
-function approvalActions(settings) {
+function approvalActions(settings, L) {
 	const actions = [];
 	// 关掉「直接批准」之后只剩拒绝——**拒绝始终留着**：它是安全方向的动作，
 	// 在通知上办掉它永远不会造成意外授权。
 	if (settings.actionableApproval === true) {
-		actions.push({ id: "allow", label: "允许一次" });
+		actions.push({ id: "allow", label: L.allowOnce });
 	}
-	actions.push({ id: "reject", label: "拒绝", style: "destructive" });
-	actions.push(OPEN_ACTION);
+	actions.push({ id: "reject", label: L.reject, style: "destructive" });
+	actions.push(openAction(L));
 	return actions;
 }
 
@@ -258,13 +285,16 @@ function approvalActions(settings) {
  * 那条分层纪律。`settings` 仍要传进来，因为按钮的组成（`actionableApproval`）
  * 是 item 内容的一部分。
  */
-function buildPending(event, source, settings) {
+function buildPending(event, source, settings, locale) {
+	const L = strings(locale);
 	const base = {
 		id: event.id,
 		sessionId: event.sessionId,
 		sessionTitle: source.titleOf(event.sessionId) ?? null,
 		createdAt: Date.now(),
 		state: "pending",
+		// 这一行说哪门语言，组它的这一刻就定死了（顶部「语言」一节）。
+		locale,
 		rpcId: event.rpcId,
 		textInput: null,
 		importance: "interrupt",
@@ -274,14 +304,14 @@ function buildPending(event, source, settings) {
 		const tool = String(event.data.toolName ?? "").trim();
 		const reason = String(event.data.reason ?? "").trim();
 		const lines = [];
-		if (tool !== "") lines.push(`工具：${tool}`);
+		if (tool !== "") lines.push(L.toolLine(tool));
 		if (reason !== "") lines.push(reason);
 		return {
 			...base,
 			kind: "approval",
-			title: "需要你的批准",
-			body: clip(lines.join("\n")) || "有一步操作在等你放行",
-			actions: approvalActions(settings),
+			title: L.approvalTitle,
+			body: clip(lines.join("\n")) || L.approvalBody,
+			actions: approvalActions(settings, L),
 			meta: {
 				approvalId: event.data.approvalId,
 				toolName: tool,
@@ -302,13 +332,16 @@ function buildPending(event, source, settings) {
 			kind: "question",
 			title: first.header !== undefined && String(first.header).trim() !== ""
 				? String(first.header).trim()
-				: "需要你的回答",
-			body: clip(body) || "有一个问题在等你回答",
-			actions: questionActions(questions),
+				: L.questionTitle,
+			body: clip(body) || L.questionBody,
+			actions: questionActions(questions, L),
 			// 自由回答。**多问题的一批不给输入框**：一次 ask 的所有问题必须一起答
 			// （上游 `matchesQuestions` 会核对问题 id 集合），一个输入框答不了两道题。
+			//
+			// 三个字都由这边下发（`label` 是展开输入框那颗按钮的名字）：Swift 那边
+			// 一个字都不自己编，语言就只有这一个真相。
 			textInput: questions.length === 1
-				? { id: "custom", placeholder: "输入你的回答", button: "发送" }
+				? { id: "custom", label: L.other, placeholder: L.answerPlaceholder, button: L.send }
 				: null,
 			meta: {
 				questionCount: questions.length,
@@ -331,25 +364,25 @@ function buildPending(event, source, settings) {
  * `intent: plan-review` 是唯一的特例：**按 label 认哪个是批准，不看顺序**
  * （上游明写"no UI infers the verdict from option order"）。
  */
-function questionActions(questions) {
-	if (questions.length !== 1) return [OPEN_ACTION];
+function questionActions(questions, L) {
+	if (questions.length !== 1) return [openAction(L)];
 	const first = questions[0];
-	if (first.multiSelect === true) return [OPEN_ACTION];
+	if (first.multiSelect === true) return [openAction(L)];
 	const options = Array.isArray(first.options) ? first.options : [];
-	if (options.length === 0 || options.length > MAX_OPTION_ACTIONS) return [OPEN_ACTION];
+	if (options.length === 0 || options.length > MAX_OPTION_ACTIONS) return [openAction(L)];
 
 	const approve = first.intent?.kind === "plan-review"
 		? String(first.intent.approve ?? "")
 		: undefined;
 
 	const actions = options.map((option, index) => {
-		const label = String(option?.label ?? "").trim() || `选项 ${index + 1}`;
+		const label = String(option?.label ?? "").trim() || L.optionLabel(index + 1);
 		const action = { id: `opt.${index}`, label };
 		// plan-review：批准之外的都是"不批准"，标红提醒这是个否定动作。
 		if (approve !== undefined && label !== approve) action.style = "destructive";
 		return action;
 	});
-	actions.push(OPEN_ACTION);
+	actions.push(openAction(L));
 	return actions;
 }
 

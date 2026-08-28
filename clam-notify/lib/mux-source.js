@@ -222,7 +222,9 @@ export function createMuxSource(ctx, log, sink) {
 			case "host/agent-error":
 				sink.onAgentError({
 					sessionId: frame.sessionId,
-					message: String(frame.message ?? "未知错误"),
+					// **只转上游原话，一个字都不自己编**：说不出话时给空串，
+					// 由 `inbox.js` 用当前语言的兜底句补上（i5，计划 §5）。
+					message: typeof frame.message === "string" ? frame.message : "",
 				});
 				return;
 			case "host/session-status":

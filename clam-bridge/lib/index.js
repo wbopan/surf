@@ -27,16 +27,31 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import z from "@deepseek-ai/schemastery";
 import { WebSocketServer } from "ws";
+import { environmentLocale } from "./locale.js";
 
 export const name = "clam-bridge";
 
 export const inject = ["webServer"];
 
+/**
+ * 这两条 description 用哪门语言（计划 §7）。
+ *
+ * **只到得了环境推导那一级**：`Config` 是模块级常量，cordis 在实例化插件时就要
+ * 读它，那一刻没有任何 ctx，`ctx.settings.get("locale")` 无从谈起。决议链因此
+ * 少了最上面一级，剩下的与别处逐字同源（`./locale.js`）。dsh 自己的
+ * registry-held text 干脆一门语言都不翻，这已经是更进一步。
+ */
+const LOCALE = environmentLocale();
+
 export const Config = z.object({
 	path: z.string().default("/clam/bridge")
-		.description("WebSocket 升级路径（与 dsh 同端口）。clam-app 经 clamBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"),
+		.description(LOCALE === "zh"
+			? "WebSocket 升级路径（与 dsh 同端口）。clam-app 经 clamBridge.path 取这个值写进 endpoint 发现文件，改这里无需再同步别处。"
+			: "WebSocket upgrade path, served on the dsh port. clam-app reads it back through clamBridge.path and writes it into the endpoint discovery file, so changing it here needs no matching change elsewhere."),
 	pollIntervalMs: z.number().step(1).min(100).default(500)
-		.description("盯各插件 swift/ 目录的轮询间隔，与 dsh-client-hmr 同款做法。"),
+		.description(LOCALE === "zh"
+			? "盯各插件 swift/ 目录的轮询间隔，与 dsh-client-hmr 同款做法。"
+			: "How often to poll each plugin’s swift/ directory, the same approach dsh-client-hmr takes."),
 });
 
 /** 桥协议版本（计划 §5.4）。壳侧 `BridgeProtocol.version` 必须一致。 */

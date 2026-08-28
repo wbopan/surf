@@ -72,16 +72,27 @@ struct NotifyAction {
 }
 
 /// 通知上的自由输入（`UNTextInputNotificationAction`）。
+///
+/// **三个字都由 node 下发，这边一个都不自己编**（`label` 是展开输入框那颗按钮的
+/// 名字）：界面语言的真相在 node 半边那张 `lib/strings.js`，这里编一个兜底词就是
+/// 在中文界面上冒出英文、或者反过来。所以 `label` / `button` 缺一个就整条不解
+/// ——其余按钮照画，只是少了「其他…」那一颗，比画一颗语言不对的强。
 struct NotifyTextInput {
     let id: String
+    /// 展开输入框那颗按钮的名字（`UNTextInputNotificationAction.title`）。
+    let label: String
     let placeholder: String
+    /// 输入框右边那颗提交按钮。
     let button: String
 
     static func decode(_ raw: [String: Any]) -> NotifyTextInput? {
-        guard let id = raw["id"] as? String else { return nil }
+        guard let id = raw["id"] as? String,
+              let label = raw["label"] as? String, !label.isEmpty,
+              let button = raw["button"] as? String, !button.isEmpty else { return nil }
         return NotifyTextInput(id: id,
+                               label: label,
                                placeholder: raw["placeholder"] as? String ?? "",
-                               button: raw["button"] as? String ?? "发送")
+                               button: button)
     }
 }
 

@@ -271,7 +271,7 @@ final class NotifyCenter {
         if let input = item.textInput {
             actions.append(UNTextInputNotificationAction(
                 identifier: input.id,
-                title: "其他…",
+                title: input.label,
                 options: [],
                 textInputButtonTitle: input.button,
                 textInputPlaceholder: input.placeholder))

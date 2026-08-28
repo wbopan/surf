@@ -16,43 +16,15 @@
  * **绝不 `register("locale")`**：ns 是单占的，dsh-client-locale 已经占了，
  * 重复注册 fails loud（会赔掉整个插件）。这里只 `get` + 听 `settings/updated`。
  *
+ * 决议链的头两级是纯函数，与 clam-app / clam-bridge 选 description 语言时用的是
+ * 同一份（`clam-bridge/lib/locale.js`）——**接线各家自己写，规则只有一份**。
+ *
  * @module clam-notify/locale
  */
+import { environmentLocale, localeFromTag } from "../../clam-bridge/lib/locale.js";
 
 /** dsh 的 `locale` 设置命名空间。**只读，不注册。** */
 const LOCALE_NS = "locale";
-
-/** 值域跟 dsh 走（`dsh-client-locale` 的 `LOCALES`），不自作主张加语言。 */
-const LOCALES = ["zh", "en"];
-
-/** 一条都不中时的兜底，与 dsh 的 `resolveInitialLocale()` 一致。 */
-const FALLBACK = "en";
-
-/**
- * 语言标签 → 支持的语言 id。取 primary subtag（`zh-Hans-CN` → `zh`、
- * `en-GB` → `en`），不在值域内返回 undefined。
- * @param {unknown} tag
- * @returns {string|undefined}
- */
-export function localeFromTag(tag) {
-	if (typeof tag !== "string" || tag === "") return undefined;
-	const primary = tag.toLowerCase().split("-")[0];
-	return LOCALES.includes(primary) ? primary : undefined;
-}
-
-/**
- * 环境推导：这台机器的系统语言。`Intl` 在 node 里读的是进程 locale，
- * 而 dsh 与壳同机，所以这一级与页面侧的浏览器推导天然一致。
- * @returns {string} `"zh"` 或 `"en"`
- */
-export function environmentLocale() {
-	try {
-		return localeFromTag(Intl.DateTimeFormat().resolvedOptions().locale) ?? FALLBACK;
-	} catch {
-		// Intl 在剥掉 ICU 的 node 上可能给不出有意义的值——退兜底，不抛。
-		return FALLBACK;
-	}
-}
 
 /**
  * 订上 dsh 的语言设置，返回一个「当前语言」的读取口。
