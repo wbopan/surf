@@ -340,40 +340,14 @@ struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    /// 一条会话过不过筛：归档开关 → 待处理模式 → 搜索词。
-    /// 搜索匹配标题**与摘要**（摘要是用户真正记得住的那句话）。
+    /// 筛选规则的实现在 `SidebarFilterState`（SidebarFilter.swift）——快捷键导航
+    /// 也要按同一份规则数数，这里只留薄委托，调用点不动。
     private func passes(_ session: SidebarSession) -> Bool {
-        if session.archived && !filter.showArchived { return false }
-        if filter.mode == .pending && !session.status.needsAttention { return false }
-        let q = filter.query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return true }
-        return session.displayTitle.lowercased().contains(q)
-            || session.preview.lowercased().contains(q)
+        filter.passes(session)
     }
 
-    /// 工作区视图的分组（已按筛选裁过；空组不出现，但搜到组名时整组保留）。
     private var filteredGroups: [SidebarGroup] {
-        let q = filter.query.trimmingCharacters(in: .whitespaces).lowercased()
-        return model.groups.compactMap { group in
-            if filter.hiddenGroups.contains(groupKey(group)) { return nil }
-            let hits = group.sessions.filter(passes)
-            if !hits.isEmpty {
-                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
-                                    title: group.title, sessions: hits)
-            }
-            // 组名命中搜索：整组留着（但仍要过归档/待处理那两关）。
-            if !q.isEmpty && group.title.lowercased().contains(q) {
-                let rest = group.sessions.filter { session in
-                    if session.archived && !filter.showArchived { return false }
-                    if filter.mode == .pending && !session.status.needsAttention { return false }
-                    return true
-                }
-                if rest.isEmpty { return nil }
-                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
-                                    title: group.title, sessions: rest)
-            }
-            return nil
-        }
+        filter.filteredGroups(from: model.groups)
     }
 
     /// 「按时间」视图：把所有过筛的会话摊平、按 updatedAt 倒序、分四段。
@@ -392,9 +366,8 @@ struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    /// 分组在「隐藏」集合里的键：真工作区用 workspaceId，兜底组用固定键。
     private func groupKey(_ group: SidebarGroup) -> String {
-        group.workspaceId ?? SidebarFilterState.otherGroupKey
+        group.filterKey
     }
 
     private var isEmpty: Bool {
