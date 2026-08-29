@@ -194,5 +194,5 @@ clam-nativeify 现有的字号层（`typeTokens()`）够不着它们，必须逐
 ## 6. 执行日志
 
 - 2026-08-29：计划成文；套件数值抠取（`.scratch/apple-design/lookup.py`）；设计稿画布
-  https://claude.ai/code/artifact/a3e933e2-7ddc-44f9-ac4d-1ef1b3b50558
+  https://claude.ai/code/artifact/b9a465e2-7a9d-4ad1-ae23-577ea6630205
   （画板源在 `docs/design/web-header/`：Current / Main / Dark / Spec）。
