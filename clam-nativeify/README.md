@@ -76,6 +76,15 @@ clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**三面包**：
    （深色档同一个值抬 +31）——物理上就做不出来。浅色的按下反馈改由下面那套
    整片着色承担。
 
+4. **composer 底下的统计行默认隐身**（"5 轮 · 8 步 | LLM 12s | 缓存命中 80% |
+   输入 … tok"那条，dsh 的 `StatsLine`，挂在 `conversation.composer.dock` 槽里），
+   指针贴到窗口底边才淡入（160ms），移开淡出（320ms）。**只动 opacity 不动布局**：
+   那 24px 是 dsh 预留的，折叠它会让卡片每次 hover 跳一下、还会逐帧触发座位上的
+   ResizeObserver 让正文跟着抖。命中区放大到 InputBar 整行宽、向下吞掉 8px 底
+   padding（负 margin 抵回），所以不用对着 24px 的细带子瞄；hover 在卡片上不触发。
+   规则只能落在 outlet 的 `> div` 上——outlet 是 `display: contents` 没有盒子，
+   而 StatsLine 自己的类后缀是通用的 `_root`，靠不住。
+
 ### hover / 按下：整片着色（实测见 `docs/spikes/hover/`）
 
 macOS 27 的按钮反馈是**两级、且深浅两档方向相反**。下面这组是激活窗口下、
@@ -947,5 +956,9 @@ node clam-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规
   这条的失效方向是安全的：`--clam-glass-glow-c` 注册成了 `@property <color>`，
   派生式无效就退到白，也就是退回无色玻璃的高光。dsh 哪天给发送键换个 token，
   症状是"那圈边变白了"，不是玻璃消失。
+- 统计行隐身那条靠槽名 `[data-slot="conversation.composer.dock"] > div` 命中，
+  槽是 `kind: "list"`、眼下只有 `stats` 一条贡献。dsh 哪天往这个槽里再塞一条
+  （或把 StatsLine 挪去别的槽），症状分别是"多出来的那条也跟着隐身"和
+  "统计行又常显了"——两个方向都无害，但都得回来核对槽名。
 - 完整网页模式（逃生舱）下红绿灯会压在网页侧边栏顶部——**这是刻意接受的**：
   逃生舱的定位是「clam-layout 挂了也还能用」的降级路径，不为它做外观修补。
