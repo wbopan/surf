@@ -47,7 +47,9 @@ clam-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放
 clam-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待处理三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
-clam-header/       把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
+clam-header/       **2026-08-29 起在编排表里注释停用**（效果不满意，退回 web header；
+                   代码原样保留，解开 cordis.patch.yml 那两行即恢复）。
+                   把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
                    （Mail / Notes 那条裸文字），工具栏只剩四格可操作的原生
                    `NSToolbarItem` 子类（段控=ItemGroup / 子代理与 mode=MenuToolbarItem
                    +badge / 导出=按钮），排版、显示模式、溢出全归 AppKit。
