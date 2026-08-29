@@ -38,8 +38,13 @@
     - id: clam-sidebar
       name: "@wenbo/clam-sidebar"
 
-    - id: clam-header
-      name: "@wenbo/clam-header"
+    # 停用：主内容区的 header 回到 dsh 自己那份（web header），由 clam-nativeify
+    # 的 HEADER 段用 CSS 调成 macOS 27 工具栏的几何与形态
+    # （权威计划 docs/web-header-native-match-plan.md）。
+    # 两条路互斥——clam-header 一上线就把整条 web header 折掉，CSS 那套无处落脚。
+    # 想回到原生重画那条路：把下面两行的注释去掉即可，两边代码都还在。
+    # - id: clam-header
+    #   name: "@wenbo/clam-header"
 
     # 通知：不占槽、不贡献界面，缺席时什么都不缺。排在这里只是为了诊断树好读
     # ——它 inject clam-layout，真正的时序由 cordis 的依赖解析保证。
