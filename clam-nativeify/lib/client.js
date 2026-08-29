@@ -878,16 +878,18 @@ window.__ModuleLoader__.load({
 		 *    锚定；@ 补全的 listbox 就是容器本身，由 `_menu` 类命中。
 		 *
 		 * ── 悬停强调色 ──────────────────────────────────────────────────────
-		 * 用 WebKit 私有语义色（直接映射 NSColor，跟随系统强调色、深浅自适应）：
-		 * 底是 `-apple-system-selected-content-background`（selectedContentBackground，
-		 * 菜单/列表选中高亮的正主），字是 `-apple-system-alternate-selected-text`
-		 * （alternateSelectedControlText，选中行上的反白）。各放一条字面量兜底
-		 * （套件里的 rgb(0,105,249) 与白），不认识关键字的引擎只丢后一条声明。
-		 * **别用 CSS 标准的 `AccentColor`/`AccentColorText`**：WebKit 认识但解析
-		 * 不对——AccentColorText 出来是深色，黑字压在蓝底上；底色也比官方暗一档
-		 * （用户 2026-08-29 拿系统菜单截图对照发现的）。
-		 * 行的后代 `color: inherit` 把 meta/图标一起翻白——原生菜单高亮时整行
-		 * 反白，不是只反主文字。
+		 * 底色钉的是**本机实测的合成结果 #3070F8**（对真系统菜单高亮截图取蓝色
+		 * 众数，2026-08-29）。真原生的菜单高亮是强调色 + vibrancy 材质合成出来
+		 * 的，CSS 摸不到那条合成管线，语义色关键字给的都是合成前的原料，全都
+		 * 偏深，逐一量过：
+		 *   `AccentColor`（CSS 标准）→ 偏暗一档，且配套的 AccentColorText 解析
+		 *     成深色，黑字压蓝底；
+		 *   `-apple-system-selected-content-background`（NSColor 直通车）→
+		 *     #275AD6，那是列表选中色，仍比菜单高亮深一档。
+		 * 代价是不跟随用户改强调色——接受：dsh 自己的选中蓝也是写死的。
+		 * 反白文字用 `-apple-system-alternate-selected-text`（实测正常）+ #fff
+		 * 兜底。行的后代 `color: inherit` 把 meta/图标一起翻白——原生菜单高亮
+		 * 时整行反白，不是只反主文字。
 		 *
 		 * @returns {string[]} CSS 行。
 		 */
@@ -972,8 +974,7 @@ window.__ModuleLoader__.load({
 				"  color: var(--clam-menu-text);",
 				"}",
 				rowHot + " {",
-				"  background-color: rgb(0, 105, 249);",
-				"  background-color: -apple-system-selected-content-background;",
+				"  background-color: #3070F8;",
 				"  color: #fff;",
 				"  color: -apple-system-alternate-selected-text;",
 				"}",
