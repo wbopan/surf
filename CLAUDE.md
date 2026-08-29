@@ -72,7 +72,9 @@ clam-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选
                    node 半边只干一件事：注册设置 ns `clam-nativeify`（唯一一项是对话区
                    字号），client 半边订它——两处都是可选的运行时嵌套 inject，缺席即退到
                    默认值，CSS 照常首帧生效
-tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
+tools/             跨包的开发工具（shot.sh 截图；apple-kit/ = Apple 官方 macOS 27 UI Kit
+                   的数值检索——**做"像原生"的设计前先查它**，用法见其 README）。
+                   **判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 clam-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
@@ -223,6 +225,15 @@ AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 w
 （`sidebar.group.X-sidebar.group.X`），精确匹配就落空。分组头是靠
 `.accessibilityElement(children: .ignore)` + 显式 label 收口的；
 加新 identifier 后**务必 dump 一次 AX 确认没被拼重**。
+
+### 苹果官方设计数值（tools/apple-kit）
+
+做"贴原生"的视觉工作（尺寸、字号、颜色、材质参数）**先查 Apple 官方 macOS 27
+UI Kit，别凭记忆估**：`tools/apple-kit/fetch.sh` 一次匿名下载（110MB，落
+`.scratch/`），`lookup.py list|show|colors|text` 按名字检索到每个控件的层级几何。
+命名规律、用法范例和"数值只服务 web 半边、原生半边截图量真 AppKit、CSS 引用
+`-apple-system-*` 而不抄 hex"三条家规都写在 `tools/apple-kit/README.md`。
+成功案例：web header 贴原生（`docs/web-header-native-match-plan.md` §1 的目标列全部出自它）。
 
 ## 共享 module（ClamSDK）
 
