@@ -1,16 +1,28 @@
 # clam-nativeify
 
-clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
+clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**三面包**：
 
-- `dsh.bundle`（`cordis.patch.yml`）：安装进 profile 后自动加入 `dsh.profile.bundles`，patch 层插入自己的浏览器插件 row（`ui-clam-nativeify`），无需手改 profile 的 `cordis.patch.yml`。
-- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/clam-nativeify/client.js` 送达页面。
+- `dsh.client`（`lib/client.js`）：浏览器半边，dsh-client-modules 的 node 半边扫描后经 `/plugins/clam-nativeify/client.js` 送达页面。**九成实现在这里**。
+- `lib/index.js`（node 半边）：两件事——① 注册设置命名空间 `clam-nativeify`（唯一一项是「对话区字号」），走运行时嵌套 `ctx.inject(["settings"])`，缺席即退到默认值；② 登记 `swift/` 载荷，并把 dsh 的 `ui-theme` 偏好投影下去（见「原生侧跟随 dsh 主题」）。
+- `swift/`（原生半边）：不占槽、不贡献界面，只按投影设 `NSApp.appearance` 与主窗口底色。缺席即回到"系统外观与 dsh 主题各行其是"。
+
+**本包自己不声明 `dsh.bundle`、包内也没有 `cordis.patch.yml`。** 编排权集中在伞包
+`@wenbo/surfclam` 的那张表上（`surfclam/cordis.patch.yml` 里的 `ui-clam-nativeify` row），
+一处真相；子包各自带一份 patch 是旧结构，早已作废。
 
 ## 职责边界
 
-**只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事**，实现基本是注入一段 CSS
-（外加一段十行的 JS 把窗口焦点态映射到 `<html data-clam-blur>`，见「四态」一节），
-零跨插件契约。**唯一的设置项是对话区字号**，见下面「字体」一节；除它之外没有配置，
-服务依赖也只有那一个可选的 `settings` / `settingsScope`（缺席即退到默认值，见同一节）。
+**只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事**，页面一侧的实现基本是注入
+一段 CSS（外加一段十行的 JS 把窗口焦点态映射到 `<html data-clam-blur>`，见「四态」
+一节），零跨插件契约。**唯一的设置项是对话区字号**，见下面「字体」一节；除它之外
+没有配置，页面一侧的服务依赖也只有那一个可选的 `settings` / `settingsScope`
+（缺席即退到默认值，见同一节）。
+
+**唯一越出页面的一件事是主题**：原生侧的 `NSAppearance` 与窗口底色此前跟系统走，
+与 dsh 的 `ui-theme` 互不知情，一撞就穿帮——见下面「原生侧跟随 dsh 主题」。
+那条线的代价是本包多了一个薄 Swift 载荷（因而多一条硬依赖 `clamBridge`），
+但它仍然只读不写：**主题的真相始终在 dsh，这里一个偏好都不存。**
+
 门控只有一条：`navigator.userAgent` 含
 `Clam/`（带斜杠，防普通子串误命中；壳经 `applicationNameForUserAgent` 声明）。
 终端 `dsh web` / 普通浏览器共用同一 web profile 时零影响。
@@ -22,11 +34,13 @@ clam（macOS 壳应用）专用的 dsh Web UI 原生化插件。**双面包**：
    禁 document 橡皮筋，内层元素 `contain` 切断滚动链（自身仍可滚、边界仍有原生回弹）。
 2. **UI 文本不可选中**：全局关掉 `user-select`，输入类控件（composer 等）与
    会话消息流 / trajectory 内容列 / `pre`·`code` 恢复可选，对话历史照常可复制。
+   配套的光标姿态见下面「四条姿态」。
 3. **按钮按压手感**（macOS 26 / Tahoe）：按下时容器 `scale: 1.09`，**内容跟着容器
    一起走**——`scale` 会往下继承，不需要也不该给图标再写一层，图标现在什么都不额外做。
-   缓动走 Apple 全系基准曲线 `cubic-bezier(.32,.72,0,1)`，按下 90ms 跟手、松开 320ms
-   留余韵。悬停另加整片着色（浅色变暗 / 深色提亮，数见下面那节）和一层极轻的
-   浮起投影。遵循 `prefers-reduced-motion`。
+   缓动走 Apple 全系基准曲线 `cubic-bezier(.32,.72,0,1)`，**按下 0s、松开 320ms**
+   （见下面「按下即时、松开缓动」）。悬停另加整片着色（浅色变暗 / 深色提亮，数见
+   下面那节）和一层极轻的浮起投影。遵循 `prefers-reduced-motion` 与
+   `prefers-reduced-transparency`。
 
    > **窗口激活 ↔ 失活必须是瞬时的。** 系统换焦点是重绘不是动画；而按钮上挂着
    > `box-shadow` / `background-color` / `filter` 的过渡（给 hover 和按下用的），
@@ -103,6 +117,81 @@ inset。三条是从数据直接读出来的、别凭手感改回去：
    「token 重映射」套路。写在 `html body[data-ds-dark-theme]`（0,1,2）而不是
    `body[…]`（0,1,1）：dsh 自己在哪一层定义这个 token 没查到（不在前端 `dist` 里，
    是运行时注入的），多垫一个 `html` 是便宜的保险。
+6. **四条姿态**：字形渲染、光标、`color-scheme`、选中/插入点。见下节。
+
+### 四条姿态：字形渲染 / 光标 / color-scheme / 选中
+
+这四条各自只有一两行 CSS，共同点是**都在补 dsh 根本没管的那一层**（grep 过它的
+构建产物：`color-scheme` 0 处、`caret-color` 0 处、`::selection` 0 处、
+`cursor` 在 html/body/`*` 上 0 处）。所以它们不是覆盖，是补课，不与 dsh 打架。
+
+**一、`-webkit-font-smoothing: subpixel-antialiased`。** 这条是覆盖：dsh 在 `body`
+上写死了 `antialiased`（构建产物 `index-*.css` 里唯一一条）。那个关键字强制灰度抗
+锯齿并把字干整体抽细一档，于是 WebView 那半边的字比壳的原生侧边栏细，并排就是两套
+字——本插件存在的理由当场作废一半。`subpixel-antialiased` 的实效是**"别动，交给
+系统"**：Mojave 之后 macOS 全局就是灰度 AA，这个关键字不会真去做次像素渲染，只是
+把 WebKit 从"强制抽细"那条路上放下来，渲染结果与 `auto` 一致。
+写 `html body`（0,0,2）压 dsh 的 `body`（0,0,1），**不打 `!important`**——和字体那层
+token 重映射是同一个取胜办法。
+
+**二、`body { cursor: default }` + 可选区 `cursor: text`。** 原生 App 的 chrome 上光标
+永远是箭头，只有可编辑/可选的文字才给 I 型。cursor 是可继承的，但**元素自己身上的
+声明永远压过继承来的值**——`a:any-link` 的 UA `cursor: pointer`、`input`/`textarea`
+的 UA `cursor: auto`、dsh 给按钮写的 `cursor: pointer` 全不受影响，这一条只咬"没人管
+过的纯文字"。`cursor: text` 补在**已有的可选中白名单**上（`_flowItem` /
+`_contentColumn` / `pre` / `code`）：能选的文字就得给 I 型光标，否则"看着不能选、
+其实能选"，比不改更糟。输入类控件不用补，浏览器默认就是。
+
+**三、`color-scheme` 跟 dsh 主题，不跟系统。** 表单控件、原生滚动条、默认 `::selection`
+底色这些归 UA 画，认的是 `color-scheme`；不设就等于跟系统外观走。**dsh 设浅色而系统
+是深色时，页面里会冒出一个深色的下拉菜单/滚动条，正文却是白的**——一眼穿帮。
+写法是 `html { color-scheme: light }` + `html:has(body[data-ds-dark-theme]) { … dark }`；
+`:has()` 的特异性取参数里最具体的那条算，后者 (0,1,2) 稳压前者 (0,0,1)，不靠源码顺序。
+
+**四、选中色与插入点从「前景」派生，不从强调色。** 这是手册 §3.3 的配方，也是 macOS
+的实际做法（非 key 窗口里的选中就是一层中性淡底）：
+
+```css
+::selection { background-color: rgb(from var(--dsw-alias-label-primary) r g b / 20%); }
+input, textarea, [contenteditable] { caret-color: var(--dsw-alias-label-primary); }
+```
+
+`--dsw-alias-label-primary` 是 dsh 的正文前景 alias（浅 `#0f1115` / 深 `#f9fafb`，
+两档都在 `dsh-client-ui-theme` 里核过存在且随主题翻面），所以这两行自己不带任何颜色
+常量，dsh 换主题它们跟着换。插入点看着像多余的（`caret-color` 默认 `auto` =
+currentColor，多数输入框里已经对了），但 dsh 有几处输入框自己把 `color` 调淡，那时
+插入点会跟着变灰，而 macOS 的插入点从来是全对比度的——所以钉死，不靠 currentColor
+撞运气。**失效方向见「已知脆弱点」，`::selection` 那条不是无害的。**
+
+### 按下即时、松开缓动
+
+手册量原生控件得到的时序是：**按下那一刻状态直接落定，只有松手才走曲线**。所以
+`:active` 那条写的是 `transition-duration: 0s`，只压住"进入按下"这一个方向；松手时
+规则不再命中，`--clam-dur`（320ms）/ `--clam-dur-fast`（160ms）原样接管，余韵不变。
+
+这里原来有第三个常数 `--clam-dur-press: 90ms`。短，但仍是一段补间，按下去总差着
+一帧的"黏"。**一个恒等于 0 的旋钮没有存在价值**，所以那个变量退休了，`0s` 直接写在
+用它的那条规则里。
+
+### `prefers-reduced-transparency`：把玻璃摊成不透明
+
+系统设置 → 辅助功能 → 显示里的那个开关，语义是**"别让我透过控件看背景"**。玻璃的
+两根支柱都得让位：材质那层 `backdrop-filter` 直接关掉，半透明的 `--clam-glass-fill`
+换成不透明近似色。
+
+**四态的变量结构一个字不动**，只在媒体查询里把四处 fill 各自换成它在自己那档背景上
+的合成结果——所以关掉透明之后颜色是"看起来一样"，不是"变成另一块灰"：
+
+| | 原值 | 压在 | 不透明近似 |
+|---|---|---|---|
+| 浅·激活 | `rgba(252,252,252,.5272)` | 白底 255 | 253.5 → `#FDFDFD` |
+| 浅·失活 | `rgba(0,0,0,.059)` | 白底 255 | 240.0 → `#F0F0F0` |
+| 深·激活 | `rgba(255,255,255,.137)` | `#1E1E1E`(30) | 60.8 → `#3D3D3D` |
+| 深·失活 | `rgba(255,255,255,.094)` | `#1E1E1E`(30) | 51.2 → `#333333` |
+
+四条选择器与它们各自覆盖的那条**同特异性**，靠源码顺序取胜——这个 `@media` 块排在
+整张表最后，所以稳赢。`_primary` 不管：它本来就没有 `backdrop-filter`，底色也是 dsh
+自己画的实色。
 
 ### 字体：两个档位，别混为一谈
 
@@ -339,8 +428,8 @@ refs 探针加 `--hold` 反复抢回 key，并把 `NSApp.isActive` / `isKeyWindo
 上发光 ×4     inset 0 kpx 0                 k = 1..4
 下发光 ×4     inset 0 -kpx 0
 hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
-左内侧阴影    inset 12px 0 8px -15px
-右内侧阴影    inset -12px 0 8px -15px
+左内侧阴影    inset 14px 0 8px -15px
+右内侧阴影    inset -14px 0 8px -15px
 ────────────  以上是 --clam-surface  ────────────
 底色          background-color              --clam-glass-fill，**唯一的给色处**
 外投影        0 1px 2px                     非 inset，在 --clam-surface 之外
@@ -364,6 +453,13 @@ hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
 
 ### 带色按钮的高光必须跟着它自己的色走
 
+> **2026-08 已退休（用户裁决）**：发送键在 spike 台上和「实心蓝原样」「蓝色液态玻璃
+> 七变体」并排比过，用户选了 **dsh 原样**——`_primary` 现在不叠任何手绘玻璃面
+> （`--clam-surface` 只剩按压 tint，外投影清零），只保留按压变暗/scale 与失活
+> grayscale 这些行为反馈。本节往下的推导（oklch +0.12 模型、色域映射、@property
+> 防线）**保留作设计笔记**：@property 注册仍在役（neutral 组 fallback 还用白高光），
+> 将来想上蓝玻璃，`docs/spikes/apple-visual-effect/` 的「发送键变体」一节可复跑。
+
 **改底色不改高光等于没修。** 同一组 alpha，落差取决于脚下那块颜色：
 
 | 底色 | 逐行合成 R | 相邻行落差 |
@@ -373,13 +469,52 @@ hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
 
 第一行差 **17 倍**。硬边几何叠层之所以在玻璃上看着连续，纯粹因为高光和底色本来就
 只差几级；底色一饱和，同样的层立刻是肉眼可见的条带 —— 那圈"像贴上去的白帽子"就是
-这么来的。所以 `_primary` 单独一套：峰值 `.6`、衰减 `.5`、颜色取系统实测的同色系更亮
-一档（浅 `#00C0FF` / 深 `#00CBFF`，**不是白**：蓝键的 R 通道从头到尾是 0，掺白会把 R
-拉起来，对不上）。
+这么来的。所以 `_primary` 单独一套：峰值 `.6`、衰减 `.5`、颜色取**同色系更亮一档**
+（**不是白**：蓝键的 R 通道从头到尾是 0，掺白会把 R 拉起来，对不上）。
 
-> 这里写死了蓝。dsh 的强调色藏在 `--dsw-alias-brand-primary` → `neutral-bluish`
-> 的别名链后面，而高光变量吃的是「通道三元组」（配 `rgb(... / calc(...))`），
-> 塞不进一个 `var(--色)`。dsh 换主题色的话这圈边会偏色。
+#### 色相来源是 dsh 自己，不是写死的常量
+
+这里曾经写死两行青色（浅 `0 192 255` / 深 `0 203 255`，抄自系统 `.glassProminent`
+蓝键的实测峰值 `#00C0FF` / `#00CBFF`），理由是"高光变量吃通道三元组，塞不进一个
+`var(--色)`"。**那个借口现在没了，而且它本来就是错的**：
+
+```
+button[class*="_primary"] 的 background 走 --dsw-alias-button-info-fill
+  → --dsw-static-deepseek-500 #4176e6（浅）/ -400 #679efe（深）
+```
+
+dsh 的发送键根本不是系统那支饱和蓝，所以写死的青色高光**今天就已经偏色**，不是
+"dsh 哪天换主题色才会出问题"的隐患。（注意**不是** `--dsw-alias-button-primary-fill`
+——那条走 `--dsw-alias-brand-primary` → `neutral-bluish`，浅色下是近黑的 `#0f1115`，
+dsh 的发送键没在用它。这是从 `dsh-client-ui-conversation` 的构建产物里读出来的。）
+
+现在的写法是相对颜色派生，保色相保彩度、只抬感知亮度：
+
+```css
+--clam-glass-glow-c: oklch(from var(--dsw-alias-button-info-fill) calc(l + 0.12) c h);
+```
+
+`+0.12` 这个数是从系统实测反推的，两组数都对得上：
+
+| | 本体 | 峰值 | ΔL(OKLCh) |
+|---|---|---|---|
+| 蓝·浅 | `#0092FF` (L .646) | `#00C0FF` (L .765) | **+0.12** |
+| 蓝·深 | `#009EFF` (L .673) | `#00CBFF` (L .792) | **+0.12** |
+
+它顺带解释了"R 通道从头到尾是 0"这条实测：抬亮之后彩度出了 sRGB 色域，CSS 的色域映射
+沿 OKLCh 收彩度、落在 R=0 那面边界上，R 于是自然留在 0。白色叠加做不到这一点——
+所以那条路本来就不通，不是没调好。
+
+**深色档不再单独给一行**：dsh 的 token 自己随主题翻面，派生式跟着翻。峰值/衰减两个
+旋钮原样不动（`.6` / `.5`）。
+
+为此 `--clam-glass-glow-c` 从「通道三元组」改成了普通 `<color>`，发光层写成
+`rgb(from var(--clam-glass-glow-c) r g b / calc(…))`。**它必须 `@property` 注册**
+（`<color>`、`inherits: true`、initial `#fff`），理由和 `--clam-tint` 一样、而且更硬：
+派生式一旦无效（dsh 改名、token 没注入）会一路传染到引用它的 `rgb(from …)`，
+**整条 `box-shadow` 连带失效、玻璃表面直接消失，且静默无报错**。注册之后无效值只会退到
+白，也就是退回无色玻璃的高光——失效方向安全。`inherits: true` 不能省：这个变量声明在
+`:root` 上、用在按钮上。
 
 **发光是 4 条等宽硬边叠出来的几何衰减，不是一层。** 系统的发光是条渐变：边缘
 −1.6 → −2.4 → −3.0 → 本体 −3.2，跨 ~4px。两条死路都试过：
@@ -392,13 +527,16 @@ hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
 所以第 k 条填最外 k 像素、alpha = 峰值 × 衰减^(k-1)。因为先写的盖后写的，第 n 行的
 累积不透明度是第 n..4 层的合成 —— 单调递减是数据结构保证的，不靠调参。两个旋钮：
 
-| 变量 | 管什么 | 浅色 | 深色 |
-|---|---|---|---|
-| `--clam-glass-glow-t` | 上缘最外一像素的峰值 | .55 | .012 |
-| `--clam-glass-glow-b` | 下缘峰值 | .55 | .025 |
-| `--clam-glass-glow-d` | 每向内一像素乘的衰减，越小掉得越快 | .45 | .45 |
+**当前定稿值**（无色玻璃那组；带色的 `_primary` 另有一套，见上）：
 
-实测剖面（相对各自本体）：
+| 变量 | 管什么 | 浅色 | 深色 | `_primary` |
+|---|---|---|---|---|
+| `--clam-glass-glow-t` | 上缘最外一像素的峰值 | **.795** | **.06** | .6 |
+| `--clam-glass-glow-b` | 下缘峰值 | **.795** | **.06** | .6 |
+| `--clam-glass-glow-d` | 每向内一像素乘的衰减，越小掉得越快 | **.45** | **.5** | .5 |
+
+早期扫描时的剖面（相对各自本体）——保留下来是为了记住这两个旋钮各自的作用方向，
+**数值本身早已不是定稿值**（定稿见上表，是后来在校准台上眼调出来的）：
 
 | | 第 1 行 | 2 | 3 | 4 |
 |---|---|---|---|---|
@@ -408,10 +546,11 @@ hover/按下着色 inset 0 0 0 100px            --clam-tint，闲时 transparent
 | 系统（浅色） | −1.6 | −2.4 | −3.0 | −3.2 |
 
 浅色档整个发光只活在 255 里的 4 个灰阶内，所以两个旋钮在浅色下都很粗；真正看得出
-分别的是深色档。**深色上下不等强**（+4.7 vs +8.0，与浅色反过来），所以峰值分上下两个
-变量给 —— 这条系统特征之前被"上下等强"抹平过，现在恢复了。
+分别的是深色档。**系统在深色下上下不等强**（+4.7 vs +8.0，与浅色反过来），但定稿在
+校准台上眼调回了等强——深色玻璃本体已经比背景亮 37，上下差那 3 级看不出来，反倒是
+整体发光强度和衰减速度更要紧。峰值仍然分上下两个变量给，随时能拆开。
 
-alpha 里的 calc 连乘（`rgb(255 255 255 / calc(var(--a)*var(--d)*var(--d))`）在
+alpha 里的 calc 连乘（`rgb(from #fff r g b / calc(var(--a)*var(--d)*var(--d)))`）在
 WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 
 **最终值是肉眼在校准台上对着系统胶囊调的，不是扫描的最优解。** 扫描能把六个特征点
@@ -453,7 +592,8 @@ WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 
 **表面换平色只做了一半 —— 内容也得褪色。** 系统在失活窗口里把控件整个去饱和
 （带色玻璃实测连色相都不剩），发送键那圈强调蓝还亮着就穿帮。所以失活时给白名单里
-那五个按钮加一条 `filter: grayscale(1)`：对已经中性的玻璃层是空操作，只咬有色的内容。
+那几条选择器（`SOLID_BUTTONS`，眼下 **6** 条）加一条 `filter: grayscale(1)`：
+对已经中性的玻璃层是空操作，只咬有色的内容。
 **只给控件，不给整页** —— 系统灰的是控件，正文该什么色还是什么色。
 
 **描边在失活时反过来走「更宽更淡」**：0.6px/.095（墨量 .057）对激活的 0.25px/.197
@@ -470,7 +610,9 @@ WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 **二、边缘的高光不是白色，是同色系更亮的一档。** 蓝键本体 `#0092FF`、峰值 `#00C0FF` ——
 **R 通道从头到尾是 0**。白色叠加无论 alpha 多少都会把 R 拉起来，对不上。红键同理
 （本体 `#FF2038` → 峰值 `#FF5762`，G 和 B 的推算 alpha 差着 16%，也不是同一次白色叠加）。
-所以发光的颜色抽成了 `--clam-glass-glow-c`，默认白，带色时要换掉。
+所以发光的颜色抽成了 `--clam-glass-glow-c`，默认白，带色时要换掉——**换法是从 dsh
+自己的按钮色相对派生，不是抄下面这张表里的常量**，见上面「色相来源是 dsh 自己」。
+下表是系统实测参考值，用来校验派生式的方向，不是我们写进 CSS 的数。
 
 | | 描边行 | 峰值 | 本体 |
 |---|---|---|---|
@@ -492,9 +634,18 @@ WKWebView 里实测可用，三次连乘的结果和字面量逐位对得上。
 
 这四档（蓝/红 × 浅/深 × 激活/失活）的系统参考图已经嵌进校准台，可以直接对着调。
 
-**焦点态怎么来的**：`watchWindowFocus()` 监听 `window` 的 focus/blur，把结果 toggle 成
+**焦点态怎么来的**：`watchWindowFocus()` 监听 `window` 的 focus/blur，把结果写成
 `<html data-clam-blur>`。WKWebView 会把承载窗口的激活/失活转成页面的 focus/blur
 （Safari 里切 app 也是同一套）。这是本插件唯一一段 JS。
+
+**属性值是实例 token，不是空串。** client 半边 HMR 的重载顺序是「新实例先启、旧实例
+后清」（CLAUDE.md 踩坑记录），而 cleanup 原来无条件 `removeAttribute` —— 换代时会砍掉
+新实例刚打上的 `data-clam-blur`，于是页面明明失焦、按钮却停在激活态那摞玻璃上，
+**要等到下一次 focus/blur 才自愈**（窗口一直待在后台就永远不自愈）。现在 `sync()` 把
+一个随机 token 写进属性值，cleanup 只清 token 对得上的那份。CSS 那边一律是
+`[data-clam-blur]` 存在性匹配、不看值，所以选择器一个字都不用改。
+（同文件里字体那张 style 用的是 `fontStyle === style` 的对象身份守卫——同一条纪律的
+另一种写法；属性值存不了对象引用，才改用随机串，思路同 clam-layout 的 `makeToken`。）
 
 **刻意不走「让壳注入」那条路**：壳的窗口通知要经 clam-layout 的 Swift 半边才够得着
 WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的后果只是永远停在激活态
@@ -517,6 +668,208 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 窗口里控件通常也不响应 hover，实际撞不上，但没验证过）。
 
 
+### 真材质路线：把无色玻璃交给系统渲染
+
+计划 `docs/native-feel-upgrade-plan.md` P3。上面整节讲的手绘四态**一个字都没改**，
+它现在的身份是**降级路径**；在壳里、且几个条件都成立时，`neutral` 那组（白名单去掉
+实色的 `_primary`，眼下 5 条选择器）的表面改由 WebKit 的私有材质
+`-apple-visual-effect: -apple-system-glass-material-media-controls` 画。
+
+这条路建立在 `docs/spikes/apple-visual-effect/` 的三条实测上：
+
+1. **不透明窗口里材质照常采样身后的页面内容**，不是黑块——透明窗口不是前提。
+   我们要的正是"胶囊控件采样身下那块页面"。
+2. **探测是干脆的全有全无**：壳侧私有开关一关，`CSS.supports` 九个值全 ✘，
+   材质层什么都不画。所以 `@supports` 块外必须留着**完整**的手绘栈，不能写成
+   "块外留一半、指望材质补另一半"。
+3. **窗口失活时材质自己一个像素都不变**（激活/失活两张截图取样值逐位相同）。
+   所以"失活时把材质关掉"是**必需项而非优化**——系统不会替我们表达失活。
+   `-subdued` 与 `media-controls` 在同一背景上只差几个色阶，也担不起这个差事。
+
+#### 结构：三层门控，全是「进入条件」
+
+```css
+@supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {
+  :root:not([data-clam-blur]):not([data-clam-reduce]) <neutral 五条> {
+    background-color: transparent !important;   /* 给色处让位 */
+    backdrop-filter: none;                      /* 材质自己糊背景 */
+    position: relative; isolation: isolate;     /* 给 fx 层备好锚与层叠上下文 */
+    --clam-surface: inset 0 0 0 100px var(--clam-tint);   /* 只留交互态那一层 */
+    --clam-glass-drop: transparent;             /* 外投影一并交出去 */
+  }
+  :root:not([data-clam-blur]):not([data-clam-reduce]) <neutral 五条>::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    z-index: -1; pointer-events: none; overflow: hidden;
+    -apple-visual-effect: -apple-system-glass-material-media-controls;
+  }
+}
+```
+
+**材质挂在 `::before` fx 层上，不挂按钮自身**——挂自身画出来的是材质自己的圆角
+矩形，**不认元素的 `border-radius`**（真 App 实测：圆形 + 按钮当场变"胖方形"）。
+`.fx` 空子层是 Raycast 的模式（playbook §1.1），spike 里材质胶囊是圆的正因为
+它挂在这样一层上；我们用 `::before` 代替真子元素，`border-radius: inherit` 拿到
+按钮的圆角，`isolation` 让 `z-index: -1` 落在按钮自己的层叠上下文底部。
+
+**减少透明度那道门是根属性 `data-clam-reduce`，不是媒体查询**——本机 WebKit
+**不认识 `prefers-reduced-transparency`**（真 App 角标实测：系统设置明明关着，
+`no-preference` 照样不命中；未知特性让媒体查询两个分支双双恒假），写成 CSS 媒体
+查询等于把材质和降级路径各锁死一半。属性由 `watchReduceTransparency()` 用
+`matchMedia` 打上：不认识时 `matches` 恒 false = 门常开，方向恰好安全；引擎哪天
+认识了还能吃到 change 事件活更新。同一批手绘侧的降透明度覆写也一并改成
+`:root[data-clam-reduce]` 前缀（特异性高于被覆盖的那条，不再依赖源码顺序）。
+
+| 门 | 不成立时 | 落到哪 |
+|---|---|---|
+| `@supports` | 普通浏览器 / 壳侧 `useSystemAppearance` 没开 | 手绘四态，原样 |
+| `:not([data-clam-reduce])` | 系统"降低透明度"开着（JS matchMedia 判定） | 手绘 + 已有的不透明近似色 |
+| `:root:not([data-clam-blur])` | 窗口失活 | 手绘失活那两格（平色 + 描边 + `grayscale(1)`） |
+
+**计划里写的是"块内覆写 `-apple-visual-effect: none` 再让手绘层重新生效"，这里改成了
+进入条件。** 两者的计算值完全等价，代价差得远：覆写那条路要在块内把
+`--clam-surface` 整摞重新列一遍（还得分 plain / bordered 两组，只有前者带描边层），
+并按浅深两档复述一遍 `--clam-glass-drop` 的常量——等于给同一份真相开第二个抄本。
+而抄错抄漏的后果不是"少一层"：任何一条 `var()` 解析不出来会让**整条 `box-shadow`
+失效、玻璃表面直接消失、且静默无报错**（见「已知脆弱点」，这个形状踩过）。
+写成进入条件之后，失活态与降透明度态的计算值与加这段之前**逐字节相同**
+（`tools/dump-css.mjs` 的输出 diff 是纯新增），一条回滚规则都不需要。
+
+#### 四条设计裁决
+
+- **只留 tint 那一层，别的整摞退休。** 材质自带完整外观（模糊、提饱和、边缘一圈
+  高光描边——那圈高光是液态玻璃的造型语言，关不掉），8 层发光 + 描边 + 左右侧影
+  再叠上去就是两套边缘打架。**但 `--clam-tint` 必须留**：材质不提供任何交互态
+  （它连窗口失活都不变，更不会响应 hover / 按下），那两级层次只能由我们出。
+  按压那片跟着指针走的径向光走 `background-image`，不在 `--clam-surface` 里，原样保留。
+- **外投影也去掉**（`--clam-glass-drop: transparent`）。它本来是"让一块手绘的半透明白
+  在页面上站住"的拐杖；材质是真实合成层，接地关系是它自己的事，两份贴地阴影叠起来
+  只会脏。代价是 hover 少掉"浮起来"那一级（1px→2px→0 三档一起没了），**只剩 tint
+  一级层次**。真觉得反馈不够，把那一行删掉就整套回来，不牵动别的。
+- **`_primary` 不上材质、也不再叠手绘面。** 起初只是"实色强调键背后糊什么都看不见"
+  所以不上材质；后来用户在 spike 台裁决连手绘的 oklch 高光也退休——**dsh 原样**。
+  它身上只剩按压 tint/scale 与失活 grayscale（见「带色按钮」一节头部的裁决记录）。
+- **材质挂 `::before` fx 层**（最初直接挂按钮自身，真 App 一开就露馅：材质不认
+  元素圆角，圆钮变胖方形——所以这不是可选项，是硬约束）。选 `::before` 不选
+  `::after` 纯粹保守：给 dsh 将来用 `::after` 画徽标之类留着位置。
+- **玻璃不嵌套**（HIG + Raycast 实测：材质套材质出合并伪影）。白名单这几枚都直接浮在
+  页面上，没有一枚坐在另一块材质里，天然满足；**往 `SOLID_BUTTONS` 加按钮时要自己
+  确认这一条**。
+
+#### 第二块表面：composer 输入卡片（P6，2026-08-28 用户拍板保留）
+
+`[class*="_card"]:has(textarea)`（收窄理由见字号那节：`_card` 后缀跨档复用）走
+`-apple-system-glass-material`——**面板档，不是按钮那档**：一整张 780px 宽的输入卡
+需要比胶囊档更厚的浓度，太透的话身后滚过的正文会顶穿到正在敲的字里。三层门控、
+`::before` fx 层与按钮组完全同构，失活/降透明度同样整体交还 dsh 原样。
+
+卡片之外必须多动一层：**`_composerSeat` 的渐变幕布**（dsh 用来让正文"滚到卡片
+跟前就淡出"的那层 36px 实底渐变）。不让它让位，材质隔着幕布只能采到一块平色，
+玻璃就白做了。让位方式是"只剩最底下 36px 实底"：卡片背后全透供材质采样，
+卡片以下（统计行 + 底缝）仍有实底垫背——**8px 实测盖不住统计行**，正文半截字
+会压在"5 turns · 8 steps"那行背后。
+
+材质自带的那圈**边缘高光**在白底浅色下相当显眼——用户看过真机后拍板保留
+（同一轮里 header 那条带子的裁决是反方向：系统材质全部自带罩色或造型，
+带子维持手绘纯 CSS 模糊，记录在 clam-header/lib/client.js 的带子注释里）。
+
+#### 真 App 验证账（2026-08）
+
+已验：
+
+- **材质生效**（三枚角标法：顶层 / `@supports` 内 / 媒体查询内各放一枚 `::after`
+  角标，冷启动看哪枚在）。也是这一验揪出了 `prefers-reduced-transparency`
+  在本机 WebKit 是未知特性——`@supports` 那枚在、媒体查询那枚不在，而系统
+  设置里"降低透明度"明明关着。
+- **圆角**：材质不认元素 `border-radius`，圆钮变胖方形（用户当场看穿）。
+  修法 = `::before` fx 层，见上。
+- **修完的「+」是正圆**，带材质自带的一圈边缘高光。
+
+待验（按"先看有没有、再看对不对"）：
+
+1. **绘制次序**：`--clam-tint`（inset box-shadow）与按压泛光（`background-image`）
+   如今在按钮自身、材质在 `z-index:-1` 的 fx 层——理论上必在材质之上，hover 按一遍确认。
+2. **`SOLID_BORDERED` 那三枚的双描边**：dsh 自己画着 `1px rgba(0,0,0,.1)`，材质又
+   自带一圈高光。看着重就在块内补 `border-color: transparent`。
+3. **深浅两档**：材质认 `NSAppearance`。P4 之后跟 dsh `ui-theme` 走，
+   **dsh 深色 + 系统浅色**那一格专门看一眼。
+4. **hover / 按下层次够不够**：只剩 tint 两级。不够先恢复 `--clam-glass-drop`。
+5. **对照组**：壳侧关掉 `useSystemAppearance`（或把 `@supports` 条件改成必假）
+   截一张，确认降级路径完好。
+6. **`-apple-system-vibrancy-label` 给按钮文字**：未做，要动先出并排截图。
+
+## 原生侧跟随 dsh 主题
+
+计划 `docs/native-feel-upgrade-plan.md` P4。缺口是**两套主题源互不知情**：
+
+- dsh 设浅色而系统是深色时，原生侧边栏、工具栏、设置窗口是深的，网页正文是浅的
+  ——一眼穿帮，而且没有任何办法在 dsh 里把它掰过来。
+- 窗口 `backgroundColor` 是壳设的 `.windowBackgroundColor`（跟系统），
+  首帧与 resize 时会从窗口底下漏出一条与页面不同的颜色。
+
+**方向：dsh 是权威，原生侧跟随**（计划 §0.1「不另建主真相来源」）。所以这里既不
+提供改主题的入口，也不存任何偏好——用户改主题的地方仍然只有 dsh 设置里那一处
+（原生设置窗口里的「外观」读的也是同一个 ns）。
+
+### 读法（权威坐标）
+
+| 项 | 值 | 核实处 |
+|---|---|---|
+| 设置 ns | `ui-theme` | `@deepseek-ai/dsh-client-ui-theme/lib/index.js` 的 `THEME_SETTINGS_NAMESPACE` |
+| 键名 | `preference` | 同上 `THEME_PREFERENCE_FIELD` |
+| 取值 | `light` / `dark` / `system`（默认 `system`） | 同上 `THEME_PREFERENCES` / `DEFAULT_PREFERENCE` |
+| 现成消费者 | clam-settings 通用页 | `clam-settings/swift/SettingsTabs.swift` 的 `GeneralRow(ns: "ui-theme", path: ["preference"])` |
+
+我们**只读不注册**（ns 的主人是那个插件，重复 register 会 fail loud）：
+`ctx.get("settings")?.get("ui-theme")` 现读现算，变化订全局的 `settings/updated`
+事件按 ns 过滤——非 owner 拿不到 `SettingsScope`，那是 `register` 的返回值。
+
+### 桥协议
+
+| 方向 | 频道/动作 | 载荷 |
+|---|---|---|
+| 下行 `push` | `theme` | `{theme: "light"｜"dark"｜"system", bgBase: {light, dark}}` |
+| 上行 `send` | `theme` | `{}`（现读现推一份） |
+
+**Swift 每代 activate 问一次**，node 只在设置变化时推。这不只是照抄「桥不给新世代
+补发」那条纪律，还堵着一个真实的时序洞：`ui-theme` 是别的插件在它自己的
+`inject(["settings"])` 里注册的，跟我们的挂载没有先后保证——挂载那一刻读完全可能
+读到"尚未注册"，而 `settings/updated` 只在**变化**时发，用户不动设置就永远等不到。
+壳的 activate 远晚于整棵插件树挂载完，那一刻现读必然读得到。
+
+### `bgBase` 为什么由 node 投而不是两边各写一份
+
+窗口底色要跟的是**页面实际画出来的那个色**：
+
+- 浅色 `#FFFFFF`：dsh 的 `--dsw-alias-bg-base` → `--dsw-static-neutral-bluish-00` = `#fff`，我们不覆盖。
+- 深色 `#1E1E1E`：dsh 自己是 `--dsw-static-neutral-bluish-950` = `#151517`，
+  但 `client.js` 把它**重映射**成了 `#1E1E1E`（见上面「深色档页面底色定成 #1E1E1E」）。
+  跟 dsh 的原值就会差出一条肉眼可见的边。
+
+所以值走投影，Swift 那边不写死。**改 client.js 里那条重映射时，`lib/index.js` 的
+`BG_BASE` 必须同步改。**
+
+### Swift 那边的两条纪律
+
+- **`activate` 返回 follower 而不是 handle**：不占槽的插件没有 registry → 视图闭包
+  → model 那条天然强引用链，返回 handle 的话 follower 当场被 ARC 回收，
+  日志照常打印"上线"、然后所有 `[weak self]` 回调静默变 nil。
+- **没有 deinit、没有"恢复原状"**：`NSApp.appearance` 与 `window.backgroundColor`
+  是进程/窗口级状态而不是租来的资源，新一代 activate 按新投影重设即可收敛。
+  （「别把清理逻辑只挂在析构上」——热替换时旧 handle 的 deinit 实测经常根本不跑。）
+
+窗口底色做成 `NSColor(name:dynamicProvider:)` 的**动态色**而不是当场解析成静态色：
+`system` 档下系统深浅一翻，它自己跟着翻，不用再去订
+`AppleInterfaceThemeChangedNotification` 或 KVO `effectiveAppearance`。
+
+刷色的目标窗口判据是「**它装着壳那个 WebView**」（`ClamObjects.Key.webView` 的
+`.window`），不是 `NSApp.mainWindow`——后者会在 clam-settings 那扇窗打开时指过去，
+把一扇不显示网页的窗户也刷成页面底色。
+
+### 退休语义
+
+把 `ui-clam-nativeify` 从伞包的编排表里摘掉，**当前那个壳进程会保持最后一次设定**
+（我们不在析构里恢复，理由见上）。壳重启即回到 `.windowBackgroundColor` + 系统外观。
+
 ## 不在这里的
 
 - **`window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消**：那些是原生分栏接管
@@ -533,19 +886,20 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 
   「用网页侧边栏、但把它打扮成原生」这个中间态不存在，别再往回加。
 
-## 安装（web profile）
+## 安装
 
-```bash
-# 装了 pnpm 的话，用官方入口（自动 reconcile 进 bundles）：
-dsh plugin --profile web add link:~/.dsh/profiles/plugins/clam-nativeify
+**跟着伞包走，没有单装路径。** 仓库根 `./dev` 会把本包连同其余 clam-* 一起 link
+进 profile；装哪些、什么顺序由伞包 `@wenbo/surfclam` 的 `cordis.patch.yml` 决定
+（本包是那张表里的 `ui-clam-nativeify` row）。
 
-# 没有 pnpm：在 profile 目录手动等价操作
-cd ~/.dsh/profiles/web
-npx pnpm add link:~/.dsh/profiles/plugins/clam-nativeify
-# 然后把 "clam-nativeify" 追加进 package.json 的 dsh.profile.bundles
-```
+> **P4 之后本包不能再单独塞进一个普通 web profile 了**：它现在带 Swift 载荷，
+> 因而硬依赖同一张表里的 `clamBridge`（`createSwiftPlugin` 自动加的）。桥不在
+> = 整个插件不挂载 = 连 CSS 都没有。这是有意的取舍：桥不在就意味着没有壳，
+> 而没有壳的话这段 CSS 本来也无处施展（UA 门控挡着，普通浏览器里一行都不生效）。
+> 与 clam-layout 同一个赌注。
 
-装/删/改后重启 harness（壳应用菜单 ⌘⇧R）。
+装/删/改 node 半边或编排表后必须重启 dsh（官方在 web bundle 下 disable 了 node 侧
+HMR）；只改 `lib/client.js` 有 HMR，约 0.5s 自动重载；只改 `swift/` 存盘即热替换。
 
 ## 看真正注入的那段 CSS
 
@@ -557,6 +911,14 @@ node clam-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规
 整段样式是**拼字符串**拼出来的，`node --check` 只看 JS 语法，看不出 CSS 括号有没有
 配对、选择器前缀有没有漏加。这个脚本用一组最小 DOM 桩跑一遍 `apply()`，抓下
 `style.textContent` 并数括号 —— 不用起 dsh、不用开壳。
+
+> **桩收的是两张 style**（主样式 + 字体那张）。这里踩过一个静默坑：桩原来把
+> `textContent` 存进一个标量，于是后写的字体 style 把主样式整个盖掉，dump 出来只有
+> 6 条规则 —— 而括号平衡、前缀完整这些**恰恰全在主样式那边**，等于校验器什么都没
+> 校验到，还一路打印"括号配对正确"。现在每个 style 元素各存各的、最后按创建顺序拼。
+> 桩里另外两处也是必需品：`documentElement.getAttribute`（`watchWindowFocus` 的实例
+> token 守卫要读）与 `ctx.inject`（设置那条运行时嵌套 inject 要调），缺任一都会抛。
+> `inject` 故意是**空实现**：不回调 = 设置服务缺席，正是该模拟的那一档。
 
 > **逗号串上的前缀只写一次只命中第一条**（`:root[x] a, b, c` 里 b/c 没有前缀）。
 > 这个坑踩过两次（`blurSolid`、`nofxSolid`），所以那两处都是 `.map()` 逐条加的。
@@ -574,5 +936,16 @@ node clam-nativeify/tools/dump-css.mjs nofx _primary  # 只看含关键字的规
   应当是 `15px/21px ...`（即 `BODY`/`lh(BODY)`）。另：dsh 目前只引用 token 的
   `font` 简写、五个长手零引用，
   插件两者都写，就是防它哪天改用长手时一半新一半旧地分裂。
+- **`::selection` 那条依赖 `--dsw-alias-label-primary`，失效方向不是无害的。**
+  按 README 的既定纪律这里不留 fallback（留着只会把将来的改名掩盖过去），代价是
+  token 一旦消失，`rgb(from var(…) …)` 在计算值时无效 → `background-color` 退到
+  `initial` = `transparent` → **选中高亮直接看不见**（而不是退回 UA 默认色）。
+  同理 `caret-color` 会退成 `auto`（那一档倒是无害）。升级 dsh 后如果"选中文字没反应"，
+  先在控制台跑
+  `getComputedStyle(document.body).getPropertyValue('--dsw-alias-label-primary')`。
+- **`_primary` 的高光依赖 `--dsw-alias-button-info-fill`**（发送键自己的底色）。
+  这条的失效方向是安全的：`--clam-glass-glow-c` 注册成了 `@property <color>`，
+  派生式无效就退到白，也就是退回无色玻璃的高光。dsh 哪天给发送键换个 token，
+  症状是"那圈边变白了"，不是玻璃消失。
 - 完整网页模式（逃生舱）下红绿灯会压在网页侧边栏顶部——**这是刻意接受的**：
   逃生舱的定位是「clam-layout 挂了也还能用」的降级路径，不为它做外观修补。

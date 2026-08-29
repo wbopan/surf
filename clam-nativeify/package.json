@@ -1,7 +1,7 @@
 {
   "name": "@wenbo/clam-nativeify",
   "version": "0.1.0",
-  "description": "让 dsh Web UI 摸起来像原生 macOS App：禁 document 橡皮筋、UI 文本不可选中（纯 CSS，零服务依赖）",
+  "description": "让 dsh Web UI 摸起来像原生 macOS App：禁 document 橡皮筋、UI 文本不可选中、玻璃按钮表面（CSS），外加把 dsh 的 ui-theme 投影给原生侧（Swift）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -10,7 +10,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "swift"
   ],
   "publishConfig": {
     "access": "public"

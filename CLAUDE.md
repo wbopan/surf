@@ -47,7 +47,9 @@ clam-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放
 clam-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待处理三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
-clam-header/       把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
+clam-header/       **2026-08-29 起在编排表里注释停用**（效果不满意，退回 web header；
+                   代码原样保留，解开 cordis.patch.yml 那两行即恢复）。
+                   把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
                    （Mail / Notes 那条裸文字），工具栏只剩四格可操作的原生
                    `NSToolbarItem` 子类（段控=ItemGroup / 子代理与 mode=MenuToolbarItem
                    +badge / 导出=按钮），排版、显示模式、溢出全归 AppKit。
@@ -67,11 +69,16 @@ clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通�
 clam-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
                    数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
                    agentPresets / pluginInventory（权威计划 docs/clam-settings-plan.md）
-clam-nativeify/    让 dsh Web UI 摸起来像原生 App：禁橡皮筋、禁选中、原生字体度量、
-                   按钮玻璃表面（四态：浅/深 × 窗口激活/失活）。几乎全是 CSS，无构建步骤。
-                   node 半边只干一件事：注册设置 ns `clam-nativeify`（唯一一项是对话区
-                   字号），client 半边订它——两处都是可选的运行时嵌套 inject，缺席即退到
-                   默认值，CSS 照常首帧生效
+clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：client 半边是主力
+                   （禁橡皮筋、禁选中、原生字体度量、按钮玻璃表面——四态：浅/深 ×
+                   窗口激活/失活；全是 CSS，无构建步骤）；node 半边注册设置 ns
+                   `clam-nativeify`（唯一一项是对话区字号，client 半边订它）并把
+                   **dsh 的 `ui-theme` 投影给 swift 半边**；swift 半边不占槽、不贡献
+                   界面，只按投影设 `NSApp.appearance` 与主窗口 `backgroundColor`
+                   （消首帧/resize 露底闪色）。**主题的真相始终是 dsh，原生侧只跟随**，
+                   不另建第二偏好源。读法：ns `ui-theme` / 键 `preference`，值
+                   light|dark|system（权威在 `@deepseek-ai/dsh-client-ui-theme`）。
+                   settings 缺席即不投影 = 原生侧维持系统外观，CSS 照常首帧生效
 tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 clam-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）

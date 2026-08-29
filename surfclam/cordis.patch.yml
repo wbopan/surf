@@ -38,8 +38,11 @@
     - id: clam-sidebar
       name: "@wenbo/clam-sidebar"
 
-    - id: clam-header
-      name: "@wenbo/clam-header"
+    # 原生 header 暂时停用（2026-08-29）：实现出来的效果还不满意，先退回 dsh 自己的
+    # web header。它退休后 client 半边的折叠会自动还原，标题/工具栏四格随之消失。
+    # 要恢复就把下面两行解开注释再重启 dsh。
+    # - id: clam-header
+    #   name: "@wenbo/clam-header"
 
     # 通知：不占槽、不贡献界面，缺席时什么都不缺。排在这里只是为了诊断树好读
     # ——它 inject clam-layout，真正的时序由 cordis 的依赖解析保证。
@@ -49,5 +52,8 @@
     - id: clam-settings
       name: "@wenbo/clam-settings"
 
+    # 原生化：九成价值在 client 半边那段 CSS（页面一侧），另有一个薄 Swift 载荷
+    # 把 dsh 的 ui-theme 投给原生侧（NSAppearance + 窗口底色）。它 inject
+    # clamBridge，真正的时序仍由 cordis 的依赖解析保证，排在这里只是诊断树好读。
     - id: ui-clam-nativeify
       name: "@wenbo/clam-nativeify"
