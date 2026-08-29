@@ -849,6 +849,154 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * ===== 下拉/弹出菜单统一贴 macOS 27 =====
+		 *
+		 * 目标数值全部出自 Apple 官方套件（tools/apple-kit，`Menus/Light|Dark/Regular`）：
+		 * 行 24pt、悬停底 r=8 强调色填充白字、文字 SF Medium 13、分隔线 1px
+		 * （浅 7% 黑 / 深 8% 白）、组标题 SF Bold 13 灰、容器阴影 (0,4,24) 30% 黑
+		 * + 0.5px 边缘 rim。横向节奏：容器 pad 5、高亮内衬 11（文字距菜单边 16）。
+		 *
+		 * ── 为什么能批量 ──────────────────────────────────────────────────────
+		 * dsh 的下拉分两种出身（共享 Menu 原语 ×10 处 + 各插件手写面板 ×6 家），
+		 * 但 DOM 词汇收敛：容器都叫 `_menu`/`_list_` 或带 role，行都有
+		 * menuitem/menuitemradio/option/treeitem 之一（唯一例外 jobs 的 `<ul>`
+		 * 无 role，靠 `_row` 类兜）。选择器纪律沿用 FLOAT_SURFACES 的 token 尾匹配。
+		 *
+		 * ── 已知例外（有意不碰）─────────────────────────────────────────────
+		 * - 原生 `<select>` ×4（设置→模型 ×3、Cordis ×1）：弹出列表是 OS 画的，
+		 *   本来就是最原生的（用户 2026-08-29 裁决保留），闭合框也不动。
+		 * - 右键紧凑菜单（`_compactList_`，26px 行 / r7）：dsh 有意的密度档，
+		 *   对应 Apple 的 Small/Mini 档，几何规则全部绕开它。
+		 * - 反馈备注 popover / turn-tail popover：是表单不是菜单，不收。
+		 * - `_selected`（勾选项）：dsh 与 macOS 同款「对勾不填底」，保留。
+		 *
+		 * ── 两个实现要点 ─────────────────────────────────────────────────────
+		 * 1. **一切选择器都要比 dsh 的单类高一级**（scoped，容器级加 `:root ` 垫片）：
+		 *    插件 CSS 是运行时 append 到 head 的，可能排在我们之后，同特异性会输。
+		 * 2. 命令面板的 `role="listbox"` 在内层 viewport 上、容器是 `_card`
+		 *    （`_card` 后缀全站复用，不能裸用）——容器级用 `:has([role="listbox"])`
+		 *    锚定；@ 补全的 listbox 就是容器本身，由 `_menu` 类命中。
+		 *
+		 * ── 悬停强调色 ──────────────────────────────────────────────────────
+		 * `AccentColor`/`AccentColorText` 是 CSS 系统色（跟随系统设置里的强调色），
+		 * WebKit 支持；前面各放一条字面量兜底（套件里的 rgb(0,105,249) 与白），
+		 * 不认识关键字的引擎只丢后一条声明。行的后代 `color: inherit` 把
+		 * meta/图标一起翻白——原生菜单高亮时整行反白，不是只反主文字。
+		 *
+		 * @returns {string[]} CSS 行。
+		 */
+		function menuRules() {
+			// 容器（面板本体）。`:root ` 前缀是特异性垫片（见要点 1）。
+			const BOXES = [
+				'[role="menu"]',
+				'[class$="_menu"]',
+				'[class*="_menu "]',
+				'[class*="_card"]:has([role="listbox"])',
+				'[role="listbox"]:not([class*="_viewport"])',
+			].map((s) => ":root " + s);
+			const box = BOXES.join(",\n");
+			// 几何绕开紧凑档；阴影不绕（哪个密度档都该有原生的影子）。
+			const boxGeo = BOXES.map((s) => s + ':not([class*="_compactList"])').join(",\n");
+			const boxDark = BOXES.map((s) => s.replace(":root ", ":root body[data-ds-dark-theme] ")).join(",\n");
+
+			// 行。scope 在 FLOAT_SURFACES 之内（listbox 情形 viewport 自己就是
+			// `[role="listbox"]`，照样是行的祖先）。
+			const ROWS = [
+				'[role="menuitem"]',
+				'[role="menuitemradio"]',
+				'[role="option"]',
+				'[role="treeitem"]',
+				'[class$="_row"]',
+				'[class*="_row "]',
+			];
+			const inSurf = (parts) => FLOAT_SURFACES.flatMap((s) => parts.map((p) => s + " " + p)).join(",\n");
+			const row = inSurf(ROWS);
+			// 悬停/键盘高亮。禁用与 danger 排除；键盘高亮三种写法都收：
+			// listbox 的 aria-selected（命令面板）、`_active`/`_rowActive` 类（@ 补全）。
+			const HOT = ':not(:disabled):not([aria-disabled="true"]):not([class*="_danger"])';
+			const rowHot = inSurf(
+				ROWS.map((r) => r + ":hover" + HOT).concat([
+					'[role="option"][aria-selected="true"]',
+					'[class*="_rowActive"]',
+					'[class$="_active"]',
+					'[class*="_active "]',
+				]),
+			);
+			const rowHotKids = rowHot.split(",\n").map((s) => s + " *").join(",\n");
+
+			const sep = inSurf(['[role="separator"]', '[class*="_separator"]']);
+			const label = inSurf(['[class*="_label_"]', '[class*="_groupTitle"]']);
+
+			return [
+				// ── 配色变量（浅色缺省 + 深色覆写一处收口）──────────────────────
+				box + " {",
+				"  --clam-menu-text: rgb(76, 76, 76);",
+				"  --clam-menu-header: rgb(115, 115, 115);",
+				"  --clam-menu-sep: rgba(0, 0, 0, 0.07);",
+				"}",
+				boxDark + " {",
+				"  --clam-menu-text: rgba(255, 255, 255, 0.96);",
+				"  --clam-menu-header: rgba(255, 255, 255, 0.5);",
+				"  --clam-menu-sep: rgba(255, 255, 255, 0.08);",
+				"}",
+
+				// ── 容器：官方阴影 + rim，压掉 dsh 自家的边框（jobs 的 border-l2
+				// 与深色的白 hairline 各家不一，rim 统一从阴影出）────────────────
+				box + " {",
+				"  border-color: transparent;",
+				"  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 4px 24px rgba(0, 0, 0, 0.3);",
+				"}",
+				boxDark + " {",
+				"  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 4px 24px rgba(0, 0, 0, 0.3),",
+				"    inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);",
+				"}",
+				boxGeo + " {",
+				"  padding: 6px 5px;",
+				"}",
+
+				// ── 行：24pt / r8 / SF Medium 13 ────────────────────────────────
+				// min-height 而不是 height：模型选择器的两行 option 要能撑高。
+				row + " {",
+				"  min-height: 24px;",
+				"  padding: 3px 11px;",
+				"  border-radius: 8px;",
+				"  font-size: 13px;",
+				"  line-height: 16px;",
+				"  font-weight: 500;",
+				"  color: var(--clam-menu-text);",
+				"}",
+				rowHot + " {",
+				"  background-color: rgb(0, 105, 249);",
+				"  background-color: AccentColor;",
+				"  color: #fff;",
+				"  color: AccentColorText;",
+				"}",
+				rowHotKids + " { color: inherit; }",
+
+				// ── 分隔线与组标题 ──────────────────────────────────────────────
+				sep + " {",
+				"  height: 1px;",
+				"  border: 0;",
+				"  margin: 5px 6px;",
+				"  background: var(--clam-menu-sep);",
+				"}",
+				label + " {",
+				"  padding: 3px 11px;",
+				"  font-size: 13px;",
+				"  font-weight: 700;",
+				"  color: var(--clam-menu-header);",
+				"}",
+				// 模型选择器的 sticky 组标题带一块不透明 `--dsw-specific-menu` 底，
+				// 压在毛玻璃上是一条白/黑补丁；原生菜单没有 sticky 组头，取消它
+				// 顺带让底色可以透明。
+				inSurf(['[class*="_groupTitle"]']) + " {",
+				"  position: static;",
+				"  background: transparent;",
+				"}",
+			];
+		}
+
+		/**
 		 * 把按下的位置写成按钮上的 --clam-px / --clam-py（百分比）。
 		 *
 		 * 按压时那块亮光要从**手指底下**泛起来，不是从按钮正中 —— 位置这件事 CSS
@@ -1833,6 +1981,7 @@ window.__ModuleLoader__.load({
 					"}",
 					"}",
 					...headerRules(),
+					...menuRules(),
 				];
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);
