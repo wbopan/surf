@@ -84,13 +84,15 @@ enum KeymapSpec {
     private static func keyEquivalent(for token: String) -> String? {
         if token.count == 1 { return token }
         switch token {
-        // ⌫ 退格键在 NSEvent 里发出的是 **U+007F（DEL）**，不是 U+0008（BS）——
-        // 菜单匹配拿 keyEquivalent 与 charactersIgnoringModifiers 精确比对，
-        // AppKit **不做** BS↔DEL 归一化（合成事件实测：keyEq=0x08 收 0x7F 事件
-        // 不命中，反之亦然）。写 0x08 的菜单项渲染出来一模一样、按下去却永远
-        // 不触发，极难排查。⌦ 前向删除是功能键 NSDeleteFunctionKey（U+F728），
-        // 是**另一个键**，别混。
-        case "backspace": return "\u{7f}"
+        // ⌫ 退格键的 keyEquivalent 必须写 **U+0008（BS）**，尽管它按下去 NSEvent 的
+        // `characters` 是 U+007F（DEL）——AppKit 菜单匹配在这里**做了归一化**：
+        // keyEq 0x08 ↔ 退格键（keyCode 51，事件字符 0x7F），keyEq 0x7F ↔ **前向删除 ⌦**
+        // （keyCode 117，事件字符 NSDeleteFunctionKey U+F728）。IB 里选 ⌫ 存的也是 0x08。
+        // 反过来写 0x7F 的话：菜单里键符那格是空白（DEL 不可打印），⌘⇧⌫ 按下去永远
+        // 不触发，⌘⇧⌦ 反而会。实测方法见 CLAUDE.md 踩坑记录（用 `CGEvent` 造
+        // 真实键码事件再 `NSEvent(cgEvent:)`；手拼 `NSEvent.keyEvent(...)` 会绕过这层
+        // 归一化，正是上一版结论出错的原因）。
+        case "backspace": return "\u{08}"
         case "delete": return functionKey(NSDeleteFunctionKey)
         case "esc", "escape": return "\u{1b}"
         case "space": return " "

@@ -500,6 +500,14 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   才知道，而那个状态**可能不再变**（用户打开 app 就一直待在同一个会话里），于是
   它永远不知道。描述**瞬间**的消息（菜单被按了一下）不该粘。粘不粘由 emit 的一方
   按语义决定，总线本身不认识任何具体主题。
+- **退格键的菜单 keyEquivalent 要写 U+0008，不是它按下去发出的 U+007F**：AppKit 的
+  菜单匹配在这一处**做了归一化**——keyEq 0x08 ↔ 退格键 ⌫（事件字符 0x7F），
+  keyEq 0x7F ↔ **前向删除 ⌦**（事件字符 NSDeleteFunctionKey U+F728）。写成 0x7F 的
+  症状：菜单里键符那格是空白（`[⌘⇧]`），⌘⇧⌫ 永远不触发，⌘⇧⌦ 反而会。曾经用
+  `NSEvent.keyEvent(...)` 手拼事件得出"必须写 0x7F"的相反结论——那条路绕过了
+  归一化。**验菜单键位一律用 `CGEvent(keyboardEventSource:virtualKey:keyDown:)` 造
+  真实键码事件再 `NSEvent(cgEvent:)`**，然后 `menu.performKeyEquivalent(with:)`；
+  看 `peekaboo menu list --pid` 里键符是不是画得出来也是个快速判据。
 - **`UNNotificationInterruptionLevel.passive` 的意思是"不弹横幅"，不是"安静一点"**：
   设成它的通知直接躺进通知中心，屏幕上一点动静都没有，而日志里照常写着"已发送"
   ——看上去像系统设置（定时摘要 / 专注模式）出了问题，实际是自己配的。要静就把

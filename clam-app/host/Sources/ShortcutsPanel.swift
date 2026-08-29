@@ -214,10 +214,11 @@ final class ShortcutsPanel: NSWindowController {
     /// [ ] / + - = 这些）原样上大写即可。
     private static func keyName(_ key: String, spaceName: String) -> String {
         switch key {
-        // 退格键在 keyEquivalent 里是 U+007F（NSEvent 发的就是 DEL，见 KeymapSpec
-        // 那段注释）；U+0008 留着只为容错。⌦ 前向删除是功能键 U+F728。
-        case "\u{8}", "\u{7f}": return "⌫"
-        case String(Character(UnicodeScalar(UInt32(NSDeleteFunctionKey))!)): return "⌦"
+        // 退格键在 keyEquivalent 里是 U+0008（AppKit 把它归一化到退格键事件的 DEL，
+        // 见 KeymapSpec 那段注释）；U+007F 反而被 AppKit 当作前向删除 ⌦，
+        // 与功能键 U+F728 同义——照 AppKit 实际的匹配结果画。
+        case "\u{8}": return "⌫"
+        case "\u{7f}", String(Character(UnicodeScalar(UInt32(NSDeleteFunctionKey))!)): return "⌦"
         case "\r": return "↩"
         case "\u{3}": return "⌤"      // 小键盘 Enter
         case "\u{1b}": return "⎋"
