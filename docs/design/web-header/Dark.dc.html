@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, "SF Pro Text", "SF Pro", system-ui, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #679efe; } a:hover { color: #8db5ff; }
+    .glass { background: rgba(255,255,255,0.137); box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.25); }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 200px; background: #151517; position: relative; overflow: hidden; display: flex; flex-direction: row;">
+
+  <!-- 原生侧边栏（参照物，深色） -->
+  <div style="width: 256px; height: 200px; background: #1e1e20; border-right: 1px solid rgba(255,255,255,0.12); box-sizing: border-box; position: relative; flex: none;">
+    <div style="position: absolute; left: 18px; top: 19px; display: flex; gap: 8px;">
+      <div style="width: 12px; height: 12px; border-radius: 6px; background: #ff5f57;"></div>
+      <div style="width: 12px; height: 12px; border-radius: 6px; background: #febc2e;"></div>
+      <div style="width: 12px; height: 12px; border-radius: 6px; background: #28c840;"></div>
+    </div>
+    <div style="position: absolute; right: 8px; top: 8px; display: flex; gap: 8px;">
+      <div class="glass" style="width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="1.6" stroke-linecap="round"><path d="M3 4.5h10M3 8h10M3 11.5h10"></path></svg>
+      </div>
+      <div class="glass" style="width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"></rect><path d="M6 3v10"></path></svg>
+      </div>
+    </div>
+    <div style="position: absolute; left: 10px; right: 10px; top: 64px; height: 36px; border-radius: 18px; background: rgba(255,255,255,0.08); display: flex; align-items: center; padding: 0 12px; box-sizing: border-box; gap: 6px; color: #adb2b8; font-size: 15px;">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#adb2b8" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+      <span>搜索</span>
+    </div>
+  </div>
+
+  <!-- 方案·深色：标题 rgba(255,255,255,.96)，副标题 rgb(138,138,138)，选中段 rgba(255,255,255,.08) -->
+  <div style="flex: 1; min-width: 0; position: relative;">
+    <div style="height: 52px; box-sizing: border-box; padding: 8px 8px 8px 16px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px;">
+        <span style="font-size: 15px; line-height: 17px; font-weight: 600; color: rgba(255,255,255,0.96); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">hi</span>
+        <span style="font-size: 11px; line-height: 13px; font-weight: 500; color: #8a8a8a; white-space: nowrap;">标准模式</span>
+      </div>
+
+      <div class="glass" style="height: 36px; border-radius: 18px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: row; align-items: center; gap: 0;">
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(255,255,255,0.08); display: flex; align-items: center; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.96);">对话</span>
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; display: flex; align-items: center; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.96);">轨迹</span>
+      </div>
+
+      <div class="glass" style="height: 36px; border-radius: 18px; padding: 0 10px; box-sizing: border-box; display: flex; flex-direction: row; align-items: center; gap: 5px; color: rgba(255,255,255,0.96);">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="3.5" r="1.8"></circle><circle cx="3.5" cy="12.5" r="1.8"></circle><circle cx="12.5" cy="12.5" r="1.8"></circle><path d="M7 5.2L4.4 10.8M9 5.2l2.6 5.6M5.3 12.5h5.4"></path></svg>
+        <span style="font-size: 13px; font-weight: 500;">2</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.8L5 6.3l2.5-2.5"></path></svg>
+      </div>
+
+      <div class="glass" style="width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="rgba(255,255,255,0.96)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v4a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9M8 2v8M5 7l3 3 3-3"></path></svg>
+      </div>
+    </div>
+
+    <div style="padding: 24px 100px 0 100px; display: flex; flex-direction: column; gap: 18px; font-size: 15px; color: #f9fafb;">
+      <div style="display: flex; justify-content: flex-end;">
+        <span style="background: rgba(103,158,254,0.18); border-radius: 18px; padding: 8px 16px; line-height: 20px;">hi</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; color: #adb2b8; font-size: 14px;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#adb2b8" stroke-width="1.4"><rect x="3" y="2" width="10" height="12" rx="1.5"></rect><path d="M6 6h4M6 9h4"></path></svg>
+        <span>上下文注入 · AGENTS.md</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
