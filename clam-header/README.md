@@ -1,5 +1,13 @@
 # clam-header
 
+> **⚠️ 2026-08-29 起已停用**，代码原样保留。实现出来的效果不满意，退回 dsh 自己的
+> web header：`surfclam/cordis.patch.yml` 里那两行被注释掉了，解开再重启 dsh 即恢复。
+> 它退休后 client 半边的折叠自动还原，窗口标题与工具栏那四格随之消失。
+>
+> **下面全文是现在时，说的是它在役时的样子。** 读的时候记住：这些行为眼下一条都不在
+> 生效，`clam.window.title` / `clam.layout.titlebarMetrics` 两条通道当前只有 clam-layout
+> 一端在场。
+
 把 dsh 主内容区顶上那条 web header 搬进原生：会话标识走窗口标题，动作走工具栏，
 网页那条就地折叠。插件退休页面自动还原。
 

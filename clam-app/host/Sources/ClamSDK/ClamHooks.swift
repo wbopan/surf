@@ -96,7 +96,11 @@ public final class ClamHooks {
         retained[hook] = backlog
     }
 
-    /// 诊断用：当前有主的 hook 及其主人（⌥⌘D 面板会列它）。
+    /// 诊断用：当前有主的 hook 及其主人。
+    ///
+    /// **眼下全仓零调用方**——⌥⌘D 面板还没有遍历它（那是审计 P1-11 的事）。
+    /// 留着是因为它是"我这个 hook 注册上了吗"唯一的可编程答案；调试插件时
+    /// 在自己的 `activate` 里打一行就能用。
     public var occupancy: [(hook: String, owner: String, version: Int, pending: Int)] {
         handlers.map { ($0.key, $0.value.owner, $0.value.version, retained[$0.key]?.count ?? 0) }
             .sorted { $0.0 < $1.0 }

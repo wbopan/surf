@@ -35,10 +35,17 @@ clam-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint �
   lib/index.js     node 半边（inject webServer）
   host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/
 clam-bridge/       唯一特权插件：Swift 载荷登记表 + /clam/bridge WS + 盯文件轮询
-                   子出口 `./plugin` = createSwiftPlugin 工厂
+                   子出口 `./plugin` = createSwiftPlugin 工厂（`CommandDeclaration`
+                   的权威文档也在那个文件里）、`./locale` = 语言决议小工具。
+                   **register() 一律 fails loud**：module 名非法（scoped 包名当 name）、
+                   swiftDir 不存在/空、重复登记，三种都当场抛而不是 warn
 clam-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
-                   （工具栏按钮全部来自贡献，连自家"新建会话"也是一条普通贡献；
-                   贡献带 region=sidebar|content 决定落在分隔线哪侧、align=leading|trailing
+                   （工具栏按钮全部来自贡献，本插件自己一颗都不放；**眼下整条工具栏
+                   只有 clam-sidebar 的「筛选」这一条**——clam-header 停用后它那四格
+                   也没了，⌘N「新建会话」是 commands 声明的菜单项而不是工具栏按钮。
+                   贡献的拓扑用 `ToolbarSpec`（clam-layout/swift/LayoutContracts.swift，
+                   契约的权威；汇总表在 docs/clam-contracts.md）：
+                   region=sidebar|content 决定落在分隔线哪侧、align=leading|trailing
                    决定夹在 flexibleSpace 哪边、spaced 决定要不要断开玻璃胶囊、
                    sizing=fixed|dynamic 决定要不要冻死宽度，全部缺省成老行为；
                    四条渲染路线由 kind 选：button / group / menu / view，另有一条
@@ -81,7 +88,11 @@ clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：clien
                    settings 缺席即不投影 = 原生侧维持系统外观，CSS 照常首帧生效
 tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 clam-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
-docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
+docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）。
+                   **两份契约文档**：clam-contracts.md（跨插件字符串约定的汇总表——
+                   commands / ToolbarSpec / 事件主题 / 保管箱键 / hook 名 / 页内桥；
+                   **权威始终在代码里**，这份只是索引）与 plugin-author-guide.md
+                   （写给仓库外的插件作者：三种骨架、命名规则、接进编排、外部热循环）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
 ```
 
@@ -108,7 +119,7 @@ profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。clam-a
 | 改什么 | 怎么生效 | 耗时 |
 |---|---|---|
 | **插件的 `swift/`** | 存盘即可。桥 500ms 轮询发现 → 壳重编 → 世代热替换 | **1~3s，不重启任何东西** |
-| 插件的 `lib/*.js`、`package.json`、增删插件 | **必须重启 dsh**（官方在 web bundle 下 disable 了 node 侧 HMR） | 秒级 |
+| 插件的 `lib/*.js`、`package.json`、增删插件 | **必须重启 dsh**（官方在 web bundle 下 disable 了 node 侧 HMR）。**菜单项/快捷键的 `commands` 声明也在这一行**——它住在 node 半边，而且不进 contentHash，所以单独改它连 snapshot 都不会推 | 秒级 |
 | `surfclam/cordis.patch.yml`（编排表） | 同上，**必须重启 dsh** | 秒级 |
 | `lib/client.js`（clam-nativeify / clam-layout） | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
 | **壳源码 `clam-app/host/`** | clam-app 盯着它：改了后台重建，窗口右上角提示「重启生效」，点一下就换代 | 重建 2s + 重启 |
@@ -423,14 +434,15 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   （一槽 N 条，`(owner, id)` 是身份，各家追加互不影响，给工具栏按钮这种
   "谁都可以来一条"的表面用）。贡献槽只收容器不收词汇——载荷就是视图工厂
   加一份 `metadata: [String: Any]`，键名由占槽的消费方自己定义并写在自己家里
-  （`toolbar` 槽的约定写在 `clam-layout/swift/LayoutSplitController.swift`
-  的槽约定注释里——**那份注释是这个槽唯一的文档**，加键要同步改它）。
+  （`toolbar` 槽的**权威是 `clam-layout/swift/LayoutContracts.swift` 的
+  `public struct ToolbarSpec`**——有类型的属性 + `metadata()`，贡献方按名字引，
+  拼错就编不过；加键改那个 struct，别再手写字面量字典。
+  消费方仍然读字典：SDK 容器中立不变。汇总表在 `docs/clam-contracts.md` §2）。
   窗口标识另有一条通道：`clam.window.title`（载荷 `title` / `subtitle`），
-  由 clam-layout 消费；空标题 = 交回给壳。它和 `titlebarMetrics` 一样
-  **只在变化时推**，所以配了一条 `clam.window.requestTitle` 给后到的订阅者
-  ——clam-layout 每次装工具栏都喊一嗓子，否则它一换代窗口就没标题了。
-  （**新写这类"状态型"消息一律用 `ClamEventBus.emitSticky`**，粘性总线会替新
-  订阅者补一份，不用再配一条 request 通道；上面两条早于它，留着不动。）
+  由 clam-layout 消费；空标题 = 交回给壳。它和 `titlebarMetrics` 一样是**状态型**
+  消息，走 `emitSticky`——粘性总线会替晚到的订阅者补一份。
+  （曾经各配过一条 `clam.window.requestTitle` / `clam.layout.requestTitlebarMetrics`
+  让后到者自己喊，P0 #4 一并删了。**新写这类消息一律 `emitSticky`，别再配 request 通道。**）
   拓扑键：`label` / `order` / `region` / `align` / `spaced` / `kind` /
   `symbol` / `items` / `priority` / `sizing`，**一变就重建整条工具栏**。
   会变的东西（徽标数字、菜单内容、段控选中态、显隐）不走 metadata，走活通道
@@ -460,11 +472,21 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
 - `clam-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
-  **菜单快捷键一律只 emit `menuCommand`**（词汇表在 `setupMenus()` 顶注——
-  那份注释是这套命令唯一的文档，加命令要同步改它）：newSession/openSettings
-  归 clam-layout，会话导航（⌘⇧[ ]、⌘1-9、⌘⌥A）与归档/重命名/聚焦搜索归
-  clam-sidebar（`SidebarShortcuts`，顺序真相 = `SidebarFilterState.orderedSessions`，
-  和列表画的是同一份）；没人应答就静默无事，插件缺席时快捷键优雅失效。
+  **壳里没有任何一条业务命令的名字**（曾经有整整一张会话菜单硬编码在四处）。
+  业务菜单项由插件的 node 半边声明——`createSwiftPlugin({ commands: [...] })`，
+  **形状的权威是 `clam-bridge/lib/plugin.js` 的 `CommandDeclaration` typedef**
+  （汇总在 docs/clam-contracts.md §1），经桥 snapshot 到壳。一份声明喂四样东西：
+  菜单项、默认键位、⌘/ 面板、clam-app 现拼的 `clam-shortcuts` 设置 schema。
+  `setupMenus()` 因此拆成**系统惯例段（硬编码：⌘W/⌘Q/编辑菜单/⌘R/缩放/⌥⌘D/⌘⇧R/⌘/）
+  + 贡献遍历段**；顶注讲的是这两段怎么拼，不再是命令词汇表。
+  按下去只 `emit(menuCommand, ["command": id, …])`，谁声明谁应答：
+  newSession/openSettings/stopGenerating 归 clam-layout（openSettings 由
+  clam-settings 也声明一次，先登记的赢），会话导航（⌘⇧[ ]、⌘1-9、⌘⌥A）与
+  归档/重命名/聚焦搜索归 clam-sidebar（`SidebarShortcuts`，顺序真相 =
+  `SidebarFilterState.orderedSessions`，和列表画的是同一份）；没人应答就静默无事。
+  **插件缺席时那条菜单项根本不出现**（不是灰着）——它连声明都没到过。
+  九个 `@objc` 业务 selector 收成了一个 `runCommand(_:)`，命令名挂在
+  `representedObject`：命令名是插件给的字符串，壳编译期一个都不认得。
   缩放（⌘±，`pageZoom` + UserDefaults）与 ⌘/ 快捷键面板是壳本地动作，不走 emit。
   Esc 停止生成在 clam-layout 的 **client 半边**（走停止按钮同款的
   scoped `conversation.cancel()` 服务路径，不点 DOM；dsh 页面自己不绑 Esc）。
@@ -475,6 +497,11 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   module 名/退休 image 数/最近构建播报，可拷贝）。查"我现在跑的到底是哪份代码"用它。
 - 插件门控：UA 含 `Clam/`（带斜杠，防普通子串误命中）且 URL 带 `?clam-native-sidebar=1`；
   终端 `dsh web`/普通浏览器不受影响。
+  **那个参数名壳不认得**：壳只订粘性主题 `clam.web.query`（载荷 `[参数名: 值]`），
+  按载荷拼 URL、不一致才 reload；定义权在占 `root` 槽的插件手里
+  （clam-layout 的 `LayoutPlugin.webQueryTopic` / `nativeSidebarParam`）。
+  壳侧还记着上次那份（UserDefaults `clam.webQuery`）——页面必须在插件编译完成之前
+  就开始加载，那一刻还没有任何插件说过话。
 
 ### 世代替换的三条硬事实（M2 实测，见 docs/native-abi.md）
 

@@ -254,3 +254,136 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   折进 tableHash，那是 Wave 2 动 `clam-bridge/lib/index.js` 时更顺手的事）；
   ⑤ 冷启动那一瞬间菜单只有系统惯例项，声明到齐（毫秒级）才补上业务项——
   声明住在 node 半边就必然如此。
+
+- **2026-08-29 · Wave 2 · C（P0 #2：外部包 fail-loud + P0 #4 前半：删 request 通道）**
+
+  **桥的 `register()` 从"尽量兼容"改成"当场抛"**，三条：module 名不合法
+  （`moduleName()` 的结果过不了 `/^[A-Za-z_][A-Za-z0-9_]*$/`，典型是拿 scoped
+  包名当 `name`）、`swiftDir` 不是目录、`swiftDir` 里一个 `.swift` 都没有；
+  重复登记从 `warn + 后者覆盖前者` 改成抛。判据统一：这三种错的失败模式全是
+  "dsh 照常起、HTTP 200、终端一片祥和，只是那个插件的原生半边静默不存在"，
+  而登记是启动时发生一次的事——抛出去 cordis 会连插件名一起顶到作者脸上，
+  这是唯一能当场看见的时机。错误文案各自带补法。
+
+  **A 留的遗留 ④ 一并收掉**：`rescan` 里算**表** hash 的那一段从 `dirty` 分支里
+  提了出来（每轮都算），并把各家的 `commands` 摘要折了进去。contentHash 那段
+  仍然只在源码签名变化时重算，**`commands` 也仍然不进 contentHash**——改一句
+  菜单文案不该让 Swift 重编。实测（临时脚本，两条）：登记 → 撤销 → 换一份
+  commands 再登记，版本 v1→v2→v3 三次都推了，而 `clam-probe@005d40d3` 的
+  contentHash 两次逐字相同。**顺带修了一个没人报过的洞**：旧代码里
+  `dispose()` 走的 `rescan` 因为 `if (!dirty) return false` 直接早退，
+  **插件退场根本不 bump 版本**，壳那边的菜单/世代表停在上一版。
+
+  `clam-bridge/package.json` 的 exports 加 `"./locale": "./lib/locale.js"`
+  （clam-app / clam-notify 的相对路径 import 不动——那是本仓库内的既定做法，
+  这次只是把出口补上，外部包不必再穿包内路径）。
+
+  `surfclam/bin/surfclam.js` 的 `ensureXcodegen` 两种模式都跑：签名改成
+  `(local, repoRoot)`，落点由调用方给——link 模式 `<repo>/clam-app/host/tools/xcodegen`
+  （行为一个字没变），registry 模式 `<profile>/node_modules/<clam-app 包名>/host/tools/xcodegen`
+  （**在 `installInto` 之后算**，那时包才在位；包名从伞包 dependencies 里按目录名
+  `clam-app` 找，不写死）。取件顺序在 registry 模式下只剩 PATH——npx 缓存里的伞包
+  既不是 git 仓库也没有兄弟 worktree。两处都没有就打印 `brew install xcodegen`
+  并继续（不 fail）。验证：`node -e` 确认那条路径在真实 profile 里指向的正是
+  clam-app 自己 spawn 的那个文件（`HOST_DIR = ../host/`，经 node_modules 符号链接
+  落到同一个 realpath）；`--install-only` 跑通，link 模式行为不变。
+
+  **request 通道删干净**：`clam.window.requestTitle` 与
+  `clam.layout.requestTitlebarMetrics` 两条常量、clam-layout 对后者的订阅、
+  clam-header 对前者的订阅（`HeaderToolbar.start()`）与对后者的发送
+  （`HeaderPlugin` activate 里那句 `emit`）全部删除；两条正向通道
+  （`clam.window.title` 在 `HeaderToolbar.emitWindow`、`titlebarMetrics` 在
+  `LayoutSplitController.publishTitlebarMetrics`）改 `emitSticky`，
+  `publishTitlebarMetrics(force:)` 的 `force` 参数随之删掉（它只有请求那一条
+  调用方）。语义等价的判据：request 通道存在的**唯一**理由就是"只在变化时推 +
+  晚到的订阅者"，而 `subscribe` 对粘性主题会同步回调最后一份——正是同一件事，
+  且不再需要请求方记得喊。计划里提到的"每次装工具栏喊一嗓子"的调用点**本来就
+  不存在**（`windowTitleRequestTopic` 全仓库只有一个订阅者、零个发送者，
+  CLAUDE.md 那句描述是过时的，已告知 D）。`bridge.app` 原样未动。
+
+  验证：`node --check` 两个改过的 JS 全绿；`node --test clam-sidebar/test/*.test.js`
+  18/18；离线 typecheck `ClamLayout` `-emit-module` 通过，`ClamHeader` /
+  `ClamSidebar` `-typecheck` 通过（sidebar 仍只有 `SidebarFilter.swift:79`
+  那条先于本次存在的 actor 警告）；`register()` 的三条 fail-loud 各写了最小
+  node 脚本，六种坏输入全部如期抛、合法登记照常通过。
+
+  遗留：① 没跑 `./dev` 的整合验收（归 Wave 3）——特别是"header 已停用但必须能
+  编译"只验到 typecheck 这一级；② **粘性标识有一个窄口子**：clam-header 退休时
+  不推空标识，所以总线上会留着它最后那份 title；此后若 clam-layout 换代，
+  新一代会从总线捡回这个属于过气插件的标题（旧代码那时是空标题）。没在
+  `dispose` 里补一句"还回标识"是因为热替换的顺序是**新的先启、旧的后清**，
+  那句话会把新一代刚摆好的标题擦掉——要修得带世代号判据，不是一行的事，
+  而 header 眼下在编排表里是注释掉的；③ `rescan` 每轮多算一次 `topological()`
+  加一次 sha256（5 条记录、500ms 一轮，可忽略），若将来登记表变大再谈缓存。
+
+- **2026-08-29 · Wave 2 · D（P0 #6：文档）**
+
+  两份新文档，**分工按"谁在读"切**而不是按主题切：
+
+  - `docs/plugin-author-guide.md` —— 写给**仓库外**的插件作者。三种最小骨架
+    （纯 node / 带 Swift / 带 client，`package.json` + `index.js` + `FooPlugin.swift`
+    都能直接抄）、`name` → module 名规则与三条 fail-loud、包名 import
+    （`@wenbo/clam-bridge/plugin`）vs 本仓库的相对路径、peerDependencies 纪律、
+    profile patch insert 一行、`dsh plugin add link:` 的外部热循环（桥轮询的是
+    登记进来的绝对路径，**不必 clone 本仓库**）、Swift 半边的五条硬规矩
+    （`activate` 返回值是持有链的根 / 保管箱只放系统类型 / 清理按进程收口 /
+    不 `@objc` / 跨界只用 SDK 与系统类型）、六条配方（命令、工具栏贡献、占槽、
+    只读别人的设置 ns、可选依赖、`ctx.provide` 中性服务名）、一张**症状 → 原因表**、
+    一节"已知边界"（ABI 空承诺、metadata 零校验、无错误边界、侧边栏没贡献槽）。
+  - `docs/clam-contracts.md` —— 契约总表。每一节都标着"权威在哪"，
+    **权威永远是代码**（那里写着"为什么"和"失败长什么样"），这份只是索引，
+    回答"我要接一条新的，现有的都有哪些"这类横向问题。含 `commands` 字段表 +
+    当前在册的十一条声明、`ToolbarSpec` 12 键 + 四条渲染路线 + `clam.toolbar.update`
+    的 patch 键表 + 三条回程主题、替换槽（`root`/`sidebar`）、事件主题总表
+    （每条标粘性/发布方/订阅方，含 `clam.web.query`；死通道单列，
+    `clam.activateWindow` 注了"P1 删"）、页内桥 `clam.page.*` 表、
+    `ClamObjects` 键表（SDK 四个 + 各插件私有的跨代锚）、hook 名表、
+    `ClamBridge` 与 `ClamStore`、末尾一张"我想…… → 用什么"速查。
+
+  **源码注释只做了"指向"，没有搬走任何权威定义**：`CommandDeclaration`
+  （plugin.js）、`ToolbarSpec`（LayoutContracts.swift）、`ToolbarItemState`
+  （ToolbarContribution.swift）、hook 表（SystemDelegateRelay.swift 顶注）
+  一个字没动，是文档去指它们。
+
+  修过时项（审计 §5.4 逐项）：根 `README.md`（macOS 26+ → 27+ 并注明部署目标出处；
+  仓库结构补 `surfclam/` `clam-notify/` `clam-settings/` `clam-header/` `tools/`；
+  加一节指向两份新文档）；`clam-app/README.md`（"通知线已丢弃"改成事实——
+  它以 clam-notify 的形态落地了，壳里只剩不认识通知语义的中转站；目录职责表补
+  `GenerationLedger` / `WebPolicy` / `SystemDelegateRelay` 并给后两者各写一段
+  "不设它会静默失效什么"；SDK 行补四张表；配置表 3 键 → 6 键；新增
+  "它还注册一个设置 ns" 一节讲 `clam-shortcuts` 的动态 schema 与注册时序）；
+  `clam-bridge/README.md`（帧表补 `app-build` / `app-restart` 并写明"绝不补发"的
+  理由；新增"包的出口"表点出 `./plugin` 与 `./locale`；样例补
+  `sharedModules` / `schemaVersion` / `Config` / `commands`；新增
+  "`register()` 一律 fails loud" 表）；`clam-layout/README.md`
+  （metadata 一节重写成"拓扑 `ToolbarSpec` / 流量 `clam.toolbar.update`"两小节，
+  指向 `LayoutContracts.swift`；末尾"新建会话不在工具栏上"补上现状——
+  整条工具栏眼下只有「筛选」一条，⌘N 走 commands 声明）；
+  `clam-header/README.md` 顶部加停用提示块（并说明"下文全是现在时"）；
+  `clam-settings/README.md` 与 `lib/index.js` 顶注的 DSHKit 措辞改成事实
+  （随 M10 退役，眼下唯一共享 module 是 ClamSDK）；`ClamHooks.swift:99`
+  那句"⌥⌘D 面板会列它"改成"眼下全仓零调用方，遍历它是 P1-11 的事"
+  （**只动注释**）。
+
+  `CLAUDE.md`：clam-layout 那段的"连自家新建会话也是一条普通贡献"改成事实并指向
+  `ToolbarSpec`；clam-bridge 那行补 `./locale` 与三条 fail-loud；`docs/` 那行加两份
+  新文档；`MainWindowController` 那段的快捷键描述整段重写（词汇表不再在
+  `setupMenus()` 顶注里，声明在插件的 `commands`、权威在 `CommandDeclaration`；
+  顶注现在讲的是"系统惯例段 + 贡献遍历段"怎么拼；九个 `@objc` 收成
+  `runCommand(_:)`）；插件门控那条补上"参数名壳不认得，走 `clam.web.query`"；
+  SDK 那段的 `clam.window.requestTitle` 描述按 C 落地后的事实改写
+  （改 `emitSticky`、两条 request 通道已删）；开发循环表那一行补一句
+  "`commands` 声明也在这一行，且不进 contentHash"。
+
+  验证：`node --check clam-settings/lib/index.js` 通过（唯一动过的 JS，只改注释）；
+  `ClamHooks.swift` 只改文档注释，`.swiftinterface` 不含 doc comment，
+  不触发插件全量重编；两份新文档里的每个常量名、字段名、文件路径都回源码核对过
+  （`LayoutPlugin` / `LayoutSplitController` 是 internal，文档里标了"外部照抄字符串"，
+  没有把它们写成可 import 的公开常量）。
+
+  遗留：① **CLAUDE.md 里那四处 "macOS 26" 没动**——它们是"在 macOS 26 上实测到
+  X"的事实陈述（`screencapture -l` 废了、LaunchServices 按路径去重、scroll edge
+  effect、`NSSearchField` 内部结构），不是版本要求；审计表里那条 `macOS 26+`
+  说的是根 `README.md:28` 的前置条件，已改。② 审计 §5.4 那张过时表**原样保留**
+  （它记录的是审计当时的事实），只在 §7 执行日志里说明这些项已修。
+  ③ 两份新文档没有做"每个链接都点一遍"的校验，只核了相对路径存在。

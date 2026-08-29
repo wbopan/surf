@@ -139,7 +139,12 @@ macOS 27 起可以显式指定——`.pickerStyle(.tabs)` 是浅色凸起的标�
 
 `/api/*` 那套 wire 是给远程浏览器准备的窄面，host 服务面更宽。我们本来就在 dsh
 进程里，没理由从窄的那头进；附带好处是进程内事件（`settings/document-updated`、
-`llm/adapters-updated`）直接可订，不必再开一条 SSE，Swift 侧连 DSHKit 都不需要。
+`llm/adapters-updated`）直接可订，不必再开一条 SSE，桥上只走 JSON，
+Swift 那半不需要任何 dsh 的数据类型。
+
+（这也是全仓的既定做法：曾经承载 dsh wire 模型的共享 module `DSHKit`
+**随 M10 整体退役**，数据面全部搬进各插件的 node 半边。眼下唯一的共享 module 是
+`ClamSDK`。）
 
 ## 缺席时会发生什么（这是设计好的，不是意外）
 

@@ -25,7 +25,8 @@ bootstrapper——壳的源码、构建、拉起全都收进一个插件（`clam
 
 ## 跑起来
 
-前置：macOS 26+、完整 Xcode（`xcodebuild` 需要它，Command Line Tools 不够）、
+前置：macOS 27+（部署目标钉在 `27.0`，见 `clam-app/host/project.yml`）、
+完整 Xcode（`xcodebuild` 需要它，Command Line Tools 不够）、
 Node `^22.19.0 || >=24.0.0`。
 
 ```bash
@@ -66,17 +67,32 @@ npx @wenbo/surfclam
 ## 仓库里都有什么
 
 ```
+surfclam/          伞 bundle @wenbo/surfclam：**本仓库唯一的编排表**（cordis.patch.yml
+                   决定装哪些插件、什么顺序、什么配置），外加安装器/启动器 bin/surfclam.js
 clam-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App + 盯壳源码
   host/            Xcode 工程（project.yml / Sources/ / scripts/ / tools/）
 clam-bridge/       唯一的特权插件：Swift 载荷登记表 + /clam/bridge WS + 盯 swift/ 目录
-clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、工具栏；
+clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、开放的 toolbar 贡献槽；
                    client 半边装 window.__clam 动作桥 + 收起 web 侧边栏
 clam-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边
                    （订 dsh 的内部 API，投影经桥推给 Swift；Swift 只管画）
+clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。同时是「有什么在等着你」
+                   的唯一真相，经 clamPending 服务供给侧边栏那枚「待处理」胶囊
+clam-settings/     原生设置窗口：不占槽、自己一扇窗，编排照抄 dsh 的 Web 设置对话框
+clam-header/       原生会话 header（标识走 window.title/subtitle + 四格工具栏贡献）。
+                   **2026-08-29 起在编排表里注释停用**，代码原样保留
 clam-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS（有 HMR），
                    另有一个薄 Swift 载荷让原生侧跟随 dsh 的 ui-theme
-docs/              迁移计划、ABI 实测结论、可复跑的 spike
+tools/             跨包的开发工具（shot.sh 截图）。只服务一个插件的工具归那个插件
+docs/              计划、ABI 实测结论、可复跑的 spike，以及下面这两份契约文档
 ```
+
+写插件从这两份开始（外部作者不必读本仓库源码）：
+
+- [`docs/plugin-author-guide.md`](docs/plugin-author-guide.md) —— 三种最小骨架、
+  package.json 字段、命名规则、接进编排、外部热循环、五条硬规矩、失败症状表。
+- [`docs/clam-contracts.md`](docs/clam-contracts.md) —— 契约总表：命令声明、
+  toolbar 的 `ToolbarSpec` 与活通道、事件主题、保管箱键、hook 名、页内桥。
 
 一个"带 Swift 载荷的插件"长这样——node 半边通常只有几行：
 

@@ -435,3 +435,35 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 - `clam-settings/README.md:152-154` —— cordis fork 的 `inject` 无可选形态，嵌套 inject 是唯一表达方式
 - `clam-notify/README.md:150-160 / 169-177 / 216-217` —— `ClamHooks` 外推、生命周期锚、裸 `invoke` 帧验插件
 - `clam-sidebar/README.md:29-41` —— 跨代保管箱只放系统类型
+
+---
+
+## §7 执行日志
+
+本文只审计不改代码；改动按 [`docs/p0-decoupling-plan.md`](p0-decoupling-plan.md) 分波执行，
+那份计划的 §3 有逐项的做法、验证与遗留。这里只记落地位置。
+
+**正文里所有 `文件:行` 仍然是审计当时（main `3c6d3ec`）的位置**，下面这些项落地后
+已经对不上了——读到具体行号时先按符号名搜一次。
+
+| # | 事 | commit |
+|---|---|---|
+| 1 | 命令 / 快捷键改成运行时聚合的注册表（§2.1） | `92c001e` |
+| 3 | `sidebar` 门控改粘性事件 `clam.web.query`（§2.2） | `92c001e` |
+| 5 | toolbar metadata 代码化 —— `ToolbarSpec` + `LayoutSlots`（§3.2 #8） | `5a1a556` |
+| 2 | 让外部包跑得起来 —— 桥 `register()` fail-loud、`./locale` 出口、registry 模式的 xcodegen 兜底（§5.2） | `4f65279` |
+| 4 | 删两条 request 通道、正向通道改 `emitSticky`（§3.2 #3） | `4f65279` |
+| 6 | 文档 —— 新建 `plugin-author-guide.md` / `clam-contracts.md`，修 §5.4 那张过时表 | 本波提交 |
+
+`#4` 里的"降级 `bridge.app`"**没做**：审计判它可接受（clam-app 是壳的 node 半身），
+计划里明确保留不动。
+
+**§5.4 那张过时表的每一项都已修**（表本身原样保留，它记录的是审计当时的事实）：
+根 `README.md` 的 macOS 版本与仓库结构、`clam-app/README.md` 的通知线措辞/目录职责表/
+配置表、`clam-bridge/README.md` 的帧表与样例、`clam-layout/README.md` 的 metadata 一节、
+`clam-header/README.md` 顶部的停用提示、clam-settings 两处的 DSHKit 措辞、
+`ClamHooks.swift:99` 那句假话、CLAUDE.md 的四处。
+
+P1 / P2 尚未开工。`clam.activateWindow`、`Key.conversationSurface`、`Key.settingsOwner`
+仍在 SDK 里（P1-9 要与下一次必须动 SDK 的改动合并做）；`ClamHooks.occupancy`
+仍是零调用方（P1-11）。

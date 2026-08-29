@@ -45,22 +45,51 @@ WKWebView 实例归**壳**，放在保管箱（`ClamObjects.Key.webView`）里�
 会话展示面。壳喊话，有能力的插件干活。
 
 工具栏上的按钮**全部来自 `toolbar` 贡献槽**，本插件自己一颗都不放。
-完整约定写在 `swift/LayoutSplitController.swift` 底部那段注释里，摘要：
 
-| metadata | 拿到什么 | 什么时候用 |
-|---|---|---|
-| `label` | 标题 + 无障碍名 | 必填 |
-| `symbol` | `NSToolbarItem` + `isBordered`，玻璃观感白送 | 有 SF Symbol 就给 |
-| `menu` | `NSMenuToolbarItem` + 系统菜单（勾选态、键盘、溢出全白送） | 点开是一串开关 |
-| `event` | 点击广播的主题名（缺省 `clam.toolbar.activate`） | 走 `symbol` 那条时 |
+### 拓扑：`ToolbarSpec`
+
+**权威是 `swift/LayoutContracts.swift` 的 `public struct ToolbarSpec`**（12 个键各一个
+有类型的属性 + `metadata()`），贡献方按名字引，拼错就编不过：
+
+```swift
+host.contribute(to: LayoutToolbar.slot, id: "filter", order: -100,
+                metadata: ToolbarSpec(label: "筛选",
+                                      symbol: "line.3.horizontal.decrease",
+                                      menu: buildMenu).metadata()) { AnyView(EmptyView()) }
+```
+
+消费方（`ToolbarContribution.swift`）**仍然读字典**——SDK 的贡献槽只收容器不收词汇，
+把 `ToolbarSpec` 冻进 ABI 等于把"工具栏长什么样"钉死在预编译的壳里。
+`ToolbarSpec` 给的是**生产端**的类型安全，不是新的传输格式。
+
+键的清单与四条渲染路线（`button` / `group` / `menu` / `view`）见 `ToolbarSpec` 的文档
+注释，汇总表在 `docs/clam-contracts.md` §2。
 
 `menu` 的类型必须是 `@convention(block) (NSMenu) -> Void`：它要装在 `[String: Any]` 里
 穿过 dylib 边界，ObjC block 是个货真价实的对象，装箱取箱都稳；裸 Swift 闭包的函数类型
 元数据跨 image 取回来是碰运气。菜单**每次弹出前重建**（`ContributionMenuDelegate`），
 所以 block 里读什么状态都是当场的，勾选态不会停在上次打开时的样子。
 
-槽名与默认主题从 `public enum LayoutToolbar` 引（`LayoutSplitController` 自己是
-internal，它是实现细节）。
+### 流量：`clam.toolbar.update`
 
-**「新建会话」不在工具栏上**：那一格让给了 clam-sidebar 的「筛选」。
-`LayoutPlugin.newSessionTopic` 这条主题仍然在——⌘N 与第三方按钮都 emit 它。
+`ToolbarSpec` 的每个字段**一变就重建整条工具栏**。徽标数字、菜单内容、段控选中态、
+显隐是**流量**，一秒能变好几次——走 metadata 等于每次把工具栏拆了重装（按钮会闪、
+popover 会掉）。它们走活通道：
+
+```swift
+host.events.emit(LayoutToolbar.updateTopic,
+                 ["owner": host.plugin, "id": "filter", "badge": 3])
+```
+
+消费方把 patch 记进 `ToolbarItemState`（跟着 `(owner, id)` 记账而不是跟着项）**并**
+就地改活着的那一项——记账是必须的，项会因为换代/重建而重造。载荷键见
+`ToolbarContribution.swift` 的 `ToolbarItemState`。
+
+槽名、活通道与回程主题（`activate` / `menuSelect` / `menuOpen`）都从
+`public enum LayoutToolbar` 引；`LayoutSplitController` 自己是 internal 的实现细节。
+槽名 `sidebar` 从 `public enum LayoutSlots` 引。
+
+**「新建会话」不在工具栏上**：那一格让给了 clam-sidebar 的「筛选」，眼下整条工具栏
+只有这一条贡献（clam-header 停用后它那四格也没了）。⌘N 走的是 clam-layout 自己的
+`commands` 声明 → 壳 emit `menuCommand` → 本插件应答；`LayoutPlugin.newSessionTopic`
+这条主题仍然在，留给第三方按钮。

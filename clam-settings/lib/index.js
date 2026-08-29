@@ -3,7 +3,8 @@
  *
  * node 半边登记 Swift 载荷，并在 dsh 进程里**直接消费 host 服务**：
  * `ctx.settings.describe()` 出快照往下推，`mutate` 的单字段 op 往上收。
- * 桥上只走 JSON，Swift 那半连 DSHKit 都不需要。
+ * 桥上只走 JSON，Swift 那半不需要任何 dsh 的数据类型（承载 wire 模型的共享 module
+ * `DSHKit` 随 M10 退役，眼下唯一的共享 module 是 ClamSDK）。
  *
  * **`settings` 是硬 inject，有意为之**（计划 §3.1）：服务不在就整个插件不挂载，
  * 于是 Swift 半边不会去占 `settingsOwner`，⌘, 干净地回落到 dsh 自己的页内 modal
