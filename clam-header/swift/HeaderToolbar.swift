@@ -60,19 +60,10 @@ final class HeaderToolbarSync {
     /// 不构成循环：handle → disposable → sync，sync 不持有 handle。
     func start() -> ClamDisposable {
         arm()
-        // 布局那边换代重装工具栏时会喊一声要标识。**必须把去重账擦掉再推**，
-        // 否则摘要一样就被当成"没变化"给吞了——而窗口那头其实已经空了。
-        let request = host.events.subscribe(LayoutToolbar.windowTitleRequestTopic) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.stopped else { return }
-                self.sent["__window"] = nil
-                self.pushWindowIdentity(self.model.strings)
-            }
-        }
-        return ClamDisposable {
-            self.stopped = true
-            request.dispose()
-        }
+        // 布局换代重装工具栏时不用我们再推一遍：标识走**粘性**主题
+        // （`emitWindow` 用 `emitSticky`），新一代一订上总线就先收到最后一份。
+        // 所以这里也不必为它擦去重账——那笔账与"窗口上此刻是什么"始终一致。
+        return ClamDisposable { self.stopped = true }
     }
 
     /// 读一遍 model 并推 patch，同时重新武装观察。
@@ -324,11 +315,15 @@ final class HeaderToolbarSync {
     // MARK: - 发
 
     /// 窗口标识。和 patch 走同一套去重账本（键用一个不可能撞的贡献 id）。
+    ///
+    /// **粘性**：标识是状态不是瞬间，而消费方（clam-layout 的分栏控制器）每换
+    /// 一代都会重订一次。粘性总线替它补最后一份，去重账因此可以一直留着——
+    /// 不粘的话就得在这里配一条"现在报一次"的反向通道，还得记得先擦账。
     private func emitWindow(title: String, subtitle: String) {
         let payload: [String: Any] = ["title": title, "subtitle": subtitle]
         guard let digest = Self.digest(payload), digest != sent["__window"] else { return }
         sent["__window"] = digest
-        host.events.emit(LayoutToolbar.windowTitleTopic, payload)
+        host.events.emitSticky(LayoutToolbar.windowTitleTopic, payload)
     }
 
     /// 一条 patch。摘要一样就不发。

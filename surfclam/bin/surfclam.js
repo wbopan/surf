@@ -41,10 +41,16 @@ const UMBRELLA_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const UMBRELLA = "@wenbo/surfclam";
 
 /**
- * xcodegen 二进制在仓库里的位置（相对仓库根）。clam-app/lib/index.js 与
+ * xcodegen 二进制在 **clam-app 包内**的位置。clam-app/lib/index.js 与
  * `clam-app/host/scripts/{dev,build}.sh` 都写死这条路径，改它要三处一起改。
+ *
+ * 分成两个常量是因为两种模式的落点不同、而包内那一段是同一段：link 模式下
+ * clam-app 是仓库里的一个目录，registry 模式下它是装进 profile 的一个 npm 包。
  */
-const XCODEGEN_REL = "clam-app/host/tools/xcodegen";
+const XCODEGEN_IN_PACKAGE = "host/tools/xcodegen";
+
+/** link 模式的落点（相对仓库根）。 */
+const XCODEGEN_REL = `clam-app/${XCODEGEN_IN_PACKAGE}`;
 
 /** 必须在 bundles 里、且必须排在最前的三层 patch。dsh 自带的两个不用装。 */
 const REQUIRED_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", UMBRELLA];
@@ -66,9 +72,16 @@ function main() {
 
 	if (repoRoot !== undefined) {
 		ensureModuleResolution(repoRoot);
-		ensureXcodegen(repoRoot);
+		ensureXcodegen(join(repoRoot, XCODEGEN_REL), repoRoot);
 	}
 	installInto(profile, repoRoot, pluginNames);
+	// registry 模式的落点**要等装完才存在**：那时 clam-app 才是 profile 里的一个
+	// 真实目录。缺了它的症状和 link 模式一模一样（dsh 起、HTTP 200、壳静默缺席），
+	// 所以两种模式都得补——只是取件处少一条（npx 缓存里没有兄弟 worktree）。
+	if (repoRoot === undefined) {
+		const target = installedXcodegenPath(profile, pluginNames);
+		if (target !== undefined) ensureXcodegen(target, undefined);
+	}
 	fixBundles(profile, pluginNames);
 
 	if (opts.installOnly) {
@@ -220,11 +233,12 @@ function ensureModuleResolution(repoRoot) {
 }
 
 /**
- * 保证本 worktree 有 `clam-app/host/tools/xcodegen`。
+ * 保证 clam-app 边上有 `host/tools/xcodegen`。
  *
  * 那个二进制**被 .gitignore 挡在库外**（二进制不该入库，规则本身是对的），
- * 于是任何新克隆 / 新 worktree 里它都不存在，而 clam-app 和两个构建脚本都直接
- * spawn 它。失败模式极不友好：dsh 照常起、HTTP 200，只是壳静默缺席
+ * 也**不在 npm 包里**（`files` 白名单收的是源码），于是任何新克隆 / 新 worktree /
+ * 新装的 profile 里它都不存在，而 clam-app 和两个构建脚本都直接 spawn 它。
+ * 失败模式极不友好：dsh 照常起、HTTP 200，只是壳静默缺席
  * （`spawn …/tools/xcodegen ENOENT` 埋在构建日志里），而 CLAUDE.md 承诺的是
  * "在任意 worktree 里跑 ./dev 即可"。所以这里和上面那条 node_modules 链接一样，
  * 属于"把机器本地状态补齐"的兜底。
@@ -236,14 +250,16 @@ function ensureModuleResolution(repoRoot) {
  *
  * 找不到时**只警告不中止**：没装 Xcode 的机器本来就该优雅缺席，
  * 为了一个可选的壳把 dsh 拦下来是本末倒置。
+ *
+ * @param local - 落点全路径（link 模式在仓库里，registry 模式在 profile 的包目录里）。
+ * @param repoRoot - 仓库根；undefined（registry 模式）时只问 PATH。
  */
-function ensureXcodegen(repoRoot) {
-	const local = join(repoRoot, XCODEGEN_REL);
+function ensureXcodegen(local, repoRoot) {
 	if (existsSync(local)) return;
 
 	const source = findXcodegen(repoRoot);
 	if (source === undefined) {
-		say(`⚠ 缺 ${XCODEGEN_REL}——壳构建会失败，clam-app 优雅缺席（只有浏览器，没有 App）。`);
+		say(`⚠ 缺 ${local}——壳构建会失败，clam-app 优雅缺席（只有浏览器，没有 App）。`);
 		say(`  补法（二选一，然后重跑本命令）：`);
 		say(`    brew install xcodegen`);
 		say(`    从 https://github.com/yonaskolb/XcodeGen/releases 下载 xcodegen.zip，`);
@@ -254,11 +270,31 @@ function ensureXcodegen(repoRoot) {
 	mkdirSync(dirname(local), { recursive: true });
 	copyFileSync(source, local);
 	chmodSync(local, 0o755);
-	say(`已补上 ${XCODEGEN_REL} ← ${source}`);
+	say(`已补上 ${local} ← ${source}`);
 }
 
-/** 先问同仓库的其它 worktree，再问 PATH。都没有就 undefined。 */
+/**
+ * registry 模式下 xcodegen 该落在哪：装进 profile 的那个 clam-app 包目录里。
+ *
+ * **不写死包名**——伞包的 dependencies 就是编排表的成员名单，从那里找
+ * 目录名为 `clam-app` 的那个。编排表里没有 clam-app（有人只要 Web 那半边）
+ * 或者它没装成，就返回 undefined：没有壳的话本来就不需要 xcodegen。
+ */
+function installedXcodegenPath(profile, pluginNames) {
+	const appPackage = pluginNames.find((name) => dirOf(name) === "clam-app");
+	if (appPackage === undefined) return undefined;
+	const packageDir = join(profileDir(profile), "node_modules", appPackage);
+	if (!existsSync(packageDir)) return undefined;
+	return join(packageDir, XCODEGEN_IN_PACKAGE);
+}
+
+/**
+ * 先问同仓库的其它 worktree，再问 PATH。都没有就 undefined。
+ * `repoRoot` 缺席（registry 模式）时只有 PATH 那一条路——npx 缓存里的伞包
+ * 既不是 git 仓库、也没有兄弟 worktree 可抄。
+ */
 function findXcodegen(repoRoot) {
+	if (repoRoot === undefined) return whichXcodegen();
 	for (const dir of otherWorktrees(repoRoot)) {
 		const candidate = join(dir, XCODEGEN_REL);
 		if (existsSync(candidate)) return candidate;

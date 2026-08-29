@@ -7,6 +7,7 @@
 	"exports": {
 		".": "./lib/index.js",
 		"./plugin": "./lib/plugin.js",
+		"./locale": "./lib/locale.js",
 		"./package.json": "./package.json"
 	},
 	"files": [

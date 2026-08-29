@@ -120,10 +120,12 @@ final class LayoutSplitController: NSSplitViewController {
 
     /// 量一次 `contentLayoutGuide`，变了才广播。
     ///
-    /// `force` 是给**后到的订阅者**用的：厚度只在变化时才发，晚一步上线的插件
-    /// 等不来第二次（和"node 半边不给新世代补发投影"是同一条纪律——补发归
-    /// 请求方）。它自己喊一声 `clam.layout.requestTitlebarMetrics` 就能要到。
-    func publishTitlebarMetrics(force: Bool = false) {
+    /// **粘性广播**（`emitSticky`）：厚度是**状态**而不是瞬间，而订阅它的插件是
+    /// 运行时装载的，必然可能晚于最后一次变化上线——不粘的话它就得一直等下一次
+    /// 用户改显示模式，症状是"正文被工具栏盖住直到你右键换一次图标样式"。
+    /// 粘性总线替新订阅者补发最后一份，所以这里既不需要"请求重发"的反向通道，
+    /// 也不需要 `force` 参数。
+    func publishTitlebarMetrics() {
         guard let window = view.window,
               let layoutGuide = window.contentLayoutGuide as? NSLayoutGuide,
               let contentView = window.contentView else { return }
@@ -132,9 +134,9 @@ final class LayoutSplitController: NSSplitViewController {
         // `contentView.maxY - guide.maxY`。写成 `guide.minY` 会恒等于 0。
         let inset = contentView.bounds.maxY - layoutGuide.frame.maxY
         guard inset.isFinite, inset > 0 else { return }
-        guard force || abs(inset - lastTitlebarInset) > 0.5 else { return }
+        guard abs(inset - lastTitlebarInset) > 0.5 else { return }
         lastTitlebarInset = inset
-        host.events.emit(Self.titlebarMetricsTopic, ["inset": Double(inset)])
+        host.events.emitSticky(Self.titlebarMetricsTopic, ["inset": Double(inset)])
     }
 
     deinit {
@@ -423,14 +425,12 @@ public enum LayoutToolbar {
     // MARK: 窗口标识与标题栏几何
 
     /// 设置 `window.title` / `window.subtitle`。载荷 `title` / `subtitle`。
-    /// 空标题 = 交回给壳。
+    /// 空标题 = 交回给壳。**粘性**（发布方用 `emitSticky`）——标识是状态，
+    /// 而消费方（布局）每换一代都要重新订一次，不粘就会卡在没有标题的窗口上。
     public static let windowTitleTopic = "clam.window.title"
-    /// 请求重发一次标识。**只在变化时推，所以后到的订阅者得自己喊一嗓子**。
-    public static let windowTitleRequestTopic = "clam.window.requestTitle"
     /// 标题栏当前厚度（`inset`，pt）。显示模式一变就跟着变。
+    /// **粘性**，理由同上：晚到的订阅者一订上就先收到最后一份。
     public static let titlebarMetricsTopic = "clam.layout.titlebarMetrics"
-    /// 请求重发一次厚度。理由同 `windowTitleRequestTopic`。
-    public static let titlebarMetricsRequestTopic = "clam.layout.requestTitlebarMetrics"
 }
 
 extension LayoutSplitController {

@@ -62,6 +62,15 @@ const PROTOCOL_VERSION = 1;
 /** 只收这些扩展名进 snapshot——插件的 swift/ 目录里放别的都不算源码。 */
 const SOURCE_EXTENSIONS = [".swift"];
 
+/**
+ * `moduleName()` 的结果必须是一个合法的 Swift 标识符。
+ *
+ * 不合法时的失败模式是**最坏的那一种**：dsh 照常起、HTTP 200，登记也"成功"了，
+ * 一直到壳去 `swiftc -module-name @wenbo/clamFoo` 才炸，而那条错误落在壳的日志里、
+ * 长得像编译器的毛病。所以在登记这一刻就拦住（见 `register`）。
+ */
+const MODULE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /** 轮询时跳过的目录名。 */
 const SKIP_DIRS = new Set([".git", ".build", "build", "DerivedData", ".DS_Store", "node_modules"]);
 
@@ -109,13 +118,49 @@ export function apply(ctx, config) {
 			},
 		},
 
+		/**
+		 * 登记一份 Swift 载荷。**这里一律 fails loud，不做任何补救。**
+		 *
+		 * 登记是 dsh 启动时发生一次的事，而下面三种错的失败模式全是同一副样子：
+		 * dsh 照常起、HTTP 200、终端一片祥和，只是那个插件的原生半边**静默不存在**
+		 * （或者更糟：两份登记互相覆盖，界面上少一块，日志里什么都没有）。
+		 * 抛出去的话 cordis 会在加载插件时就把它顶到脸上，附带插件名——
+		 * 这是唯一能让作者当场看见的时机。
+		 */
 		register(entry) {
+			// Swift module 名不是"顺手推的"，它是编译参数：不合法就等到壳去
+			// `swiftc -module-name` 那一刻才炸，而错误落在壳的日志里、看着像编译器的毛病。
+			const module = typeof entry.plugin === "string" ? moduleName(entry.plugin) : "";
+			if (!MODULE_NAME_RE.test(module)) {
+				throw new Error(`clam-bridge：插件 name ${JSON.stringify(entry.plugin)} 推不出合法的 `
+					+ `Swift module 名（算出来是 ${JSON.stringify(module)}）。`
+					+ `name 要用 kebab-case 的裸名（如 clam-sidebar → ClamSidebar），`
+					+ `别拿 scoped 包名（@wenbo/clam-sidebar）当 name。`);
+			}
 			if (registry.has(entry.plugin)) {
-				logger.warn(`插件 ${entry.plugin} 重复登记 Swift 载荷，后者覆盖前者。`);
+				// 覆盖是**最坏的兼容**：两个插件重名时后者把前者的 swiftDir 顶掉，
+				// 界面上少的那一块与日志里的 warn 隔着十万八千里。
+				throw new Error(`clam-bridge：插件 name "${entry.plugin}" 重复登记 Swift 载荷。`
+					+ `每个插件的 name 必须全局唯一——同一个插件被挂载两次的话，`
+					+ `检查编排表（cordis.patch.yml）里是不是列了两行。`);
+			}
+			const dirStats = typeof entry.swiftDir === "string"
+				? statSync(entry.swiftDir, { throwIfNoEntry: false })
+				: undefined;
+			if (dirStats?.isDirectory() !== true) {
+				throw new Error(`clam-bridge：插件 "${entry.plugin}" 的 swiftDir 不是一个目录：`
+					+ `${JSON.stringify(entry.swiftDir)}。它一般是 `
+					+ `\`new URL("../swift", import.meta.url)\` 算出来的，`
+					+ `检查 package.json 的 files 白名单里有没有 "swift"。`);
+			}
+			if (Object.keys(scanDir(entry.swiftDir).files).length === 0) {
+				throw new Error(`clam-bridge：插件 "${entry.plugin}" 的 swiftDir 里一个 .swift 文件都没有：`
+					+ `${entry.swiftDir}。空载荷登记上来只会让壳编出一个空 module——`
+					+ `没有 Swift 半边的插件不该调 createSwiftPlugin。`);
 			}
 			const record = {
 				plugin: entry.plugin,
-				module: moduleName(entry.plugin),
+				module,
 				swiftDir: entry.swiftDir,
 				swiftDeps: entry.swiftDeps ?? [],
 				// 排序落库：声明顺序不该影响 contentHash，也不该影响编译参数。
@@ -333,39 +378,49 @@ export function apply(ctx, config) {
 			record.files = scan.files;
 			dirty = true;
 		}
-		if (!dirty) return false;
 
-		// contentHash 折进依赖的 contentHash：上游一变，下游必然跟着变。
-		// 这就是"级联重编"在数据结构层面的落实，壳侧不需要再做传播。
-		for (const record of topological()) {
-			const hash = createHash("sha256");
-			hash.update(record.module);
-			hash.update("\0");
-			for (const [path, content] of Object.entries(record.files ?? {}).sort(byKey)) {
-				hash.update(path);
+		if (dirty) {
+			// contentHash 折进依赖的 contentHash：上游一变，下游必然跟着变。
+			// 这就是"级联重编"在数据结构层面的落实，壳侧不需要再做传播。
+			for (const record of topological()) {
+				const hash = createHash("sha256");
+				hash.update(record.module);
 				hash.update("\0");
-				hash.update(content);
-				hash.update("\0");
+				for (const [path, content] of Object.entries(record.files ?? {}).sort(byKey)) {
+					hash.update(path);
+					hash.update("\0");
+					hash.update(content);
+					hash.update("\0");
+				}
+				for (const dep of record.swiftDeps) {
+					hash.update(`dep:${dep}=${registry.get(dep)?.contentHash ?? "missing"}\0`);
+				}
+				// 共享 module 的**声明**进 hash（内容不进——桥看不见 bundle 里的
+				// .swiftinterface，那部分由壳的 CompilerService 折进去）。
+				// 加进来是因为改声明就改了编译参数，必须重编。
+				for (const module of record.sharedModules) hash.update(`shared:${module}\0`);
+				record.contentHash = hash.digest("hex");
 			}
-			for (const dep of record.swiftDeps) {
-				hash.update(`dep:${dep}=${registry.get(dep)?.contentHash ?? "missing"}\0`);
-			}
-			// 共享 module 的**声明**进 hash（内容不进——桥看不见 bundle 里的
-			// .swiftinterface，那部分由壳的 CompilerService 折进去）。
-			// 加进来是因为改声明就改了编译参数，必须重编。
-			for (const module of record.sharedModules) hash.update(`shared:${module}\0`);
-			record.contentHash = hash.digest("hex");
 		}
 
+		// 表 hash **每轮都算，不只在源码变了的时候**：它盖住的是整份 snapshot，
+		// 而 snapshot 里除了 contentHash 还有**谁在表上**和**各家的命令声明**。
+		// 命令声明刻意不进 contentHash（改一句菜单文案不该让 Swift 半边重编），
+		// 可它照样要送到壳那边去建菜单；不折进这里的话，"只改了命令声明"和
+		// "某个插件退场"都不会 bump 版本、不会广播 changed，壳的菜单就停在上一版，
+		// 而且**不报错**——只是少了一项，像是声明没写对。
 		const next = createHash("sha256");
-		for (const record of topological()) next.update(`${record.plugin}=${record.contentHash}\0`);
+		for (const record of topological()) {
+			next.update(`${record.plugin}=${record.contentHash ?? "?"}\0`);
+			next.update(`commands=${commandsDigest(record.commands)}\0`);
+		}
 		const digest = next.digest("hex");
 		if (digest === tableHash) return false;
 
 		tableHash = digest;
 		version += 1;
 		logger.info(`Swift 载荷登记表 v${version}（${reason}）：`
-			+ topological().map((r) => `${r.plugin}@${r.contentHash.slice(0, 8)}`).join(" "));
+			+ topological().map((r) => `${r.plugin}@${r.contentHash?.slice(0, 8) ?? "?"}`).join(" "));
 		broadcast({ type: "changed", version });
 		return true;
 	}
@@ -408,6 +463,21 @@ function moduleName(plugin) {
 	return plugin.split(/[-_]/).filter(Boolean)
 		.map((part) => part[0].toUpperCase() + part.slice(1))
 		.join("");
+}
+
+/**
+ * 命令声明的摘要，只进**表** hash，不进 contentHash（见 `rescan`）。
+ *
+ * 声明本身是插件写死的字面量数组，顺序稳定，`JSON.stringify` 就够稳；
+ * 序列化不了的（有人往里塞了函数）退化成"每轮都不一样"也没关系——
+ * 那时该修的是声明，多推几次 snapshot 不会错。
+ */
+function commandsDigest(commands) {
+	try {
+		return JSON.stringify(commands ?? []);
+	} catch {
+		return String(Date.now());
+	}
 }
 
 /** 目录扫描：签名（廉价）+ 文件内容（签名变了才用得上）。 */

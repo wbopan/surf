@@ -57,17 +57,12 @@ extension LayoutSplitController {
     /// 让"标识"长得像"按钮"。
     ///
     /// 空标题 = 交回给壳（`titleVisibility` 复位成 `.hidden`）。
-    static let windowTitleTopic = LayoutToolbar.windowTitleTopic
-    /// **谁有标识，现在报一次**（载荷不看）。
     ///
-    /// 和 `requestTitlebarMetrics` 同一条纪律，只是方向反过来：那边是标识的
-    /// 生产方问布局要厚度，这边是布局问生产方要标识。**本控制器换代时必须喊**
-    /// ——标识是"只在变化时推"的，而 clam-header 不会因为我们换代就重推一遍；
-    /// 叠加 deinit 里那道"归还标识"的兜底，窗口会卡在没有标题的透明态，
-    /// 直到用户碰巧切个会话才自愈。
-    static let windowTitleRequestTopic = LayoutToolbar.windowTitleRequestTopic
-    /// 谁想现在就要一份厚度就喊这个（载荷不看）。**给后到的订阅者用**。
-    static let titlebarMetricsRequestTopic = LayoutToolbar.titlebarMetricsRequestTopic
+    /// **粘性**：本控制器每换一代都会重订一次，而标识的生产方（clam-header）
+    /// 不会因为我们换代就重推一遍。叠加 deinit 里那道"归还标识"的兜底，
+    /// 不粘的话窗口会卡在没有标题的透明态，直到用户碰巧切个会话才自愈。
+    /// 粘性总线替新订阅者补最后一份，所以这里不需要一条"现在报一次"的反向通道。
+    static let windowTitleTopic = LayoutToolbar.windowTitleTopic
     /// 标题栏那条带子的厚度变了。载荷 `["inset": Double]`。
     /// **显示模式一改厚度就变**（Icon and Text 会把工具栏撑高），
     /// 所以这不是装配时量一次的常量。
@@ -418,17 +413,9 @@ extension LayoutSplitController {
                 MainActor.assumeIsolated { self?.applyWindowIdentity(title: title, subtitle: subtitle) }
             }
         }
-        let metrics = host.events.subscribe(Self.titlebarMetricsRequestTopic) { [weak self] _ in
-            // **推迟一拍**：请求多半来自另一个插件的 activate，那时窗口还没
-            // 布局完，当场量到的是 0（然后被 guard 掉，请求者永远等不到回音）。
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.publishTitlebarMetrics(force: true) }
-            }
-        }
         return ClamDisposable {
             updates.dispose()
             identity.dispose()
-            metrics.dispose()
         }
     }
 

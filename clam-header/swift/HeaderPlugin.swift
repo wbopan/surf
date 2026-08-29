@@ -294,6 +294,11 @@ final class HeaderPlugin: ClamPlugin {
         // **不是装配时量一次的常量**：用户右键把工具栏改成 Icon and Text，
         // 那条带子会高一截，正文的顶部留白得跟着走。clam-layout 盯着自己的
         // 布局，变了就广播一次。
+        //
+        // 那条广播是**粘性**的，所以这里不必再喊一声"现在给我一份"：本插件多半
+        // 在它最后一次广播之后才上线，`subscribe` 当场就会回调最后那份厚度。
+        // （不粘的年代这里配过一条 `requestTitlebarMetrics`，症状是漏喊就"用户把
+        // 工具栏改成 Icon and Text 之后正文被标签盖住"。）
         host.events.subscribe(LayoutToolbar.titlebarMetricsTopic) { payload in
             guard let inset = payload["inset"] as? Double else { return }
             let next = CGFloat(inset)
@@ -301,11 +306,6 @@ final class HeaderPlugin: ClamPlugin {
             model.contentTopInset = next
             model.confirmNative() // 把新的留白值推给页面
         }.kept(by: handle)
-
-        // 现在就要一份厚度。**每代都要问**：clam-layout 只在厚度**变化**时才
-        // 广播，而本插件多半是在它广播完之后才上线的——不问就永远等不到，
-        // 症状是"用户把工具栏改成 Icon and Text 之后正文被标签盖住"。
-        host.events.emit(LayoutToolbar.titlebarMetricsRequestTopic)
 
         // ---- 盯着 model 推工具栏 ----
         let sync = HeaderToolbarSync(host: host, model: model)
