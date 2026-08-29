@@ -679,7 +679,19 @@ window.__ModuleLoader__.load({
 				"    inset -14px 0 8px -15px var(--clam-glass-side);",
 				"  background-color: var(--clam-glass-fill);",
 				"  backdrop-filter: blur(var(--clam-glass-blur)) saturate(var(--clam-glass-sat));",
-				"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop);",
+				"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop), var(--clam-glass-outer);",
+				"  transition: scale var(--clam-dur) var(--clam-ease);",
+				"}",
+				// 段控的按压：整只胶囊缩放（原生 ItemGroup 的手感），不是单段。
+				// 按段时祖先也命中 :active，正好落在容器上。尺度与按钮同一套
+				// px 封顶变量（watchPressPoint 白名单里有 tablist）；进按下瞬时、
+				// 松手走上面那条 transition，同按钮的时序纪律。
+				S + ' [role="tablist"]:active {',
+				"  scale: var(--clam-sx, 1.03) var(--clam-sy, 1.03);",
+				"  transition-duration: 0s;",
+				"}",
+				"@media (prefers-reduced-motion: reduce) {",
+				"  " + S + ' [role="tablist"]:active { scale: 1 !important; }',
 				"}",
 				// 段本体。下划线 + 蓝色选中色全部去掉——Apple 的工具栏段控靠底板
 				// 区分选中，不用强调色。
@@ -899,7 +911,11 @@ window.__ModuleLoader__.load({
 				'[role="menu"]',
 				'[class$="_menu"]',
 				'[class*="_menu "]',
-				'[class*="_card"]:has([role="listbox"])',
+				// **必须是直接子级 + 排除 composer**：弹出的命令列表是 composer 卡片的
+				// 后代，`:has()` 不限深度的话 composer 卡片自己也会被认成菜单容器，
+				// 吃到菜单的内边距和 30% 黑阴影——点「+」整个 composer 抖一下、阴影
+				// 变深、像盖了层 overlay（用户 2026-08-29 报的就是这个）。
+				'[class*="_card"]:has(> [role="listbox"]):not(:has(textarea))',
 				'[role="listbox"]:not([class*="_viewport"])',
 			].map((s) => ":root " + s);
 			const box = BOXES.join(",\n");
@@ -1029,6 +1045,13 @@ window.__ModuleLoader__.load({
 				if (!r.width || !r.height) return;
 				el.style.setProperty("--clam-px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
 				el.style.setProperty("--clam-py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+				// 按压膨胀的尺度。**等比 scale 对宽矮按钮是灾难**：1.09 在 36px 方钮上
+				// 是 3px，在 200px 宽的子代理下拉上是 18px（用户 2026-08-29 指出）。
+				// 原生的手感是"涨几个像素"，不是"涨百分之九"——所以每个维度封顶
+				// 5px：小按钮仍然吃满 1.06，宽按钮自动收敛。CSS 侧兜底 1.06
+				// （键盘触发拿不到指针时走兜底，键盘场景基本都是小按钮）。
+				el.style.setProperty("--clam-sx", Math.min(1.06, 1 + 5 / r.width).toFixed(4));
+				el.style.setProperty("--clam-sy", Math.min(1.06, 1 + 5 / r.height).toFixed(4));
 			};
 			document.addEventListener("pointerdown", onDown, { capture: true, passive: true });
 			return () => document.removeEventListener("pointerdown", onDown, { capture: true });
@@ -1181,7 +1204,8 @@ window.__ModuleLoader__.load({
 			if (!insideClam()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(watchReduceTransparency);
-			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
+			// 段控胶囊也要喂 --clam-sx/--clam-sy（整只容器按压缩放，见 headerRules）。
+			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.concat([HEADER_SEAT + ' [role="tablist"]']).join(",")));
 			ctx.effect(watchDragPassthrough);
 
 			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
@@ -1418,6 +1442,11 @@ window.__ModuleLoader__.load({
 					"  --clam-tint-hover: rgba(0, 0, 0, 0.035);",
 					"  --clam-tint-press: rgba(0, 0, 0, 0.070);",
 					"  --clam-glass-drop: rgba(0, 0, 0, 0.05);",
+					// 官方套件里玻璃唯一的真投影层（Liquid Glass Regular-Small 的
+					// shadow=(0,8,blur 15)，浅 2% / 深 4% 黑）——非常轻，但没有它按钮
+					// 就"浮不起来"（用户 2026-08-29 对照系统按钮发现缺了这层）。
+					// 与 --clam-glass-drop（贴地接触影，hover 抬高那套）分工不同，两层并存。
+					"  --clam-glass-outer: 0 8px 15px rgba(0, 0, 0, 0.02);",
 					"}",
 					// dsh 的深色主题挂在 body[data-ds-dark-theme] 上（它自己的 --dsw-*
 					// token 也是在那儿翻面的）。深色下描边翻成亮的（玻璃边缘在暗背景上
@@ -1456,6 +1485,7 @@ window.__ModuleLoader__.load({
 					"  --clam-tint-hover: rgba(255, 255, 255, 0.113);",
 					"  --clam-tint-press: rgba(255, 255, 255, 0.113);",
 					"  --clam-glass-drop: rgba(0, 0, 0, 0.25);",
+					"  --clam-glass-outer: 0 8px 15px rgba(0, 0, 0, 0.04);",
 					"}",
 
 					// 深色档的页面底色。dsh 的 `body` 规则是
@@ -1537,7 +1567,7 @@ window.__ModuleLoader__.load({
 					"    inset 0 0 0 100px var(--clam-tint),",
 					"    inset 14px 0 8px -15px var(--clam-glass-side),",
 					"    inset -14px 0 8px -15px var(--clam-glass-side);",
-					"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop);",
+					"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop), var(--clam-glass-outer);",
 					"}",
 					// 底色 = 元素自己的 background-color。`!important` 是必须的：dsh 在更具体的
 					// 规则里用 `background` 简写，不加会被静默清掉，连报错都没有。
@@ -1639,7 +1669,10 @@ window.__ModuleLoader__.load({
 					//
 					// scale 是独立属性、不占布局，所以在 flex/grid 里放大不会挤动邻居。
 					solidActive + " {",
-					"  scale: 1.09;",
+					// 尺度由 watchPressPoint 按元素尺寸算（每维封顶 5px，见那边注释）；
+					// 1.06 是键盘触发（拿不到指针）时的兜底。曾定稿 1.09 等比——宽矮
+					// 按钮横向涨十几像素，用户裁决改小并封顶。
+					"  scale: var(--clam-sx, 1.06) var(--clam-sy, 1.06);",
 					// 150% 就是闲时那个值 —— **定稿故意不收拢**：亮光只淡入淡出，是整面泛光，
 					// 不是聚成一小块。位置仍然跟着 --clam-px/--clam-py 走（渐变中心在手指底下，
 					// 只是摊得很开）。这一行留着是为了把"不收拢"写在用它的地方，改回收拢就调它。
@@ -1716,7 +1749,7 @@ window.__ModuleLoader__.load({
 					// box-shadow 是整体覆盖的，所以这里必须重抄 var(--clam-surface)。
 					solidHover + " {",
 					"  --clam-tint: var(--clam-tint-hover);",
-					"  box-shadow: var(--clam-surface), 0 2px 5px var(--clam-glass-drop);",
+					"  box-shadow: var(--clam-surface), 0 2px 5px var(--clam-glass-drop), var(--clam-glass-outer);",
 					"}",
 					// **实心强调键不参与 hover**：系统实测 .glassProminent 悬停零变化
 					// （浅深两档、逐像素 diff 都是空的，且 .onHover 指示灯确认游标确实到位）。
@@ -1728,7 +1761,7 @@ window.__ModuleLoader__.load({
 					// 排在 hover 之后，所以两态同时命中时这条赢（含上面那条 _primary 的清零）。
 					solidActive + " {",
 					"  --clam-tint: var(--clam-tint-press);",
-					"  box-shadow: var(--clam-surface), 0 0 1px var(--clam-glass-drop);",
+					"  box-shadow: var(--clam-surface), 0 0 1px var(--clam-glass-drop), var(--clam-glass-outer);",
 					"}",
 
 					// 尊重"减少动态效果"：关掉形变，保留配色反馈。
