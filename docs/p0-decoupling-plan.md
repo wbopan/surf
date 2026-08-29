@@ -387,3 +387,58 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   说的是根 `README.md:28` 的前置条件，已改。② 审计 §5.4 那张过时表**原样保留**
   （它记录的是审计当时的事实），只在 §7 执行日志里说明这些项已修。
   ③ 两份新文档没有做"每个链接都点一遍"的校验，只核了相对路径存在。
+
+- **2026-08-29 · Wave 3 · 集成验证**
+
+  静态：`node --check` 24 个 JS 全绿；`node --test clam-sidebar/test/*.test.js` 18/18；
+  不变量 4 的 grep **为空**（改完那处 bug 之后又跑了一遍，仍为空）。
+
+  整合：`./dev` 起 profile `surfclam-arch-coupling-audit`（端口 53125）。
+  五个插件 g1~g5 全部装载（layout / nativeify / sidebar / notify / settings），
+  `编译失败` **0 条**，日志里也没有键位冲突或解析失败。
+  `快捷键设置面已注册：10 项` 与 A 记的那批键逐字相同；
+  `命令声明 10 条：clam-layout/openSettings … clam-sidebar/sessionDigits` 证明
+  声明经桥 snapshot 到了壳。
+
+  **补上了 A 记遗留 ① 的截图**：`tools/shot.sh` 这次一切正常（SCK -3811 是环境性的，
+  换个时间就好了，与本仓库无关）。`.scratch/wave3-main.png`（原生侧边栏 + 搜索框 +
+  全部/按时间/待处理三枚胶囊 + taste-bench 分组 + 两行会话行，右侧是真页面不是引导页）、
+  `.scratch/wave3-shortcuts.png`（⌘/ 面板）、`.scratch/wave3-after-fix.png`（修完之后）。
+  工具栏经 AX 核过是 `AXMenuButton 筛选` + `AXButton 边栏` 两项，正是 B 记那条
+  `ToolbarSpec` 贡献。
+
+  **菜单键符全部画得出来。** 关键那格用 AX 直接量而不是看 peekaboo 的文本输出：
+  `AXMenuItemCmdChar` 的 `id` = **8**（U+0008）、`AXMenuItemCmdModifiers` = 1（⌘⇧），
+  正是 3802996 那条修复的形态。**peekaboo `menu list` 把这格印成 `[⌘⇧]` 是它自己
+  印不出控制字符**，不是菜单空白——差点误判，记在这里省下一次。
+  ⌘/ 面板的 `拷贝` 按钮拉出来的全文里是 `归档会话 ⇧⌘⌫`，且末尾有
+  `── 页面内 ──｜停止生成 ⎋`（A 把手写那行改成"没有 menu 的命令现采"之后的样子）
+  与 `会话 1..9 ⌘1..⌘9`。
+
+  链路实测两条：点「显示 › 聚焦搜索」→ `[clam-sidebar g3] 菜单命令：focusSearch`；
+  按 ⌘1 → `菜单命令：selectSessionAt`。后者是特意测的——九个数字项是**隐藏**菜单项，
+  而隐藏项的键要靠 `allowsKeyEquivalentWhenHidden` 才生效，A 把它保住了
+  （`MainWindowController.swift:902/914`），实测也确实生效。
+
+  **就地修了一个 A 引入的回归**（本次唯一改动，未 commit）：
+  `MainWindowController.swift` 的 `applyWebQuery` 少了"等装载稳定"这道闸。
+  改前的 `syncNativeSidebarGate()` 是挂在 `nativeHost.onUpdate` 上、且
+  `guard nativeHost.didSettle` 的，A 换成纯订阅 `clam.web.query` 之后
+  **`onUpdate` 那条线整个没了**，于是装载途中每个插件各自上线时发的半成品状态
+  都会触发一次重载：clam-layout 先上线，那一刻 sidebar 槽还空着，它如实报
+  "不要参数"，紧接着 clam-sidebar 上线又报回来。症状是**每次冷启动网页整个加载三遍、
+  中途闪一下网页侧边栏**（日志里两行 `页面查询参数变化`），与不变量 2 冲突。
+  修法照旧：`applyWebQuery` 只记不重载，重载收口到新的 `syncWebQueryGate()`，
+  由 `nativeHost.onUpdate` 在 `didSettle` 之后调一次。
+  修完重启壳复验：`页面查询参数变化` **0 行**、`WebView 加载完成` **1 行**
+  （改前同一段是 3 行），侧边栏与工具栏照常，`focusSearch` 链路照常。
+
+  遗留：① **`会话` 菜单尾部挂着一条孤立的分隔线**（九个数字项隐藏之后它就悬在那儿）
+  ——`git show 3c6d3ec` 核过，**改前就是这样**，不是本次引入的，没动；
+  ② 邻居 worktree 的壳这次没串台：开跑前把两个残留实例都 `peekaboo app quit` 了，
+  之后 `web-header-native-match` 那个被它自己的 dsh（pid 17102）重新拉起并接回了
+  自己那套（日志里 `来源 discovery` 且**没有** ⚠️ 标记），全程与本 worktree 无交叉；
+  ③ A 记遗留 ③（设置页字段变成声明顺序）与 ⑤（冷启动菜单先只有系统项）本次照旧存在，
+  都是设计使然，没管；④ 桥的三条 fail-loud 只做了**读码复核**
+  （`clam-bridge/lib/index.js:134/140/150/156`，四条抛错全在 `register()` 主路径上、
+  在建 record 之前），没再跑一次 Wave 2 已经跑过的脚本级验证。

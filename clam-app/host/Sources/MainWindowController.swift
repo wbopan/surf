@@ -251,6 +251,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         nativeHost.objects.setObject(ClamObjects.Key.webView, webView)
         nativeHost.onCommands = { [weak self] commands in self?.applyCommands(commands) }
         nativeHost.onAppBuild = { [weak self] state in self?.applyAppBuild(state) }
+        // 装载稳定了再核对一次页面参数：装载途中每个插件各自上线、各自发一份要求，
+        // 中间那些半成品状态不该让页面跟着重载一次（见 syncWebQueryGate）。
+        nativeHost.onUpdate = { [weak self] in self?.syncWebQueryGate() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -498,8 +501,20 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard next != webQuery else { return }
         webQuery = next
         Self.rememberedWebQuery = next
-        guard endpoint != nil, next != queryInUse else { return }
-        Log.write("页面查询参数变化：\(describe(queryInUse)) → \(describe(next))，重载页面",
+        // **装载途中不重载**：插件一个接一个上线，先上线的那个说的是"此刻"的话，
+        // 而不是"最终"的话——clam-layout 先于 clam-sidebar 上线，那一刻 sidebar 槽
+        // 还空着，它如实报了"不要参数"，紧接着 sidebar 上线又报回来。照着中间态重载
+        // 的症状是：每次冷启动网页整个加载三遍，中途还闪一下网页侧边栏。
+        // 装载稳定后由 syncWebQueryGate() 统一核对一次。
+        guard nativeHost.didSettle else { return }
+        syncWebQueryGate()
+    }
+
+    /// 核对"插件要的参数"与"页面正用着的参数"，不符就重载一次。
+    /// 装载稳定（`didSettle`）之后才做——途中的半成品状态不算数。
+    private func syncWebQueryGate() {
+        guard nativeHost.didSettle, endpoint != nil, webQuery != queryInUse else { return }
+        Log.write("页面查询参数变化：\(describe(queryInUse)) → \(describe(webQuery))，重载页面",
                   to: ClamPaths.logURL, tag: "layout")
         loadWebUI()
     }
