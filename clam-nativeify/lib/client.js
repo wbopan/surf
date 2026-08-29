@@ -589,6 +589,11 @@ window.__ModuleLoader__.load({
 				// 排在上一条之后、同特异性，靠源码顺序赢——`_crumbCurrent` 和
 				// `_crumb` 是同一个元素上的两个类。
 				S + ' button[class*="_crumbCurrent"] {',
+				// dsh 给每段面包屑钉死 `max-width: 220px`。父级那些留着没问题，
+				// 末段是标题，15px 之下 220 只装得下十来个汉字，一整行的空位却空着
+				// （grid 的 1fr 就在右边）。放到 420，仍旧走它自己的 ellipsis；
+				// 窄窗口下这一列是 `minmax(0, auto)`，会先于胶囊让位。
+				"  max-width: 420px;",
 				"  font-size: 15px;",
 				`  line-height: ${lh(15)}px;`,
 				"  font-weight: 600;",
@@ -833,7 +838,12 @@ window.__ModuleLoader__.load({
 		 * 代价约等于零。
 		 */
 		function watchDragPassthrough() {
-			const INTERACTIVE = 'button, a[href], input, select, summary, [role="button"], [role="tab"]';
+			// **禁用态要排掉**：末段面包屑就是一个 `disabled` 的 <button>（它是标题，
+			// 不是按钮）。把它也报上去 = 标题那块地再也拖不动窗口，而点它又什么都不
+			// 发生——两头落空。判据和玻璃白名单那边的 ENABLED 是同一条。
+			const OFF = ':not(:disabled):not([aria-disabled="true"])';
+			const INTERACTIVE = ["button", "a[href]", "input", "select", "summary",
+				'[role="button"]', '[role="tab"]'].map((s) => s + OFF).join(", ");
 			let last = "";
 			const post = () => {
 				const seat = document.querySelector(HEADER_SEAT);
