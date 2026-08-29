@@ -47,7 +47,8 @@ struct L {
     // MARK: - 菜单栏：应用菜单
 
     var menuAbout: String { t("关于 \(AppInfo.displayName)", "About \(AppInfo.displayName)") }
-    var menuReconnect: String { t("重新连接 dsh", "Reconnect to dsh") }
+    /// 界面上一律称"后端"，不称 dsh（连接页的口径，计划 §3 口径 1）。
+    var menuReconnect: String { t("重新连接后端", "Reconnect to Backend") }
     var menuOpenLogs: String { t("打开日志文件夹", "Open Log Folder") }  // 原：打开日志目录
     var menuDiagnostics: String { t("诊断信息…", "Diagnostics…") }
     var menuHide: String { t("隐藏 \(AppInfo.displayName)", "Hide \(AppInfo.displayName)") }
@@ -93,29 +94,127 @@ struct L {
     var menuHelp: String { t("帮助", "Help") }
     var menuKeyboardShortcuts: String { t("键盘快捷键", "Keyboard Shortcuts") }
 
-    // MARK: - 引导页（没连上 dsh 时铺满窗口的那一屏）
+    // MARK: - 连接页（没连上后端时铺满窗口的那一屏）
 
-    var bootstrapSearching: String { t("正在查找 dsh…", "Looking for dsh…") }  // 原：正在寻找 dsh…
-    var bootstrapReconnecting: String { t("正在重新连接 dsh…", "Reconnecting to dsh…") }
+    // **三条口径**（`docs/clam-connection-plan.md` §3，用户裁决，全部强制）：
+    //  1. 面向最终用户：这一节里不出现 ./dev、worktree、profile、pid、hash
+    //     ——那些是开发者概念，只活在 ⌥⌘D 诊断面板与日志里。一律称"后端"。
+    //  2. 贴系统 App 的密度：短句、事实性，不写"无需操作""发现即自动接入"
+    //     这类安抚性废话。
+    //  3. zh 逐字来自设计稿（`.scratch/design-connection/*.dc.html`），改文案先改设计稿。
 
-    var bootstrapDisconnectedTitle: String {
-        t("已与 dsh 断开连接", "Disconnected from dsh")  // 原：与 dsh 断开连接
+    // 引导连接页
+
+    var connIdleTitle: String { t("尚未连接后端", "Not Connected") }
+    var connSearching: String { t("正在查找本机的后端…", "Looking for a backend on this Mac…") }
+    /// 有明确目标（手敲的地址 / 钉死的 URL）却连不上时替掉转圈那一行。
+    func connUnreachable(_ address: String) -> String {
+        t("无法连接到 \(address)", "Can't reach \(address)")
     }
-    var bootstrapDisconnectedDetail: String {
-        t("dsh 已退出或停止响应。在终端重新运行下面的命令，\(AppInfo.displayName) 会自动接回。",
-          "dsh has quit or stopped responding. Run the command below in a terminal "
-            + "and \(AppInfo.displayName) will reconnect automatically.")
-    }  // 原：dsh 已退出或不再应答。重新运行下面的命令，X 会自动接回。
 
-    var bootstrapNotFoundTitle: String { t("找不到 dsh", "dsh Not Found") }  // 原：未检测到 dsh
-    var bootstrapNotFoundDetail: String {
-        t("\(AppInfo.displayName) 是 dsh 的客户端外设，需要先在终端启动 dsh。"
-            + "启动后本窗口会自动接入，无需重新打开 App。",
-          "\(AppInfo.displayName) is a client for dsh, which must be running in a terminal "
-            + "first. Once it starts, this window connects automatically — no need to reopen the app.")
-    }  // 原：X 是 dsh 的客户端外设，需要 dsh 先在终端跑起来；启动后本页会自动接入，无需重开 App。
+    var connManagedCardTitle: String {
+        t("让 \(AppInfo.displayName) 托管", "Let \(AppInfo.displayName) Manage It")
+    }
+    var connManagedCardDetail: String {
+        t("后端随 \(AppInfo.displayName) 自动启动和退出。",
+          "The backend starts and quits with \(AppInfo.displayName).")
+    }
+    var connManagedStart: String { t("开启托管", "Start Backend") }
+    var connManagedStop: String { t("停止托管", "Stop Backend") }
+    // 托管状态那一行：界面按状态通用渲染，一态一句（BackendManager.State）。
+    var connManagedStarting: String { t("正在启动后端…", "Starting the backend…") }
+    var connManagedRunning: String { t("后端运行中。", "The backend is running.") }
+    func connManagedRetrying(_ attempt: Int) -> String {
+        t("后端已退出，正在第 \(attempt) 次重启…",
+          "The backend quit — restart attempt \(attempt)…")
+    }
+    var connManagedGaveUp: String {
+        t("多次启动失败，已停止重试。", "Gave up after repeated failures.")
+    }
+    /// 拉不起来的三种原因（`BackendManager.Unavailable`）。**如实说缺什么**，
+    /// 别把按钮做成没反应。程序名 dsh 在这里是必要的——不说清缺什么就没法照办；
+    /// 壳自己也**不代装**（计划裁决②：第一期只服务已经装好后端的本机开发者）。
+    var connManagedNoRuntime: String {
+        t("未找到后端程序（dsh）。", "Backend program (dsh) not found.")
+    }
+    /// 已经有一个后端在管这个 profile：托管不该去抢（会互抹 endpoint 发现文件）。
+    var connManagedExternal: String {
+        t("后端已在运行，无需托管。", "A backend is already running — no need to manage one.")
+    }
+    var connManagedFailed: String {
+        t("后端启动失败，详见日志。", "The backend failed to start — see the log.")
+    }
 
-    var bootstrapErrorTitle: String { t("发生错误", "Something Went Wrong") }  // 原：出错了
+    var connManualCardTitle: String { t("连接到已有的后端", "Connect to an Existing Backend") }
+    var connManualCardDetail: String {
+        t("通过地址接入正在运行的后端。", "Join a backend that is already running, by address.")
+    }
+    /// 输入框占位符。**两种语言下都是这一串**：它是个地址范例，不是文案。
+    var connManualPlaceholder: String { "http://127.0.0.1:3080" }
+    var connManualInvalid: String { t("地址无效", "Invalid address") }
+
+    var connDiscoveredHeader: String { t("发现的后端", "Discovered Backends") }
+    func connPort(_ port: Int) -> String { t("端口 \(port)", "Port \(port)") }
+    /// `moment` 是格式化好的时刻（"30 分钟前" / "昨天 20:14"）。
+    func connStartedAt(_ moment: String) -> String { t("\(moment)启动", "started \(moment)") }
+    var connConnect: String { t("连接", "Connect") }
+
+    var connFooterDiagnostics: String { t("诊断面板 ⌥⌘D", "Diagnostics ⌥⌘D") }
+    var connFooterLogs: String { t("打开日志目录", "Open Logs") }
+
+    // 连接中断页
+
+    var connDisconnectedTitle: String { t("已与后端断开连接", "Disconnected from the Backend") }
+    var connReconnecting: String { t("正在尝试重新连接…", "Trying to reconnect…") }
+    var connSectionDiagnostics: String { t("诊断", "Diagnostics") }
+
+    var connRowBackend: String { t("后端", "Backend") }
+    var connRowAddress: String { t("地址", "Address") }
+    var connRowReason: String { t("原因", "Reason") }
+    var connRowDisconnectedAt: String { t("断开于", "Disconnected") }
+    var connRowRetry: String { t("自动重连", "Auto-reconnect") }
+
+    var connBackendLocal: String { t("本机", "This Mac") }
+    var connBackendManaged: String {
+        t("本机 · 由 \(AppInfo.displayName) 托管", "This Mac · managed by \(AppInfo.displayName)")
+    }
+    func connBackendRemote(_ host: String) -> String { host }
+
+    var connReasonRefused: String {
+        t("连接被拒绝 · 后端进程已退出", "Connection refused · the backend process has quit")
+    }
+    /// 引导页那一行用的短版：那里还从没连上过，说不出"进程已退出"。
+    var connReasonRefusedShort: String { t("连接被拒绝", "Connection refused") }
+    var connReasonTimeout: String { t("连接超时", "Connection timed out") }
+    func connReasonHTTP(_ code: Int) -> String {
+        t("服务器返回 \(code)", "Server returned \(code)")
+    }
+    /// 桥被拒的用户话术：说"缺组件"而不是"握手失败"（术语），并附启动命令
+    /// （connProfileHint*）。典型场景是手动连了 `dsh web`（用户实测提出）。
+    var connReasonBridge: String {
+        t("该后端不含 Surfclam 组件", "The backend doesn't include the Surfclam components")
+    }
+    /// 正确的启动命令提示，拆成前后缀好把命令段排成等宽字。
+    var connProfileHintPrefix: String { t("请用 ", "Start the backend with ") }
+    var connProfileHintSuffix: String { t(" 启动后端", "") }
+    var connProfileCommand: String { "dsh --profile surfclam" }
+    var connReasonUserRequested: String { t("已手动断开", "Disconnected manually") }
+    /// 干净退出的后端会删掉自己的 endpoint 文件，后续轮无候选可 probe、
+    /// 产不出 ConnectFailure——这时原因取自 DisconnectReason 而不是"未知"。
+    var connReasonProcessGone: String { t("后端进程已退出", "The backend process has quit") }
+    var connReasonBridgeLost: String { t("连接中断", "Connection lost") }
+    var connReasonUnknown: String { t("未知", "Unknown") }
+
+    /// `moment` 是断开的时刻（"今天 14:32"），`previous` 是此前连了多久（可空）。
+    func connDisconnectedAt(_ moment: String, previous: String?) -> String {
+        guard let previous else { return moment }
+        return t("\(moment) · 此前已连接 \(previous)", "\(moment) · connected for \(previous)")
+    }
+    func connRetryStatus(attempts: Int, nextIn: Int) -> String {
+        t("已试 \(attempts) 次 · 下一次 \(nextIn) 秒后",
+          "\(attempts) attempt\(attempts == 1 ? "" : "s") · next in \(nextIn)s")
+    }
+    var connChooseOther: String { t("连接其他后端…", "Connect to Another Backend…") }
 
     // MARK: - 壳更新提示条
 
@@ -151,7 +250,25 @@ struct L {
     var diagSectionConnection: String { t("── dsh 连接 ──", "── dsh Connection ──") }
     func diagEndpoint(_ summary: String) -> String { t("端点：\(summary)", "Endpoint: \(summary)") }
     var diagEndpointNone: String {
-        t("端点：未连接（引导页在场）", "Endpoint: not connected (bootstrap screen showing)")
+        t("端点：未连接（连接页在场）", "Endpoint: not connected (connection screen showing)")
+    }
+    /// 状态机那一幕的稳定标识（`ConnectionPhase.key`），不翻译——它是个技术词。
+    func diagPhase(_ phase: String) -> String { t("连接状态：\(phase)", "Connection phase: \(phase)") }
+    func diagMode(_ mode: String, target: String?) -> String {
+        let suffix = target.map { " → \($0)" } ?? ""
+        return t("连接模式：\(mode)\(suffix)", "Connection mode: \(mode)\(suffix)")
+    }
+    func diagLastFailure(_ text: String) -> String { t("最近失败：\(text)", "Last failure: \(text)") }
+    func diagAttempts(_ count: Int) -> String {
+        t("连续失败轮次：\(count)", "Consecutive failed rounds: \(count)")
+    }
+    /// 并行探测的结果表（每行 `URL 健康/失败 耗时`）。**开发者细节留在这里**
+    /// ——worktree、profile、pid、isOwn 一概不上主界面（计划 §3 口径 1）。
+    func diagCandidates(_ list: String) -> String {
+        t("候选（并行探测）：\(list)", "Candidates (parallel probe): \(list)")
+    }
+    func diagBackendManager(_ state: String) -> String {
+        t("托管后端：\(state)", "Managed backend: \(state)")
     }
     /// 端点摘要后缀：连上的这套 dsh 不是本 worktree 那一套（`ClamEndpoint.isOwn`）。
     /// 它是**警告**，不是标签——连错了会去编译邻居 worktree 的插件源码。

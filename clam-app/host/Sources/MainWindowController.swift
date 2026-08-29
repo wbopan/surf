@@ -77,13 +77,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 断言拉回；有用户记忆时记忆值优先。
     private var launchWindowFrame: NSRect = .zero
 
-    /// 当前连上的 dsh。nil = 没找到/已断开（引导页在场）。
-    private var endpoint: ClamEndpoint?
-    /// 定位/健康轮询。壳已不是 dsh 的父进程，拿不到退出信号，
-    /// 只能靠周期性 GET 发现它走了、也靠它发现它回来了。
-    private var connectTimer: Timer?
-    private var probeInFlight = false
-    private let connectPollInterval: TimeInterval = 2
+    /// 显式连接状态机（`Native/ConnectionController.swift`）。**"我此刻连着谁"
+    /// 的唯一真相在它那儿**，壳这边只是消费者：装页面、连桥、盖/撤连接页。
+    private lazy var connection = ConnectionController(events: nativeHost.events)
+
+    /// 托管后端（`Native/BackendManager.swift`）。AppDelegate 持有并递进来——
+    /// 它得活得和进程一样久，而窗口是可以关掉的。
+    let backend: BackendManager
 
     /// 原生插件宿主：桥 ↔ 编译机 ↔ 装载器 ↔ registry。壳对插件世界的全部认知都在它那儿。
     let nativeHost = NativePluginHost()
@@ -110,7 +110,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private var bridgeWarnWork: DispatchWorkItem?
     private let bridgeReadyTimeout: TimeInterval = 8
 
-    private var bootstrapVC: BootstrapViewController?
+    /// 连接页（覆盖层）。nil = 没盖着，也就是连上了。
+    private var connectionVC: ConnectionViewController?
 
     private var diagnosticsPanel: DiagnosticsPanel?
 
@@ -160,7 +161,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 壳会重连、会换端口，快照会把重连后的自家页面误判成外链。
     /// 文案同理现取（用户可能在下载途中换语言）。
     private lazy var webPolicy = WebPolicy(
-        currentEndpoint: { [weak self] in self?.endpoint },
+        currentEndpoint: { [weak self] in self?.connection.activeEndpoint },
         currentStrings: { [weak self] in self?.strings ?? L(.en) },
         presentToast: { [weak self] content in self?.presentToast(content) })
 
@@ -253,7 +254,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         Self.rememberedPageZoom = clamped
     }
 
-    init() {
+    init(backend: BackendManager) {
+        self.backend = backend
         super.init(window: nil)
         // **语言要在一切之前定下来**：菜单、引导页都在下面几行里建，而插件装载得
         // 更晚——粘性广播先发一份，谁来订都拿得到（见 publishLocale）。
@@ -276,6 +278,24 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // 装载稳定了再核对一次页面参数：装载途中每个插件各自上线、各自发一份要求，
         // 中间那些半成品状态不该让页面跟着重载一次（见 syncWebQueryGate）。
         nativeHost.onUpdate = { [weak self] in self?.syncWebQueryGate() }
+        // 桥的两条事实喂给状态机：握手成不成（翻 `.connected` 那一幕）、
+        // 失败是哪一类（诊断面板那一行）。以前两者都只进日志。
+        nativeHost.onBridgeConnected = { [weak self] connected in
+            self?.connection.noteBridge(connected: connected)
+        }
+        nativeHost.onBridgeFailure = { [weak self] failure in
+            self?.connection.noteBridgeFailure(failure)
+        }
+        // 状态机不认得 WebView 也不认得 AppKit：副作用全在这三个回调里。
+        connection.onAttach = { [weak self] endpoint in self?.attach(endpoint) }
+        connection.onDetach = { [weak self] in self?.detach() }
+        connection.onPhaseChange = { [weak self] phase in self?.applyPhase(phase) }
+        // 托管的后端刚拉起来：催一轮探测。**连接归位本身不需要新机制**——
+        // 子 dsh 照常写 endpoint 发现文件，状态机 2s 一轮的轮询自然接上；
+        // 这一句只是省掉那最多 2 秒的空等。
+        backend.onStateChange = { [weak self] state in
+            if case .running = state { self?.connection.probeNow() }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -370,88 +390,36 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
     }
 
-    // MARK: - 连接状态机
+    // MARK: - 连接状态机（消费者）
 
-    /// 三级定位 → 健康探测 → 接入。同时装上轮询：壳已不是 dsh 的父进程，
-    /// 拿不到它的退出信号，只能靠周期性 GET 发现它走了、也发现它回来了。
+    /// 装上状态机。它自己会立刻探一轮并每 2s 探一次——壳不是后端的父进程，
+    /// 拿不到退出信号，只能靠周期性 GET 发现它走了、也发现它回来了。
     func start() {
-        showBootstrap(.searching)
-        startConnectPolling()
-        probeNow()
+        // **先把连接页盖上再启动状态机**：冷启动第一幕就是 `.searching`，
+        // 而 `setPhase` 只在幕**变了**的时候回调，等它是等不来的。
+        applyPhase(connection.phase)
+        connection.start()
+        // 托管模式 = "打开即有后端"（Docker Desktop 语义）。`start()` 自己会先
+        // 查重，已经有人在管这个 profile 时不会 spawn（计划 §5）。
+        if connection.mode == .managed { backend.start() }
     }
 
-    private func startConnectPolling() {
-        guard connectTimer == nil else { return }
-        let t = Timer(timeInterval: connectPollInterval, repeats: true) { [weak self] _ in
-            self?.probeNow()
-        }
-        RunLoop.main.add(t, forMode: .common)
-        connectTimer = t
+    /// 状态机选中了一个端点：装页面 + 连桥。
+    private func attach(_ endpoint: ClamEndpoint) {
+        loadWebUI(endpoint)
+        nativeHost.connect(baseURL: endpoint.httpBase, bridgePath: endpoint.bridgePath)
     }
 
-    /// 探一次。同一时刻只允许一个在飞，慢探测不叠罗汉。
-    private func probeNow() {
-        guard !probeInFlight else { return }
-        probeInFlight = true
-        Task { @MainActor [weak self] in
-            let found = await EndpointLocator.locateHealthy()
-            guard let self else { return }
-            self.probeInFlight = false
-            self.apply(found)
-        }
-    }
-
-    /// 把一次探测结果落到界面上。四种去向：稳定（什么都不做）、
-    /// 接入、换端点重接、断开。
-    private func apply(_ found: ClamEndpoint?) {
-        guard let found else {
-            if endpoint != nil {
-                enterDisconnected()
-            } else if !guideShown {
-                showSearchGuide()
-            }
-            return
-        }
-        guard found != endpoint else { return }
-        let isReconnect = endpoint != nil
-        endpoint = found
-        // 日志一律中文（Strings.swift 顶注）：读它的是终端前的人和 agent，
-        // 跟着界面语言变只会让排错时对不上账。
-        Log.write("接入 dsh：\(found.summary)，来源 \(found.source.rawValue)"
-                  + (found.isOwn ? "" : " ⚠️ 不是本 worktree 那一套"),
-                  to: ClamPaths.logURL, tag: "endpoint")
-        if isReconnect {
-            Log.write("端点变化，插件将随重连的桥重新对齐", to: ClamPaths.logURL, tag: "endpoint")
-        }
-        enterRunning()
-    }
-
-    private func enterRunning() {
-        hideBootstrap()
-        loadWebUI()
-        if let endpoint {
-            nativeHost.connect(baseURL: endpoint.httpBase, bridgePath: endpoint.bridgePath)
-        }
-    }
-
-    /// dsh 不见了：停桥、卸镜像、盖引导页。窗口与 WebView 都留着——
-    /// dsh 回来时轮询自动把页面重新载上，用户不必重开 App。
-    private func enterDisconnected() {
-        guard endpoint != nil else { return }
-        Log.write("与 dsh 断开连接", to: ClamPaths.logURL, tag: "endpoint")
-        endpoint = nil
+    /// 状态机放开了当前端点：停桥、停加载。**窗口与 WebView 都留着**——
+    /// 后端回来时轮询自动把页面重新载上，用户不必重开 App。
+    private func detach() {
         nativeHost.disconnect()
         webView.stopLoading()
-        showBootstrap(.disconnected)
     }
 
-    private func showSearchGuide() {
-        showBootstrap(.notFound)
-    }
-
-    private func loadWebUI() {
-        guard let base = endpoint?.httpBase,
-              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
+    private func loadWebUI(_ endpoint: ClamEndpoint) {
+        guard var components = URLComponents(url: endpoint.httpBase, resolvingAgainstBaseURL: false)
+        else { return }
         components.path = "/"
         // 查询参数由插件说了算（`clam.web.query`，见 observeWebQuery）。壳不认得
         // 任何一个参数名——它们是 dsh 网页那一侧的私有词汇，定义权在占槽的插件那儿。
@@ -463,6 +431,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
         bridgeReady = false
+        connection.notePageReady(false)
         armBridgeWarn()
     }
 
@@ -480,22 +449,15 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // MARK: - 重连 / 清理
 
-    /// ⌘⇧R：忘掉当前端点，立刻重走三级定位。
-    /// M4 加桥后这里会升级为"经桥请求 dsh 重启自己"（dsh 侧有 appExit 服务）；
-    /// M1 还没有反向通道，能做的只是壳这一侧重新接入——dsh 自身的重启归终端。
+    /// ⌘⇧R：忘掉当前端点，立刻重走定位。归状态机做，壳只是转发。
     func reconnect() {
-        nativeHost.disconnect()
-        webView.stopLoading()
-        endpoint = nil
-        showBootstrap(.reconnecting)
-        probeNow()
+        connection.reconnect()
     }
 
-    /// 应用退出前调用。M1 起壳不拥有 dsh 进程，收尾只剩自己这一侧的连接，
-    /// 不再需要 .terminateLater 等一个进程组死透。
+    /// 应用退出前调用。收尾只剩自己这一侧的连接——托管后端的收尾归
+    /// `BackendManager`（AppDelegate 那边问它要不要等）。
     func shutdown() {
-        connectTimer?.invalidate()
-        connectTimer = nil
+        connection.stop()
         bridgeWarnWork?.cancel()
         nativeHost.disconnect()
     }
@@ -549,10 +511,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 核对"插件要的参数"与"页面正用着的参数"，不符就重载一次。
     /// 装载稳定（`didSettle`）之后才做——途中的半成品状态不算数。
     private func syncWebQueryGate() {
-        guard nativeHost.didSettle, endpoint != nil, webQuery != queryInUse else { return }
+        guard nativeHost.didSettle, let endpoint = connection.activeEndpoint,
+              webQuery != queryInUse else { return }
         Log.write("页面查询参数变化：\(describe(queryInUse)) → \(describe(webQuery))，重载页面",
                   to: ClamPaths.logURL, tag: "layout")
-        loadWebUI()
+        loadWebUI(endpoint)
     }
 
     /// 参数字典的一行式写法，只给日志与诊断面板用。
@@ -561,87 +524,75 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             : query.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
     }
 
-    // MARK: - 引导视图
+    // MARK: - 连接页（覆盖层）
 
-    /// 引导页此刻在演哪一幕。**存的是"哪一幕"而不是那几句话**：语言一变
-    /// 照着同一幕重画一次就行（`refreshBootstrap()`），不必把文案存两份。
-    private enum BootstrapPhase {
-        case searching      // 转圈：正在找 dsh
-        case reconnecting   // 转圈：⌘⇧R 之后
-        case disconnected   // 引导：连上过又断了
-        case notFound       // 引导：从头到尾就没找到
-
-        /// guide 态 = "等你做点什么"（有标题、命令与重试按钮）；
-        /// busy 态 = "在等"（只有转圈和一行字）。
-        var isGuide: Bool { self == .disconnected || self == .notFound }
-    }
-
-    /// 引导页当前在演的那一幕；nil = 引导页不在场。
-    private var bootstrapPhase: BootstrapPhase?
-
-    /// 引导页当前在场且处于 guide 态（非转圈）。轮询每 2s 打一次，
-    /// 靠它避免把同一段文案反复重设。
-    private var guideShown: Bool { bootstrapPhase?.isGuide ?? false }
-
-    /// 引导页盖在 contentView 之上，铺满窗口；重复调用只换文案。
-    private func mountBootstrap() -> BootstrapViewController {
-        if let vc = bootstrapVC { return vc }
-        let vc = BootstrapViewController()
-        bootstrapVC = vc
-        if let content = window?.contentView {
-            let v = vc.view
-            v.translatesAutoresizingMaskIntoConstraints = false
-            content.addSubview(v, positioned: .above, relativeTo: nil)
-            NSLayoutConstraint.activate([
-                v.topAnchor.constraint(equalTo: content.topAnchor),
-                v.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-                v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-                v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            ])
+    /// 幕变了：该盖就盖，该撤就撤。**只认 `showsOverlay` 一个判据**——
+    /// 哪一页（引导 / 中断）由页面自己按 phase 选，壳不参与。
+    private func applyPhase(_ phase: ConnectionPhase) {
+        if phase.showsOverlay {
+            mountConnectionScreen()
+        } else {
+            hideConnectionScreen()
         }
-        return vc
     }
 
-    /// 演某一幕。guide 那两幕会告诉用户在终端跑 `dsh web`，附可拷贝命令与"重试"
-    /// ——重试只是催一次探测，轮询本来就会自己接回来。
-    private func showBootstrap(_ phase: BootstrapPhase) {
-        bootstrapPhase = phase
+    /// 连接页盖在 contentView 之上、铺满窗口。
+    ///
+    /// **排在拖动条之下**：`WindowDragRegionView` 是窗口 chrome，连接页在场时
+    /// 标题栏那 40pt 照样要能拖窗、双击要能放大。旧的 bootstrap 覆盖层是
+    /// `positioned: .above, relativeTo: nil`（排在最上面），靠的是
+    /// `isMovableByWindowBackground` 兜底——那条路对 NSHostingView 不成立。
+    private func mountConnectionScreen() {
         dismissUpdateBanner()
-        renderBootstrap(phase)
+        guard connectionVC == nil else { return }
+        let vc = ConnectionViewController(connection: connection, backend: backend,
+                                          strings: strings, actions: connectionActions())
+        connectionVC = vc
+        containerController.addChild(vc)
+        let v = vc.view
+        v.translatesAutoresizingMaskIntoConstraints = false
+        let content = containerController.view
+        content.addSubview(v, positioned: .below, relativeTo: titleBarDragView)
+        NSLayoutConstraint.activate([
+            v.topAnchor.constraint(equalTo: content.topAnchor),
+            v.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            v.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            v.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+        ])
     }
 
-    /// 把当前这一幕按**当前语言**画出来。`showBootstrap` 与语言变更共用同一段。
-    private func renderBootstrap(_ phase: BootstrapPhase) {
-        let s = strings
-        let vc = mountBootstrap()
-        switch phase {
-        case .searching:
-            vc.setBusy(s.bootstrapSearching)
-        case .reconnecting:
-            vc.setBusy(s.bootstrapReconnecting)
-        case .disconnected, .notFound:
-            let title = phase == .disconnected ? s.bootstrapDisconnectedTitle : s.bootstrapNotFoundTitle
-            let detail = phase == .disconnected ? s.bootstrapDisconnectedDetail : s.bootstrapNotFoundDetail
-            vc.setGuide(title: title, detail: detail, command: "dsh web",
-                        copyTitle: s.copy, retryTitle: s.retry) { [weak self] in
-                self?.showBootstrap(.searching)
-                self?.probeNow()
-            }
-        }
+    private func hideConnectionScreen() {
+        guard let vc = connectionVC else { return }
+        vc.view.removeFromSuperview()
+        vc.removeFromParent()
+        connectionVC = nil
     }
 
-    /// 语言变了：引导页在场就照着同一幕重画一次。
-    /// （实际上这一幕多半不会赶上换语言——没连上 dsh 时页面根本没在跑，
-    /// 也就没人来投影语言。写这几行是为了"任何时候语言都自洽"，不是为了某个场景。）
-    private func refreshBootstrap() {
-        guard let phase = bootstrapPhase, bootstrapVC != nil else { return }
-        renderBootstrap(phase)
+    /// 页面能发起的动作。**壳这一侧一句业务逻辑都没有**：连接归状态机、
+    /// 托管归 BackendManager、面板与日志是壳本地动作。
+    private func connectionActions() -> ConnectionActions {
+        ConnectionActions(
+            connect: { [weak self] endpoint in self?.connection.connect(to: endpoint) },
+            submitAddress: { [weak self] text in self?.connection.connect(toURLString: text) ?? false },
+            startManaged: { [weak self] in self?.startManaged() },
+            stopManaged: { [weak self] in self?.stopManaged() },
+            chooseOther: { [weak self] in self?.connection.abandonTarget() },
+            openDiagnostics: { [weak self] in self?.showDiagnostics() },
+            openLogs: { [weak self] in self?.openLogs() })
     }
 
-    private func hideBootstrap() {
-        bootstrapPhase = nil
-        bootstrapVC?.view.removeFromSuperview()
-        bootstrapVC = nil
+    /// "开启托管"：**同时落偏好**。托管的承诺是"打开 App 就有后端"，
+    /// 只拉起这一次而不记住的话，下次开 App 又回到空空的引导页。
+    private func startManaged() {
+        connection.setMode(.managed)
+        backend.start()
+    }
+
+    /// "停止托管"：杀进程 + 切回 auto（计划 §5）。留在 managed 模式的话，
+    /// 下次启动又会自己拉起来——那不是用户按这颗按钮的意思。
+    private func stopManaged() {
+        backend.stop()
+        connection.setMode(.auto)
     }
 
     // MARK: - 壳自身的构建（clam-app v1）
@@ -649,8 +600,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 壳重建不是插件热替换那个档位：它要重启进程、丢页面状态。所以默认只提示，
     /// 动手归用户（clam-app 配了 `restartOnRebuild` 才自动走）。
     private func applyAppBuild(_ state: AppBuildState) {
-        // 引导页在场 = 此刻连 dsh 都没有，"壳有新版"不是当下该操心的事。
-        guard bootstrapVC == nil else { return }
+        // 连接页在场 = 此刻连后端都没有，"壳有新版"不是当下该操心的事。
+        guard connectionVC == nil else { return }
         switch state.status {
         case "building":
             mountUpdateBanner().show(.building)
@@ -1203,7 +1154,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         updateBanner?.apply(strings: s)
         diagnosticsPanel?.apply(strings: s)
         shortcutsPanel?.refreshIfVisible(strings: s, inPage: inPageShortcuts)
-        refreshBootstrap()
+        connectionVC?.apply(strings: s)
     }
 
     // MARK: - 菜单动作：喊命令
@@ -1285,13 +1236,32 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         lines.append(s.diagBuildTime(AppInfo.buildTimestamp))
         lines.append("")
         lines.append(s.diagSectionConnection)
-        if let endpoint {
+        // **开发者细节全在这儿**：worktree、profile、pid、isOwn、候选健康态
+        // 一个都不上主界面（计划 §3 口径 1），它们的去处就是这一屏与日志。
+        lines.append(s.diagPhase(connection.phase.key))
+        lines.append(s.diagMode(connection.mode.rawValue, target: connection.targetAddress))
+        if let endpoint = connection.activeEndpoint {
             // "不是本 worktree 那一套"是警告，得跟着端点这一行走（见 ClamEndpoint.summary）。
             lines.append(s.diagEndpoint(endpoint.summary + (endpoint.isOwn ? "" : s.diagEndpointNotOwn)))
             lines.append(s.diagEndpointSource(endpoint.source.rawValue))
         } else {
             lines.append(s.diagEndpointNone)
         }
+        if let failure = connection.lastFailure {
+            lines.append(s.diagLastFailure(ConnectionController.failureKey(failure)))
+        }
+        if connection.attempts > 0 {
+            lines.append(s.diagAttempts(connection.attempts))
+        }
+        let candidateText = connection.candidates.isEmpty
+            ? s.diagDiscoveredNone
+            : connection.candidates.map { status in
+                let health = status.failure.map { ConnectionController.failureKey($0) } ?? "ok"
+                return "\(status.endpoint.summary) \(health) \(String(format: "%.0fms", status.elapsed * 1000))"
+                    + (status.endpoint.isOwn ? "" : " ⚠️")
+            }.joined(separator: ", ")
+        lines.append(s.diagCandidates(candidateText))
+        lines.append(s.diagBackendManager(backend.diagnosticSummary))
         lines.append(s.diagBridge(connected: nativeHost.isBridgeConnected))
         lines.append(s.diagPageBridge(ready: bridgeReady))
         lines.append(s.diagWebQuery(describe(queryInUse)))
@@ -1359,6 +1329,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             switch type {
             case "ready":
                 bridgeReady = true
+                connection.notePageReady(true)
                 bridgeWarnWork?.cancel()
                 bridgeWarnWork = nil
                 let caps = body["capabilities"] as? [String] ?? []
@@ -1490,10 +1461,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         Log.write("WebView 加载失败：\(error.localizedDescription)", to: ClamPaths.logURL, tag: "web")
         // dsh 可能正在换端口或还没起完：催一次探测。端点没变就是真加载失败，
         // 延迟重载一次；端点变了/没了，apply 会接管（重装或盖引导页）。
-        let before = endpoint
-        probeNow()
+        let before = connection.activeEndpoint
+        connection.probeNow()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, let endpoint = self.endpoint, endpoint == before else { return }
+            guard let self, let endpoint = self.connection.activeEndpoint,
+                  endpoint == before else { return }
             self.webView.reload()
         }
     }

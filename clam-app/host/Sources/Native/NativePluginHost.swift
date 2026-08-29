@@ -67,6 +67,10 @@ final class NativePluginHost {
     var onAppBuild: ((AppBuildState) -> Void)?
     /// registry 有变动 / 门控状态变化时调用（壳据此刷新 root 挂载）。
     var onUpdate: (() -> Void)?
+    /// 桥连接状态变化（true = 已握手）。连接状态机拿它翻 `.connected` 那一幕。
+    var onBridgeConnected: ((Bool) -> Void)?
+    /// 桥的失败上报（握手被拒 / hello 超时 / 掉线）。以前这些全是静默退避。
+    var onBridgeFailure: ((BridgeClient.Failure) -> Void)?
 
     private let bridge = BridgeClient()
     private let compiler: CompilerService
@@ -101,8 +105,10 @@ final class NativePluginHost {
                 // 断桥不动 registry：UI 保持最后状态，重连后重新拉全量即可。
                 Log.write("桥断开（registry 保持不动）", to: ClamPaths.logURL, tag: "bridge")
             }
+            self.onBridgeConnected?(connected)
             self.onUpdate?()
         }
+        bridge.onFailure = { [weak self] failure in self?.onBridgeFailure?(failure) }
     }
 
     var isBridgeConnected: Bool { bridge.isConnected }
