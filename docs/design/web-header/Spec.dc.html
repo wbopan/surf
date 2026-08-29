@@ -14,7 +14,6 @@
     .dim { position: absolute; color: #d0342c; font-size: 10px; line-height: 12px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .hl { position: absolute; border-top: 1px solid #d0342c; height: 0; }
     .vl { position: absolute; border-left: 1px solid #d0342c; width: 0; }
-    .guide { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(208,52,44,0.45); height: 0; }
     .note { font-size: 11px; line-height: 15px; color: #61666b; }
     .note b { color: #0f1115; font-weight: 600; }
   </style>
@@ -52,20 +51,21 @@
   <div class="hl" style="left: 40px; top: 106px; width: 24px;"></div>
   <div class="dim" style="left: 46px; top: 94px;">8</div>
 
-  <div class="dim" style="left: 64px; top: 128px;">16 ← 标题起点（假设，落地时对着 Mail 量）</div>
+  <div class="hl" style="left: 40px; top: 124px; width: 24px;"></div>
+  <div class="dim" style="left: 68px; top: 119px;">16 ← 标题起点（假设，落地时对着 Mail 量）</div>
 
-  <div class="dim" style="left: 64px; top: 20px;">标题 SF Pro Bold 15 · rgb(54,54,54)　副标题 SF Pro Medium 11 · rgb(178,178,178)　叠放 30 高、垂直居中</div>
-
-  <div class="dim" style="left: 560px; top: 20px;">胶囊 36 高 · r 18 · 项间 8 · 右缘 8　段 28 高 / 水平 10 / r 14　选中底 rgba(0,0,0,.07)</div>
-  <div class="dim" style="left: 560px; top: 128px;">符号与文字 13 Medium · chevron Bold　导出 36×36 图标按钮（文字进 tooltip）</div>
+  <div class="dim" style="left: 64px; top: 12px;">标题 SF Pro Bold 15 · rgb(54,54,54)　副标题 SF Pro Medium 11 · rgb(178,178,178)　叠放 30 高、垂直居中</div>
+  <div class="dim" style="left: 64px; top: 25px;">胶囊 36 高 · r 18 · 项间 8 · 右缘 8　文字段 28 高 / 水平 10 / r 14　选中底 rgba(0,0,0,.07)　符号与文字 13 Medium · chevron Bold</div>
+  <div class="dim" style="left: 64px; top: 134px;">导出 36×36 图标按钮（文字进 tooltip）　子代理下拉胶囊含计数约 64 宽（套件 50×36 是符号 + chevron）</div>
 
   <!-- 说明 -->
   <div style="position: absolute; left: 40px; top: 170px; width: 920px; display: flex; flex-direction: row; gap: 32px;">
     <div class="note" style="flex: 1;">
       <b>几何（Apple macOS 27 UI Kit · Unified Toolbar + Title）</b><br>
       栏 52 · 项 36×36 · 上下 8 · 项间 8 · 首项 x=8 · 标题跟前一项 8<br>
-      分段控件 2 项 75×36：段 32×28 内缩 4，分隔 1×16 rgba(0,0,0,.05)<br>
-      下拉胶囊 50×36：符号 13 Medium + chevron 13 Bold<br>
+      分段控件（图标段）2 项 75×36：段 32×28 内缩 4；文字段按内容宽、水平 10<br>
+      分隔 1×16 rgba(0,0,0,.05) 只画在两个未选段之间——两段一选中时不出现<br>
+      下拉胶囊 50×36：符号 13 Medium + chevron 13 Bold（加计数后约 64）<br>
       Scroll Edge Effect（Hard）：底色 + 底边 0.67 rgba(0,0,0,.05)，无实线
     </div>
     <div class="note" style="flex: 1;">
