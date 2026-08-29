@@ -687,7 +687,7 @@ window.__ModuleLoader__.load({
 				// px 封顶变量（watchPressPoint 白名单里有 tablist）；进按下瞬时、
 				// 松手走上面那条 transition，同按钮的时序纪律。
 				S + ' [role="tablist"]:active {',
-				"  scale: var(--clam-sx, 1.03) var(--clam-sy, 1.03);",
+				"  scale: var(--clam-s, 1.03);",
 				"  transition-duration: 0s;",
 				"}",
 				"@media (prefers-reduced-motion: reduce) {",
@@ -1047,13 +1047,14 @@ window.__ModuleLoader__.load({
 				if (!r.width || !r.height) return;
 				el.style.setProperty("--clam-px", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
 				el.style.setProperty("--clam-py", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
-				// 按压膨胀的尺度。**等比 scale 对宽矮按钮是灾难**：1.09 在 36px 方钮上
-				// 是 3px，在 200px 宽的子代理下拉上是 18px（用户 2026-08-29 指出）。
-				// 原生的手感是"涨几个像素"，不是"涨百分之九"——所以每个维度封顶
-				// 5px：小按钮仍然吃满 1.06，宽按钮自动收敛。CSS 侧兜底 1.06
+				// 按压膨胀的尺度，两轮用户裁决叠出来的形状：
+				// ① 定比 1.09 太猛——200px 宽的子代理下拉横向涨 18px；改成"涨几个
+				//   像素"的手感。② 但**必须等比**：逐维各自封顶会把宽矮元素按成
+				//   "往上下鼓"（横向收敛了、纵向还在 1.06，比例失衡一眼看穿）。
+				// 所以是单一比例、按**长边**封顶 5px：s = min(1.06, 1 + 5/max(w,h))。
+				// 方钮吃满 1.06，宽矮元素两个方向同比收敛。CSS 侧兜底 1.06
 				// （键盘触发拿不到指针时走兜底，键盘场景基本都是小按钮）。
-				el.style.setProperty("--clam-sx", Math.min(1.06, 1 + 5 / r.width).toFixed(4));
-				el.style.setProperty("--clam-sy", Math.min(1.06, 1 + 5 / r.height).toFixed(4));
+				el.style.setProperty("--clam-s", Math.min(1.06, 1 + 5 / Math.max(r.width, r.height)).toFixed(4));
 			};
 			document.addEventListener("pointerdown", onDown, { capture: true, passive: true });
 			return () => document.removeEventListener("pointerdown", onDown, { capture: true });
@@ -1206,7 +1207,7 @@ window.__ModuleLoader__.load({
 			if (!insideClam()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(watchReduceTransparency);
-			// 段控胶囊和 composer 卡片也要喂 --clam-sx/--clam-sy（整块表面按压缩放）。
+			// 段控胶囊和 composer 卡片也要喂 --clam-s（整块表面按压缩放）。
 			// 顺序有讲究：closest() 取最近的命中者，按在卡片内层按钮上时先命中按钮，
 			// 变量落在按钮上；只有按在 textarea 这类非按钮区才落到卡片。
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.concat([HEADER_SEAT + ' [role="tablist"]', COMPOSER_CARD]).join(",")));
@@ -1682,10 +1683,10 @@ window.__ModuleLoader__.load({
 					//
 					// scale 是独立属性、不占布局，所以在 flex/grid 里放大不会挤动邻居。
 					solidActive + " {",
-					// 尺度由 watchPressPoint 按元素尺寸算（每维封顶 5px，见那边注释）；
+					// 尺度由 watchPressPoint 按元素尺寸算（等比、长边封顶 5px，见那边注释）；
 					// 1.06 是键盘触发（拿不到指针）时的兜底。曾定稿 1.09 等比——宽矮
 					// 按钮横向涨十几像素，用户裁决改小并封顶。
-					"  scale: var(--clam-sx, 1.06) var(--clam-sy, 1.06);",
+					"  scale: var(--clam-s, 1.06);",
 					// 150% 就是闲时那个值 —— **定稿故意不收拢**：亮光只淡入淡出，是整面泛光，
 					// 不是聚成一小块。位置仍然跟着 --clam-px/--clam-py 走（渐变中心在手指底下，
 					// 只是摊得很开）。这一行留着是为了把"不收拢"写在用它的地方，改回收拢就调它。
@@ -1786,7 +1787,7 @@ window.__ModuleLoader__.load({
 					// ── Composer 卡片的按压 ─────────────────────────────────────────
 					// 它也是液态玻璃表面，按压跟按钮同一套手感（用户 2026-08-29 要的）。
 					// 尺度同一套 px 封顶变量（watchPressPoint 白名单里有它）；卡片
-					// ~780px 宽，横向封顶后只涨 5px，纵向约 1.03——正是"轻轻一沉"。
+					// ~780px 宽，等比长边封顶后横向涨 5px、纵向不到 1px——"轻轻一沉"。
 					// **内部按钮按下时卡片不动**：发送键/加号自己有按压缩放，卡片再
 					// 跟着涨就是双重膨胀，`:not(:has(...))` 把这种情况挡掉——textarea
 					// 里点击落字才算"按在卡片上"。dsh 卡片自身没有 transition（查过
@@ -1795,7 +1796,7 @@ window.__ModuleLoader__.load({
 					"  transition: scale var(--clam-dur) var(--clam-ease);",
 					"}",
 					COMPOSER_CARD + ':active:not(:has(button:active, [role="button"]:active)) {',
-					"  scale: var(--clam-sx, 1.01) var(--clam-sy, 1.03);",
+					"  scale: var(--clam-s, 1.01);",
 					"  transition-duration: 0s;",
 					"}",
 					"@media (prefers-reduced-motion: reduce) {",
