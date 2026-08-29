@@ -2,10 +2,16 @@
  * clam-nativeify，浏览器半边（lazy-CJS 经典脚本，手写、无构建步骤）。
  *
  * **职责边界**：只做「让 dsh Web UI 摸起来像原生 macOS App」这一件事，
- * 全部实现是注入一段 CSS，零服务依赖、零跨插件契约：禁掉 document 橡皮筋、
+ * 几乎全部实现是注入一段 CSS，零服务依赖、零跨插件契约：禁掉 document 橡皮筋、
  * UI 文本不可选中（输入框与会话消息流除外）、实体按钮的按压手感、
  * 字体收到 macOS 原生度量（两个旋钮：CONTROL 管控件、BODY 管对话阅读列，
- * 见下面「原生字体度量」的实测表）。
+ * 见下面「原生字体度量」的实测表）、主内容区 header 贴合 macOS 27 工具栏
+ * （HEADER 段，权威计划 docs/web-header-native-match-plan.md）。
+ *
+ * **唯一一条对外契约**是 header 那一段带来的：`watchDragPassthrough()` 把 header
+ * 里可点元素的矩形经页内桥报给壳，换它对顶部拖动条放行。不报的话 header 上的
+ * 胶囊全是假按钮（壳那 40pt 拖动条压在 WebView 上）。壳缺席时它静默失败，
+ * CSS 照常生效。
  *
  * **不在这里的**：
  * - `window.__clam` 动作桥、收起 web 侧边栏、rail 轨道抵消——那些是原生分栏
@@ -79,8 +85,17 @@ window.__ModuleLoader__.load({
 		 * .21 = .069）。再叠一层 inset 描边，墨量翻到 .13 以上，肉眼就是"边黑了一圈"。
 		 * 所以自带 border 的这组只上高光和暗带，描边交给 dsh 自己那条。
 		 */
+		/**
+		 * 主内容区 header 槽的 outlet。**槽名是槽系统的一等契约**（每个 outlet 都带
+		 * `data-slot`、`display:contents`、不产生盒子），比任何 hash 化类名都稳。
+		 *
+		 * header 那一段的选择器**一律拿它打头**：`_label` / `_trigger` / `_root`
+		 * 这种语义后缀在 dsh 全站到处都是（composer 的模型选择器、访问模式选择器
+		 * 全叫 `_trigger`），不锚定就是全站误伤。
+		 */
+		const HEADER_SEAT = '[data-slot="conversation.session.header"]';
+
 		const SOLID_BORDERED = [
-			'button[class*="_sessionLogButton"]',  // 会话头部 Session log ⬇（1px border）
 			'button[class*="_newSession"]',        // 侧边栏新建会话（白底 + 1px border）
 			// 会话流「回到底部」浮动圆钮（34×34，自带 1px border + 浮起投影）。
 			// **不写 `button[...]` 前缀**：从 bundle 里确认不了它到底是 <button> 还是
@@ -94,6 +109,16 @@ window.__ModuleLoader__.load({
 			// 会话流顶部「加载更早」。它是个裸 <button type="button">，自己一个 class
 			// 都没有，只能从父容器 Md3f7G_older 捞——所以这条是唯一的结构选择器。
 			'[class*="_older"] > button',
+			// ── header 那三枚玻璃胶囊（见下面 HEADER 段）─────────────────────────
+			// 导出按钮。**它以前在 SOLID_BORDERED 里**（dsh 给了它 1px border-l2），
+			// 现在收成 36×36 的图标钮，和旁边两枚描边由我们画的胶囊并排——留着
+			// dsh 那条 1px 会让三枚里唯一一枚的边比别人黑一圈（墨量 .1 对 .049）。
+			// 所以 HEADER 段把它的 border 抹掉，这里跟着换组，三枚描边同源。
+			HEADER_SEAT + ' button[class*="_sessionLogButton"]',
+			// 子代理计数下拉 / 兄弟切换器（ui-subagent 的 _trigger / _switcherTrigger）
+			// 与后台任务下拉（ui-jobs 的 _trigger）。**必须锚在 HEADER_SEAT 之下**：
+			// `_trigger` 这个后缀 composer 那排选择器也在用，不锚就全站上玻璃。
+			HEADER_SEAT + ' button[class*="_trigger"]',
 		];
 		const SOLID_BUTTONS = SOLID_PLAIN.concat(SOLID_BORDERED);
 		// 排除 dsh 自己的禁用态两种写法；:not() 链一次写好，供下面各态复用。
@@ -432,6 +457,335 @@ window.__ModuleLoader__.load({
 				`html body [class*="_card"]:has(textarea) { font-size: ${BODY}px; line-height: ${lh(BODY)}px; }`,
 		];
 
+		/**
+		 * ===== 主内容区 header：一行 52pt，贴合 macOS 27 Unified Toolbar =====
+		 *
+		 * 权威计划 `docs/web-header-native-match-plan.md`，数值出自 Apple 官方
+		 * macOS 27 UI Kit（Sketch）的 `Unified Toolbar + Title + Sidebar`。
+		 *
+		 * **为什么是 CSS 而不是原生重画**：原生那条路（clam-header）要自己复刻 header
+		 * 的全部内容——面包屑、子代理目录、preset、后台任务、导出——内容一变就漂移。
+		 * CSS 只改**形**，内容与行为仍归 dsh。判据不变：**圆胶囊是"可操作"的承诺**，
+		 * 不可点的 preset 退成副标题，不做假按钮。
+		 *
+		 * ── 布局的那一招 ───────────────────────────────────────────────────────
+		 * dsh 的 header 是两行：`_titleRow`（标题簇 + utilities）叠 `_tabs`（下划线标签）。
+		 * 要把它们排成一行、且顺序是「标题 … 段控 子代理 导出」，就得让 `header`
+		 * 直接看见这几样东西——所以三层纯布局容器（`_titleRow` / `_titleCluster` /
+		 * `_headerActions`）一律 `display: contents` 摊平，`header` 自己变成 grid：
+		 *
+		 *   列： [1] 标题/副标题   [2] 1fr 弹性   [3] 段控   [4] 子代理·任务   [5] 导出
+		 *   行： [1] 标题          [2] 副标题（preset；缺席时这行高度为 0）
+		 *
+		 * 两行都是 `auto` + `align-content: center`：**没有副标题时标题自己居中**
+		 * （中线 y=26，与原生侧边栏那两枚 36 胶囊共用），有副标题时两行整体居中。
+		 * 写成 `1fr 1fr` 就会在没有 preset 时把标题顶到上半格——差 9pt，一眼看得出。
+		 *
+		 * 列间距**不用 `column-gap`**：`_tabs` 只在视图多于一个时才渲染，空列的
+		 * gap 照样占位，那 8pt 会凭空多出来。改成右侧每一项各自 `margin-left: 8px`。
+		 *
+		 * ── 选择器纪律 ─────────────────────────────────────────────────────────
+		 * 一律 `HEADER_SEAT` 打头。`_label` / `_trigger` / `_root` 这些后缀在 dsh
+		 * 全站到处都是（composer 那排选择器全叫 `_trigger`），不锚定就是全站误伤。
+		 * `data-slot` 是槽系统的一等契约，比 hash 化类名稳——所以「actions 槽里
+		 * 除了 preset 之外的东西」这类结构判断优先走它，再补一条类名版兜底。
+		 *
+		 * ── 已知失效方向 ───────────────────────────────────────────────────────
+		 * - `display: contents` 会让这三层从 AX 树里消失。它们是纯布局 div、无 role，
+		 *   无损；哪天 dsh 给 `_headerActions` 加了 role 就得换方案。
+		 * - actions 槽今天只有两位住户（preset、后台任务）。再来第三位会和后台任务
+		 *   挤在同一格里叠着——那时把第 4 列拆成两列。
+		 * - `_tab` 没有 `data-view`，只有本地化文案和 `aria-selected`。CSS 只认后者。
+		 *
+		 * @returns {string[]} CSS 行。
+		 */
+		function headerRules() {
+			const S = HEADER_SEAT;
+			// 面包屑段之间的 `chevron.right`（Apple 的层级分隔符），换掉 dsh 的 `/`。
+			const chevron = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 12'%3E%3Cpath d='M2 1.4 6.6 6 2 10.6' fill='none' stroke='%23000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
+			return [
+				// ── 四态配色（浅/深 × 激活/失活）────────────────────────────────
+				// 标题色**不用 dsh 的 `label-primary`**（#0f1115，那是正文黑）：
+				// Apple 的工具栏标题是 Labels/Vibrant/1 Primary 那档 vibrant 深灰。
+				// 特异性：`${S}` 是 (0,1,0)，深色 (0,2,1)，失活 (0,2,1) 排在深色之后
+				// 所以浅色失活赢；深色失活单列一条 (0,3,2) 压住它。
+				S + " {",
+				"  --clam-header-title: rgb(54, 54, 54);",
+				"  --clam-header-subtitle: rgb(178, 178, 178);",
+				"  --clam-header-seg-fill: rgba(0, 0, 0, 0.07);",
+				"  --clam-header-seg-sep: rgba(0, 0, 0, 0.05);",
+				"}",
+				"body[data-ds-dark-theme] " + S + " {",
+				"  --clam-header-title: rgba(255, 255, 255, 0.96);",
+				"  --clam-header-subtitle: rgb(138, 138, 138);",
+				"  --clam-header-seg-fill: rgba(255, 255, 255, 0.08);",
+				"  --clam-header-seg-sep: rgba(255, 255, 255, 0.06);",
+				"}",
+				":root[data-clam-blur] " + S + " {",
+				"  --clam-header-title: rgb(178, 178, 178);",
+				"  --clam-header-seg-fill: rgba(0, 0, 0, 0.05);",
+				"}",
+				":root[data-clam-blur] body[data-ds-dark-theme] " + S + " {",
+				"  --clam-header-title: rgba(255, 255, 255, 0.55);",
+				"  --clam-header-seg-fill: rgba(255, 255, 255, 0.06);",
+				"}",
+
+				// ── 几何：一行 52 ───────────────────────────────────────────────
+				// `:not(_headerHidden)` 是必须的：空会话时 dsh 用 `.wSkVaW_headerHidden
+				// { display: none }`（0,1,0）把整条 header 收掉，而 `${S} > header`
+				// 是 (0,1,1)，不排除的话 grid 会把它又显示出来。
+				S + ' > header:not([class*="_headerHidden"]) {',
+				"  box-sizing: border-box;",
+				"  height: 52px;",
+				// 左 16 = Apple 的标题起点（首项 x=8 + 项内 8）；右 8 = 末项右侧留白。
+				"  padding: 8px 8px 8px 16px;",
+				"  display: grid;",
+				// 标题列可收缩到 0（窄窗口时让面包屑自己截断），别让它把胶囊挤出去。
+				"  grid-template-columns: minmax(0, auto) 1fr auto auto auto;",
+				"  grid-template-rows: auto auto;",
+				"  align-content: center;",
+				"  border-bottom: 0;",
+				"}",
+				// 底边那条 1px 线：Apple 的工具栏没有分隔线，内容从底下穿过。
+				S + " > header::after { display: none; }",
+				// 三层纯布局容器摊平，让 header 直接看见里面的东西。
+				S + ' [class*="_titleRow"],',
+				S + ' [class*="_titleCluster"],',
+				S + ' [class*="_headerActions"] { display: contents; }',
+
+				// ── 网格落位 ───────────────────────────────────────────────────
+				S + ' nav[class*="_crumbs"] {',
+				"  grid-column: 1;",
+				"  grid-row: 1;",
+				"  min-width: 0;",
+				"  gap: 2px;",
+				// dsh 给 nav 挂了 `overflow: hidden`，**而截断根本不靠它**——
+				// `_crumb` 自己就有 `max-width: 220px` + `text-overflow: ellipsis`。
+				// 留着它的唯一效果是把子代理那枚胶囊上下裁掉一截（实测：胶囊真的是
+				// 36 高，只是 nav 只有 20 高，红框调试时上下两条边直接消失）。
+				"  overflow: visible;",
+				"  align-items: center;",
+				// 面包屑按钮自带 8px 内边距（hover 药丸要它），把它抵掉，
+				// 文字起点才真的落在 16。
+				"  margin-left: -8px;",
+				"}",
+				// preset → 副标题。它是**锁定不可点**的（dsh 在 header 里只渲染一个
+				// span），所以按判据退成文字，不做成假胶囊。
+				S + ' [class*="_label"] {',
+				"  grid-column: 1;",
+				"  grid-row: 2;",
+				"  align-self: center;",
+				"  justify-self: start;",
+				"  max-width: 100%;",
+				"  min-width: 0;",
+				"  height: auto;",
+				"  margin: 0;",
+				"  padding: 0;",
+				"  gap: 4px;",
+				"  background: none;",
+				"  border-radius: 0;",
+				"  font-size: 11px;",
+				`  line-height: ${lh(11)}px;`,
+				"  font-weight: 500;",
+				"  color: var(--clam-header-subtitle);",
+				"}",
+				// preset 自己那枚图标跟着副标题走。**这是 web header，不受原生
+				// `window.subtitle` 塞不进图标那条限制**（SF Symbols 是图片资源，
+				// 不是可嵌进字符串的字体）——所以这里留着它。
+				S + ' [class*="_label"] svg {',
+				"  width: 11px;",
+				"  height: 11px;",
+				"  opacity: 1;",
+				"}",
+				// 段控（视图切换）。
+				S + ' [role="tablist"] {',
+				"  grid-column: 3;",
+				"  grid-row: 1 / -1;",
+				"  align-self: center;",
+				"  margin: 0 0 0 8px;",
+				"}",
+				// actions 槽里除 preset 之外的住户（今天只有后台任务下拉）。
+				// 两条选择器是同一件事的两种形状：槽 outlet 是 `display: contents`，
+				// 若哪天多包一层 DOM，类名那条兜住；outlet 那条命中的才是真格子，
+				// 另一条落在 `display: contents` 的元素上，是惰性的，无害。
+				S + ' [data-slot="conversation.session.header.actions"] > *:not([class*="_label"]),',
+				S + ' [class*="_headerActions"] > *:not([class*="_label"]) {',
+				"  grid-column: 4;",
+				"  grid-row: 1 / -1;",
+				"  align-self: center;",
+				"  display: flex;",
+				"  align-items: center;",
+				"  margin-left: 8px;",
+				"}",
+				S + ' [class*="_headerUtilities"] {',
+				"  grid-column: 5;",
+				"  grid-row: 1 / -1;",
+				"  align-self: center;",
+				"  margin-left: 8px;",  // dsh 原值 20
+				"}",
+
+				// ── 标题与面包屑 ───────────────────────────────────────────────
+				// 父级面包屑（可点）留在 13——它们是次级信息，不该和标题同号。
+				S + ' button[class*="_crumb"] {',
+				"  padding: 0 8px;",
+				"  font-size: 13px;",
+				`  line-height: ${lh(13)}px;`,
+				"  font-weight: 400;",
+				"  border-radius: 8px;",
+				"}",
+				// 末段 = 标题。SF Pro Bold 15；web 里 600 比 700 更接近 AppKit 的
+				// `.headline` 度量（700 偏重，落地截图比过）。
+				// 排在上一条之后、同特异性，靠源码顺序赢——`_crumbCurrent` 和
+				// `_crumb` 是同一个元素上的两个类。
+				S + ' button[class*="_crumbCurrent"] {',
+				// dsh 给每段面包屑钉死 `max-width: 220px`。父级那些留着没问题，
+				// 末段是标题，15px 之下 220 只装得下十来个汉字，一整行的空位却空着
+				// （grid 的 1fr 就在右边）。放到 420，仍旧走它自己的 ellipsis；
+				// 窄窗口下这一列是 `minmax(0, auto)`，会先于胶囊让位。
+				"  max-width: 420px;",
+				"  font-size: 15px;",
+				`  line-height: ${lh(15)}px;`,
+				"  font-weight: 600;",
+				"  color: var(--clam-header-title);",
+				"}",
+				// 段间分隔：dsh 写的是一个 `/` 字符，换成 `chevron.right`。
+				// 走 mask + currentColor，深浅色自动跟随。
+				S + ' [class*="_crumbSep"] {',
+				"  display: inline-block;",
+				"  width: 9px;",
+				"  height: 9px;",
+				"  font-size: 0;",
+				"  color: var(--clam-header-subtitle);",
+				"  background: currentColor;",
+				`  -webkit-mask: ${chevron} center / 9px 9px no-repeat;`,
+				`  mask: ${chevron} center / 9px 9px no-repeat;`,
+				"}",
+
+				// ── 段控：容器是玻璃胶囊，选中段自己画底 ────────────────────────
+				// 容器**不进 SOLID_BUTTONS 白名单**：那套带 hover/按压/放大，
+				// 而它不是按钮，是一块底板。所以这里自己抄一份表面层——
+				// 用的是同一批 `--clam-glass-*` 变量，四态跟着走，不另起一套。
+				S + ' [role="tablist"] {',
+				"  box-sizing: border-box;",
+				"  height: 36px;",
+				"  padding: 4px;",
+				"  gap: 0;",
+				"  border-radius: 18px;",
+				"  align-items: center;",
+				"  --clam-surface:",
+				"    inset 0 0 0 var(--clam-glass-edge-w) var(--clam-glass-edge),",
+				...glowLayers(),
+				"    inset 14px 0 8px -15px var(--clam-glass-side),",
+				"    inset -14px 0 8px -15px var(--clam-glass-side);",
+				"  background-color: var(--clam-glass-fill);",
+				"  backdrop-filter: blur(var(--clam-glass-blur)) saturate(var(--clam-glass-sat));",
+				"  box-shadow: var(--clam-surface), 0 1px 2px var(--clam-glass-drop);",
+				"}",
+				// 段本体。下划线 + 蓝色选中色全部去掉——Apple 的工具栏段控靠底板
+				// 区分选中，不用强调色。
+				S + ' [role="tab"] {',
+				"  box-sizing: border-box;",
+				"  height: 28px;",
+				"  padding: 0 10px;",
+				"  border-radius: 14px;",
+				"  display: inline-flex;",
+				"  align-items: center;",
+				"  background: transparent;",
+				"  font-size: 13px;",
+				`  line-height: ${lh(13)}px;`,
+				"  font-weight: 500;",
+				"  color: var(--clam-header-title);",
+				"  transition: background-color var(--clam-dur-fast) linear;",
+				"}",
+				S + ' [role="tab"]::after { display: none; }',
+				S + ' [role="tab"]:hover:not([aria-selected="true"]) {',
+				"  background: var(--clam-tint-hover);",
+				"}",
+				S + ' [role="tab"][aria-selected="true"] {',
+				"  background: var(--clam-header-seg-fill);",
+				"  color: var(--clam-header-title);",
+				"}",
+				// 段间那道 1×16 细线。**选中段两侧不画**——Apple 的分隔只出现在
+				// 两个未选段之间（今天只有两个段，所以它实际上永远不显示；
+				// dsh 哪天加第三个视图就用得上了）。
+				S + ' [role="tab"] + [role="tab"]::before {',
+				'  content: "";',
+				"  position: absolute;",
+				"  left: 0;",
+				"  top: 50%;",
+				"  translate: 0 -50%;",
+				"  width: 1px;",
+				"  height: 16px;",
+				"  background: var(--clam-header-seg-sep);",
+				"}",
+				S + ' [role="tab"][aria-selected="true"]::before,',
+				S + ' [role="tab"][aria-selected="true"] + [role="tab"]::before { display: none; }',
+
+				// ── 子代理 / 后台任务：下拉玻璃胶囊 ─────────────────────────────
+				// 玻璃表面来自 SOLID_PLAIN 白名单（见文件头），这里只给几何与字。
+				S + ' button[class*="_trigger"] {',
+				"  box-sizing: border-box;",
+				"  height: 36px;",
+				"  min-height: 36px;",
+				"  padding: 0 10px;",
+				"  border-radius: 18px;",
+				"  gap: 4px;",
+				"  font-size: 13px;",
+				`  line-height: ${lh(13)}px;`,
+				"  font-weight: 500;",
+				"  color: var(--clam-header-title);",
+				"}",
+				// **子代理那枚是例外：24 高，不是 36。**
+				//
+				// 计划把它画成右侧第二枚 36 胶囊，落地时发现做不到——dsh 把 lineage 槽
+				// 放在 `nav._crumbs > span._crumbSeg` 里面，**它是面包屑的一段，不是
+				// actions 槽的住户**。要把它挪到第 4 列就得把 nav 和 _crumbSeg 一起
+				// `display: contents` 摊平，那样多段面包屑的每个按钮都会变成独立格子、
+				// 互相叠在一起——为了一枚胶囊赔掉子代理会话的整条面包屑，不值。
+				//
+				// 所以顺着 DOM 来：它是**面包屑末段的下拉**，就按内联尺寸给。
+				// 24 是被标题行卡死的——36 会把标题行撑到 36，加上副标题那行就是
+				// 52，副标题只能贴着栏底，标题与右侧胶囊的中线也对不上了。
+				S + ' nav[class*="_crumbs"] button[class*="_trigger"] {',
+				"  height: 24px;",
+				"  min-height: 24px;",
+				"  padding: 0 8px;",
+				"  border-radius: 12px;",
+				"  font-size: 12px;",
+				`  line-height: ${lh(12)}px;`,
+				"}",
+				// 子代理模块自带的那个 `/`（`ZKlsPq_separator`，不是面包屑那个
+				// `_crumbSep`）跟着一起换成 chevron。
+				S + ' [class*="_separator"] {',
+				"  display: inline-block;",
+				"  width: 9px;",
+				"  height: 9px;",
+				"  font-size: 0;",
+				"  color: var(--clam-header-subtitle);",
+				"  background: currentColor;",
+				`  -webkit-mask: ${chevron} center / 9px 9px no-repeat;`,
+				`  mask: ${chevron} center / 9px 9px no-repeat;`,
+				"}",
+
+				// ── 导出：36×36 图标钮 ─────────────────────────────────────────
+				// 文字收成 0 宽而不是 `display: none`：**它得留在 AX 树里**
+				// （VoiceOver 与 peekaboo 都靠它认这枚按钮）。
+				S + ' button[class*="_sessionLogButton"] {',
+				"  box-sizing: border-box;",
+				"  width: 36px;",
+				"  min-width: 0;",
+				"  height: 36px;",
+				"  padding: 0;",
+				"  gap: 0;",
+				"  border: 0;",
+				"  border-radius: 18px;",
+				"  color: var(--clam-header-title);",
+				"}",
+				S + ' button[class*="_sessionLogButton"] span { font-size: 0; }',
+				S + ' button[class*="_sessionLogButton"] svg { width: 16px; height: 16px; }',
+			];
+		}
+
 		function insideClam() {
 			try {
 				return navigator.userAgent.includes("Clam/");
@@ -448,8 +802,7 @@ window.__ModuleLoader__.load({
 		 * 把承载窗口的激活态映射到 <html data-clam-blur>。
 		 *
 		 * 页面拿不到 AppKit 的窗口状态，但 WKWebView 会把承载窗口的激活/失活
-		 * 转成页面的 focus/blur 事件（Safari 里切 app 也是同一套）。这是本插件
-		 * 唯一一段 JS —— 其余全是 CSS。
+		 * 转成页面的 focus/blur 事件（Safari 里切 app 也是同一套）。
 		 *
 		 * **刻意不走"让壳注入"那条路**：壳的窗口通知要经 clam-layout 的 Swift
 		 * 半边才够得着 WebView，那会给 clam-nativeify 添一条跨插件契约。收不到
@@ -532,6 +885,69 @@ window.__ModuleLoader__.load({
 			try { return "nf" + Math.random().toString(36).slice(2, 10); } catch { return "nf0"; }
 		}
 
+		/**
+		 * 把 header 里可点元素的位置报给壳，换它对拖动条放行。
+		 *
+		 * **不报的话新 header 就是三枚假按钮。** 壳在 contentView 顶部盖了一块
+		 * 40pt 的 `WindowDragRegionView`（`fullSizeContentView` 下原生标题栏被
+		 * WebView 挡住，没它就整窗拖不动），它压在 WebView 上，网页顶部 40pt 里的
+		 * mouseDown 全部变成拖窗。旧 header 撑得住只是因为那 40pt 里只有一个
+		 * disabled 的面包屑和一个 span；新 header 的三枚胶囊正落在 y=8–44。
+		 *
+		 * 报的是 `getBoundingClientRect()` 的原始值——**CSS px、视口左上为原点**。
+		 * 壳那边负责换算（WebView 在窗口里的偏移、AppKit 的翻转坐标、pageZoom），
+		 * 页面这边因此不需要知道侧边栏有多宽，也不需要知道用户按过几次 ⌘+。
+		 *
+		 * **不设上下界**：只报"这些地方有可点的东西"，40pt 那条线是壳的事——
+		 * 壳哪天把拖动条改高改矮，页面一个字都不用改。
+		 *
+		 * 常驻轮询而不是绑 observer：header 是 React 组件，root entry 重注册会把
+		 * 整个节点换掉，绑死的 observer 会永久失效（仓库里踩过这条）。一次
+		 * `querySelectorAll` 只扫 header 子树的十来个元素，JSON 一样就不发，
+		 * 代价约等于零。
+		 */
+		function watchDragPassthrough() {
+			// **禁用态要排掉**：末段面包屑就是一个 `disabled` 的 <button>（它是标题，
+			// 不是按钮）。把它也报上去 = 标题那块地再也拖不动窗口，而点它又什么都不
+			// 发生——两头落空。判据和玻璃白名单那边的 ENABLED 是同一条。
+			const OFF = ':not(:disabled):not([aria-disabled="true"])';
+			const INTERACTIVE = ["button", "a[href]", "input", "select", "summary",
+				'[role="button"]', '[role="tab"]'].map((s) => s + OFF).join(", ");
+			let last = "";
+			const post = () => {
+				const seat = document.querySelector(HEADER_SEAT);
+				const rects = [];
+				// header 被 dsh 自己藏起来时（空会话 hero）一条都不报 = 整条带子归拖窗。
+				if (seat && seat.firstElementChild?.getAttribute("aria-hidden") !== "true") {
+					for (const el of seat.querySelectorAll(INTERACTIVE)) {
+						const r = el.getBoundingClientRect();
+						if (r.width < 1 || r.height < 1) continue;
+						const round = (v) => Math.round(v * 10) / 10;
+						rects.push({ x: round(r.left), y: round(r.top), w: round(r.width), h: round(r.height) });
+					}
+				}
+				const json = JSON.stringify(rects);
+				if (json === last) return;
+				last = json;
+				try {
+					window.webkit.messageHandlers.clam.postMessage({ type: "dragPassthrough", rects });
+				} catch {
+					// 壳缺席（普通浏览器）就一直抛，无所谓：last 已经记下，不会每轮都抛。
+				}
+			};
+			const timer = setInterval(post, 300);
+			addEventListener("resize", post);
+			post();
+			return () => {
+				clearInterval(timer);
+				removeEventListener("resize", post);
+				// 退场时把放行表清空，否则壳会照着一份再也不会更新的旧表放行。
+				try {
+					window.webkit.messageHandlers.clam.postMessage({ type: "dragPassthrough", rects: [] });
+				} catch { /* 同上 */ }
+			};
+		}
+
 		function watchWindowFocus() {
 			const root = document.documentElement;
 			const token = makeToken();
@@ -605,6 +1021,7 @@ window.__ModuleLoader__.load({
 			ctx.effect(watchWindowFocus);
 			ctx.effect(watchReduceTransparency);
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.join(",")));
+			ctx.effect(watchDragPassthrough);
 
 			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
 			let body = BODY_DEFAULT;
@@ -1415,6 +1832,7 @@ window.__ModuleLoader__.load({
 					`  -apple-visual-effect: ${FLOAT_MATERIAL};`,
 					"}",
 					"}",
+					...headerRules(),
 				];
 				style.textContent = rules.join("\n");
 				document.head.appendChild(style);

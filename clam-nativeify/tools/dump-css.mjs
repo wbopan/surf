@@ -43,9 +43,10 @@ globalThis.document = {
 		Object.defineProperty(e, "textContent",
 			{ set: (v) => { sheets[slot] = v; }, get: () => sheets[slot] });
 		return e; },
-	addEventListener() {}, removeEventListener() {}, hasFocus: () => true, querySelectorAll: () => [],
+	addEventListener() {}, removeEventListener() {}, hasFocus: () => true, querySelector: () => null, querySelectorAll: () => [],
 };
 globalThis.addEventListener = () => {};
+globalThis.removeEventListener = () => {};
 globalThis.removeEventListener = () => {};
 
 (0, eval)(src);
@@ -77,3 +78,5 @@ if (keys.length) {
 }
 console.error(`\n— ${css.split("\n").length} 行 · ${(css.match(/\{/g) || []).length} 条规则 · ` +
               (depth === 0 && !bad ? "括号配对正确" : `括号不平衡 depth=${depth}`));
+// watchDragPassthrough 的 setInterval 会让进程赖着不退（且桩环境里迟早抛）；摘要打完就走。
+process.exit(depth === 0 && !bad ? 0 : 1);

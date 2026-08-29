@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, "SF Pro Text", "SF Pro", system-ui, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #4176e6; } a:hover { color: #2f5fc4; }
+    .glass { background: rgba(252,252,252,0.53); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.197), inset 0 0.5px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.05); }
+    .dim { position: absolute; color: #d0342c; font-size: 10px; line-height: 12px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .hl { position: absolute; border-top: 1px solid #d0342c; height: 0; }
+    .vl { position: absolute; border-left: 1px solid #d0342c; width: 0; }
+    .note { font-size: 11px; line-height: 15px; color: #61666b; }
+    .note b { color: #0f1115; font-weight: 600; }
+  </style>
+</helmet>
+<div style="width: 1000px; height: 360px; background: #ffffff; position: relative; overflow: hidden;">
+
+  <!-- 放大 1.5× 的 header 样张，便于标注 -->
+  <div style="position: absolute; left: 40px; top: 40px; width: 620px; height: 52px; transform: scale(1.5); transform-origin: 0 0;">
+    <div style="position: absolute; inset: 0; box-sizing: border-box; padding: 8px 8px 8px 16px; display: flex; flex-direction: row; align-items: center; gap: 8px; background: #ffffff; outline: 1px dashed rgba(208,52,44,0.45);">
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px;">
+        <span style="font-size: 15px; line-height: 17px; font-weight: 600; color: #363636; white-space: nowrap;">会话标题</span>
+        <span style="display: inline-flex; align-items: center; gap: 3px; font-size: 11px; line-height: 13px; font-weight: 500; color: #b2b2b2; white-space: nowrap;">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#b2b2b2" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2l5 3v6l-5 3-5-3V5z M8 8l5-3M8 8L3 5M8 8v6"></path></svg>
+          <span>标准模式</span>
+        </span>
+      </div>
+      <div class="glass" style="height: 36px; border-radius: 18px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: row; align-items: center;">
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(0,0,0,0.07); display: flex; align-items: center; font-size: 13px; font-weight: 500; color: #363636;">对话</span>
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; display: flex; align-items: center; font-size: 13px; font-weight: 500; color: #363636;">轨迹</span>
+      </div>
+      <div class="glass" style="height: 36px; border-radius: 18px; padding: 0 10px; box-sizing: border-box; display: flex; flex-direction: row; align-items: center; gap: 5px; color: #363636;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#363636" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="3.5" r="1.8"></circle><circle cx="3.5" cy="12.5" r="1.8"></circle><circle cx="12.5" cy="12.5" r="1.8"></circle><path d="M7 5.2L4.4 10.8M9 5.2l2.6 5.6M5.3 12.5h5.4"></path></svg>
+        <span style="font-size: 13px; font-weight: 500;">2</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#363636" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.8L5 6.3l2.5-2.5"></path></svg>
+      </div>
+      <div class="glass" style="width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#363636" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v4a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9M8 2v8M5 7l3 3 3-3"></path></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标注（画布坐标 = 40 + 1.5 × 样张坐标） -->
+  <div class="vl" style="left: 24px; top: 40px; height: 78px;"></div>
+  <div class="dim" style="left: 4px; top: 73px;">52</div>
+
+  <div class="hl" style="left: 40px; top: 52px; width: 24px;"></div>
+  <div class="dim" style="left: 46px; top: 53px;">8</div>
+  <div class="hl" style="left: 40px; top: 106px; width: 24px;"></div>
+  <div class="dim" style="left: 46px; top: 94px;">8</div>
+
+  <div class="hl" style="left: 40px; top: 124px; width: 24px;"></div>
+  <div class="dim" style="left: 68px; top: 119px;">16 ← 标题起点（假设，落地时对着 Mail 量）</div>
+
+  <div class="dim" style="left: 64px; top: 12px;">标题 SF Pro Bold 15 · rgb(54,54,54)　副标题 SF Pro Medium 11 · rgb(178,178,178)　叠放 30 高、垂直居中</div>
+  <div class="dim" style="left: 64px; top: 25px;">胶囊 36 高 · r 18 · 项间 8 · 右缘 8　文字段 28 高 / 水平 10 / r 14　选中底 rgba(0,0,0,.07)　符号与文字 13 Medium · chevron Bold</div>
+  <div class="dim" style="left: 64px; top: 134px;">导出 36×36 图标按钮（文字进 tooltip）　子代理下拉胶囊含计数约 64 宽（套件 50×36 是符号 + chevron）</div>
+
+  <!-- 说明 -->
+  <div style="position: absolute; left: 40px; top: 170px; width: 920px; display: flex; flex-direction: row; gap: 32px;">
+    <div class="note" style="flex: 1;">
+      <b>几何（Apple macOS 27 UI Kit · Unified Toolbar + Title）</b><br>
+      栏 52 · 项 36×36 · 上下 8 · 项间 8 · 首项 x=8 · 标题跟前一项 8<br>
+      分段控件（图标段）2 项 75×36：段 32×28 内缩 4；文字段按内容宽、水平 10<br>
+      分隔 1×16 rgba(0,0,0,.05) 只画在两个未选段之间——两段一选中时不出现<br>
+      下拉胶囊 50×36：符号 13 Medium + chevron 13 Bold（加计数后约 64）<br>
+      Scroll Edge Effect（Hard）：底色 + 底边 0.67 rgba(0,0,0,.05)，无实线
+    </div>
+    <div class="note" style="flex: 1;">
+      <b>现状 → 方案</b><br>
+      76 高两行 → 52 高一行；标签行折成分段控件<br>
+      面包屑 14/500 → 标题 15/Bold；preset 药丸 → 副标题 11/Medium<br>
+      导出 111×32 描边药丸 → 36×36 图标按钮<br>
+      子代理触发器（无边框 28）→ 下拉胶囊 36<br>
+      底边 1px 线去掉；蓝色下划线去掉（Apple 段控不用强调色）
+    </div>
+    <div class="note" style="flex: 1;">
+      <b>状态</b><br>
+      深色：标题 rgba(255,255,255,.96)、副标题 rgb(138,138,138)、选中段 rgba(255,255,255,.08)<br>
+      窗口失活：标题 rgb(178,178,178)，胶囊走 clam-nativeify 失活态<br>
+      减少透明度：胶囊底 #FDFDFD / #3D3D3D<br>
+      <b>前提</b>：壳的 40pt 拖动条须对 header 里的控件放行（计划 §3.0）
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

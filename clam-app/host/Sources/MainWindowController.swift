@@ -8,6 +8,28 @@ import WebKit
 /// 用 `performDrag(with:)`（标题栏内部同款 API）手动发起拖拽，
 /// 比只靠 `mouseDownCanMoveWindow` 更可靠（后者在该窗口形态下实测不生效）。
 private final class WindowDragRegionView: NSView {
+    /// 页面上报的「这里有个可点的东西，别当拖窗」矩形表。
+    /// 坐标是**页面 CSS px、视口左上为原点**——换算成本地坐标是 `pagePoint` 的事，
+    /// 页面那边因此不需要知道 WebView 在窗口里的位置，也不需要知道 pageZoom。
+    /// 空表 = 整条带子照旧全是拖动区（页面没上报、壳没连页面、插件缺席都落在这儿）。
+    var passthroughRects: [NSRect] = []
+
+    /// superview 坐标的点 → 页面 CSS px 坐标。返回 nil = 这个点根本不在页面上。
+    /// 由 `MainWindowController` 装上（它才拿得到 WKWebView）。
+    var pagePoint: ((NSPoint) -> NSPoint?)?
+
+    /// **放行才是这块视图存在的代价**：它盖在 WebView 上，不覆写 hitTest 的话
+    /// 网页顶部 40pt 里的一切点击都变成拖窗（新 header 的三枚胶囊正在 y=8–44）。
+    /// 命中任一上报矩形就 `return nil` 把这一下让给底下的 WebView；
+    /// 其余空地照旧归自己 → 拖窗与双击放大一点没变。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil else { return nil }
+        if !passthroughRects.isEmpty, let p = pagePoint?(point) {
+            for rect in passthroughRects where rect.contains(p) { return nil }
+        }
+        return self
+    }
+
     override var mouseDownCanMoveWindow: Bool { true }
     /// 窗口非激活时第一次点击也直接拖拽（与原生标题栏手感一致）。
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -301,6 +323,20 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             drag.trailingAnchor.constraint(equalTo: containerController.view.trailingAnchor),
             drag.heightAnchor.constraint(equalToConstant: MainWindowController.titleBarHeight),
         ])
+
+        // 页面 CSS px ↔ 拖动条本地坐标的换算。三件事一处做完：
+        // 1. **AppKit 不是翻转坐标系**（原点在左下角），页面是左上——y 要翻一次。
+        // 2. WebView 相对窗口有 x/y 偏移（原生分栏的侧边栏宽度）——走 convert，不硬编码。
+        // 3. `pageZoom`（⌘±）把 CSS px 拉成了别的点数——除回去，否则缩放一改就整体错位。
+        drag.pagePoint = { [weak self, weak drag] point in
+            guard let self, let drag, let host = drag.superview, self.webView.window != nil else { return nil }
+            let inWindow = host.convert(point, to: nil)
+            let local = self.webView.convert(inWindow, from: nil)
+            guard self.webView.bounds.contains(local) else { return nil }
+            let zoom = max(self.webView.pageZoom, 0.01)
+            let y = self.webView.isFlipped ? local.y : self.webView.bounds.height - local.y
+            return NSPoint(x: local.x / zoom, y: y / zoom)
+        }
     }
 
     /// 首次布局完成后，若窗口被 AppKit 收缩成内容 fitting size，拉回启动
@@ -1251,6 +1287,12 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                 if let raw = body["locale"] as? String {
                     applyProjectedLocale(raw)
                 }
+            case "dragPassthrough":
+                // 留特化分支的理由与 currentSession / locale 同款：**壳自己要用它**。
+                // 顶部拖动条是壳自己的 chrome（`WindowDragRegionView`），没有插件
+                // 替得了它，也不该在插件缺席时失效——所以这份数据不经事件总线中转，
+                // 页面直接说给壳听。收不到（旧页面、普通浏览器）= 空表 = 今天的行为。
+                applyDragPassthrough(body["rects"] as? [[String: Any]] ?? [])
             case "debug":
                 Log.write("页内诊断：\(body["msg"] ?? "?")", to: ClamPaths.logURL, tag: "bridge")
             default:
@@ -1266,6 +1308,21 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         default:
             break
         }
+    }
+
+    /// 把页面上报的「可点矩形」装进拖动条。
+    ///
+    /// 防御式解析：字段缺失或不是数字就整条丢掉——宁可少放行一块（退回今天的
+    /// "点了变成拖窗"），也不要拿一个 NaN 矩形去 `contains`（那会让整条带子失去拖动）。
+    private func applyDragPassthrough(_ raw: [[String: Any]]) {
+        let rects: [NSRect] = raw.compactMap { item in
+            guard let x = item["x"] as? Double, let y = item["y"] as? Double,
+                  let w = item["w"] as? Double, let h = item["h"] as? Double,
+                  x.isFinite, y.isFinite, w.isFinite, h.isFinite, w > 0, h > 0
+            else { return nil }
+            return NSRect(x: x, y: y, width: w, height: h)
+        }
+        titleBarDragView.passthroughRects = rects
     }
 
     // MARK: - NSWindowDelegate

@@ -71,7 +71,10 @@ clam-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编�
                    agentPresets / pluginInventory（权威计划 docs/clam-settings-plan.md）
 clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：client 半边是主力
                    （禁橡皮筋、禁选中、原生字体度量、按钮玻璃表面——四态：浅/深 ×
-                   窗口激活/失活；全是 CSS，无构建步骤）；node 半边注册设置 ns
+                   窗口激活/失活；HEADER 段把 web header 调成 macOS 27 工具栏形态
+                   ——52pt 单行、玻璃胶囊、可点矩形上报给壳的拖动条放行，权威计划
+                   docs/web-header-native-match-plan.md；全是 CSS，无构建步骤）；
+                   node 半边注册设置 ns
                    `clam-nativeify`（唯一一项是对话区字号，client 半边订它）并把
                    **dsh 的 `ui-theme` 投影给 swift 半边**；swift 半边不占槽、不贡献
                    界面，只按投影设 `NSApp.appearance` 与主窗口 `backgroundColor`
@@ -79,7 +82,9 @@ clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：clien
                    不另建第二偏好源。读法：ns `ui-theme` / 键 `preference`，值
                    light|dark|system（权威在 `@deepseek-ai/dsh-client-ui-theme`）。
                    settings 缺席即不投影 = 原生侧维持系统外观，CSS 照常首帧生效
-tools/             跨包的开发工具（shot.sh 截图）。**判据是服务范围**：只服务一个插件的
+tools/             跨包的开发工具（shot.sh 截图；apple-kit/ = Apple 官方 macOS 27 UI Kit
+                   的数值检索——**做"像原生"的设计前先查它**，用法见其 README）。
+                   **判据是服务范围**：只服务一个插件的
                    工具归那个插件（如 clam-nativeify/tools/dump-css.mjs），谁都不属于的才上这儿
 docs/              计划与调研文档（native-abi.md = M2 的 ABI 实测结论，spikes/ 可复跑）
 dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore，不由本仓库维护
@@ -230,6 +235,15 @@ AX 树**同时穿透原生和 Web 两半**——`AXWebArea` 底下是完整的 w
 （`sidebar.group.X-sidebar.group.X`），精确匹配就落空。分组头是靠
 `.accessibilityElement(children: .ignore)` + 显式 label 收口的；
 加新 identifier 后**务必 dump 一次 AX 确认没被拼重**。
+
+### 苹果官方设计数值（tools/apple-kit）
+
+做"贴原生"的视觉工作（尺寸、字号、颜色、材质参数）**先查 Apple 官方 macOS 27
+UI Kit，别凭记忆估**：`tools/apple-kit/fetch.sh` 一次匿名下载（110MB，落
+`.scratch/`），`lookup.py list|show|colors|text` 按名字检索到每个控件的层级几何。
+命名规律、用法范例和"数值只服务 web 半边、原生半边截图量真 AppKit、CSS 引用
+`-apple-system-*` 而不抄 hex"三条家规都写在 `tools/apple-kit/README.md`。
+成功案例：web header 贴原生（`docs/web-header-native-match-plan.md` §1 的目标列全部出自它）。
 
 ## 共享 module（ClamSDK）
 
