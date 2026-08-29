@@ -1229,6 +1229,15 @@ window.__ModuleLoader__.load({
 					// contain 切断滚动链（自身仍可滚、自身边界仍有原生回弹）。
 					"html, body { overflow: hidden !important; overscroll-behavior: none !important; }",
 					"body * { overscroll-behavior: contain !important; }",
+					// 会话流自己的边界弹性放开（用户 2026-08-29 要的橡皮筋手感）。
+					// 上面那条 contain 按规范"不该"禁掉本地回弹，但实际就是没有——
+					// 这里显式还成 auto 做对照。**页面级橡皮筋不会因此复活**：滚动链
+					// 到头也只会链进 overflow:hidden + none 的 document，那是死路。
+					// 若 auto 之下仍然没有回弹，结论就是 macOS WebKit 不给内层滚动
+					// 容器做 elastic（弹性只属于主 frame），CSS 到此为止——主 frame
+					// 的 SPI `_setRubberBandingEnabled:` 已弃用且引发滚动闪动
+					// （CLAUDE.md 踩坑记录），没有下一条路。
+					"[data-conversation-scroll] { overscroll-behavior-y: auto !important; }",
 
 					// ===== 字形渲染：把 dsh 抽细的那一档还回去 =====
 					//
