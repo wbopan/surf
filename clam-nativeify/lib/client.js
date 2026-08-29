@@ -1206,8 +1206,10 @@ window.__ModuleLoader__.load({
 			if (!insideClam()) return;
 			ctx.effect(watchWindowFocus);
 			ctx.effect(watchReduceTransparency);
-			// 段控胶囊也要喂 --clam-sx/--clam-sy（整只容器按压缩放，见 headerRules）。
-			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.concat([HEADER_SEAT + ' [role="tablist"]']).join(",")));
+			// 段控胶囊和 composer 卡片也要喂 --clam-sx/--clam-sy（整块表面按压缩放）。
+			// 顺序有讲究：closest() 取最近的命中者，按在卡片内层按钮上时先命中按钮，
+			// 变量落在按钮上；只有按在 textarea 这类非按钮区才落到卡片。
+			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.concat([HEADER_SEAT + ' [role="tablist"]', COMPOSER_CARD]).join(",")));
 			ctx.effect(watchDragPassthrough);
 
 			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
@@ -1770,6 +1772,25 @@ window.__ModuleLoader__.load({
 					"@media (prefers-reduced-motion: reduce) {",
 					"  " + solidActive + " { scale: 1 !important; }",
 					"  " + solidActive + " { --clam-press-r: 100% !important; }",
+					"}",
+
+					// ── Composer 卡片的按压 ─────────────────────────────────────────
+					// 它也是液态玻璃表面，按压跟按钮同一套手感（用户 2026-08-29 要的）。
+					// 尺度同一套 px 封顶变量（watchPressPoint 白名单里有它）；卡片
+					// ~780px 宽，横向封顶后只涨 5px，纵向约 1.03——正是"轻轻一沉"。
+					// **内部按钮按下时卡片不动**：发送键/加号自己有按压缩放，卡片再
+					// 跟着涨就是双重膨胀，`:not(:has(...))` 把这种情况挡掉——textarea
+					// 里点击落字才算"按在卡片上"。dsh 卡片自身没有 transition（查过
+					// conversation 包的 css），这条 transition 不会覆盖谁。
+					COMPOSER_CARD + " {",
+					"  transition: scale var(--clam-dur) var(--clam-ease);",
+					"}",
+					COMPOSER_CARD + ':active:not(:has(button:active, [role="button"]:active)) {',
+					"  scale: var(--clam-sx, 1.01) var(--clam-sy, 1.03);",
+					"  transition-duration: 0s;",
+					"}",
+					"@media (prefers-reduced-motion: reduce) {",
+					"  " + COMPOSER_CARD + ":active { scale: 1 !important; }",
 					"}",
 
 					// 尊重"降低透明度"（系统设置 → 辅助功能 → 显示）。它的语义是
