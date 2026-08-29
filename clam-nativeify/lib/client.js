@@ -1190,6 +1190,52 @@ window.__ModuleLoader__.load({
 					":root[data-clam-reduce][data-clam-blur] body[data-ds-dark-theme] { --clam-glass-fill: #333333; }",
 					reduceNeutral + " { backdrop-filter: none; }",
 
+					// ===== composer 底下的统计行：默认隐身，指针贴到底边才现身 =====
+					//
+					// 那一行是 dsh-client-ui-conversation 的 StatsLine（"5 轮 · 8 步 |
+					// LLM 12s | 缓存命中 80% | 输入 … tok"），挂在 `conversation.composer.dock`
+					// 槽里、InputBar 根元素的最末（卡片**外面**，不在 `[data-composer-card]`
+					// 里）。纯文本、零可点元素，只有被截断时才带一个 tooltip —— 藏起来
+					// 不损失任何操作。发消息之前它根本不渲染（组件返回 null）。
+					//
+					// 三条纪律：
+					// 1. **只动 opacity，不动布局。** 折叠高度（max-height:0）看着更"彻底"，
+					//    代价是卡片每次 hover 上下跳 24px；而且 ConversationRoot 在座位上
+					//    挂了 ResizeObserver、每帧把 `--dsh-composer-height` 写回 scroller，
+					//    正文跟着抖。那 24px 本来就是 dsh 给这一行预留的，空着就是一段
+					//    正常的底边距。P6 那块 36px 幕布也是按"这一行在那儿"量的，
+					//    一折叠就得重量。
+					// 2. **规则落在槽 outlet 的子元素上，不落在 outlet 上。** outlet 是
+					//    `display: contents`、没有盒子，给它写 opacity 无效；而它的子元素
+					//    后缀是通用的 `_root`（StatsLine 只有 `_root` / `_sep` 两个类），
+					//    不能拿 `[class*="_root"]` 命中，只能靠槽名限定作用域。这个槽是
+					//    `kind: "list"`，眼下只有 stats 一条贡献；哪天有第二条也会一起被藏，
+					//    到时再按需收窄。
+					// 3. **命中区就是"底边"本身。** 行自己只有 24px 高、748px 宽（居中），
+					//    对着一条细带子瞄很烦：横向放开 max-width 到 InputBar 整行，纵向
+					//    用 padding-bottom 吞掉 InputBar 的 8px 底 padding（负 margin 抵回，
+					//    座位总高不变），于是指针一贴到窗口底边任何位置它就现身。hover 在
+					//    卡片上（正在打字）**不**触发——要的是"移到下方"，不是"移到 composer"。
+					//    opacity:0 的元素照常收指针事件，隐身不影响命中。
+					//
+					// 淡入走快档（160ms），淡出走常规档（320ms）——指针扫过底边时不闪；
+					// reduced-motion 下直接切。特异性 (0,1,1) 压过 dsh 的单类 (0,1,0)，
+					// 不需要 !important。
+					'[data-slot="conversation.composer.dock"] > div {',
+					"  opacity: 0;",
+					"  max-width: none;",
+					"  padding-bottom: 8px;",
+					"  margin-bottom: -8px;",
+					"  transition: opacity var(--clam-dur) var(--clam-ease);",
+					"}",
+					'[data-slot="conversation.composer.dock"] > div:hover {',
+					"  opacity: 1;",
+					"  transition-duration: var(--clam-dur-fast);",
+					"}",
+					"@media (prefers-reduced-motion: reduce) {",
+					'  [data-slot="conversation.composer.dock"] > div { transition: none; }',
+					"}",
+
 					// ===== 真材质接管玻璃表面（计划 P3）=====
 					//
 					// 上面整摞手绘四态**一字不动**：它是普通浏览器、以及壳侧那个私有
