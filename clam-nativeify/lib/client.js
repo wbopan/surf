@@ -878,10 +878,16 @@ window.__ModuleLoader__.load({
 		 *    锚定；@ 补全的 listbox 就是容器本身，由 `_menu` 类命中。
 		 *
 		 * ── 悬停强调色 ──────────────────────────────────────────────────────
-		 * `AccentColor`/`AccentColorText` 是 CSS 系统色（跟随系统设置里的强调色），
-		 * WebKit 支持；前面各放一条字面量兜底（套件里的 rgb(0,105,249) 与白），
-		 * 不认识关键字的引擎只丢后一条声明。行的后代 `color: inherit` 把
-		 * meta/图标一起翻白——原生菜单高亮时整行反白，不是只反主文字。
+		 * 用 WebKit 私有语义色（直接映射 NSColor，跟随系统强调色、深浅自适应）：
+		 * 底是 `-apple-system-selected-content-background`（selectedContentBackground，
+		 * 菜单/列表选中高亮的正主），字是 `-apple-system-alternate-selected-text`
+		 * （alternateSelectedControlText，选中行上的反白）。各放一条字面量兜底
+		 * （套件里的 rgb(0,105,249) 与白），不认识关键字的引擎只丢后一条声明。
+		 * **别用 CSS 标准的 `AccentColor`/`AccentColorText`**：WebKit 认识但解析
+		 * 不对——AccentColorText 出来是深色，黑字压在蓝底上；底色也比官方暗一档
+		 * （用户 2026-08-29 拿系统菜单截图对照发现的）。
+		 * 行的后代 `color: inherit` 把 meta/图标一起翻白——原生菜单高亮时整行
+		 * 反白，不是只反主文字。
 		 *
 		 * @returns {string[]} CSS 行。
 		 */
@@ -967,9 +973,9 @@ window.__ModuleLoader__.load({
 				"}",
 				rowHot + " {",
 				"  background-color: rgb(0, 105, 249);",
-				"  background-color: AccentColor;",
+				"  background-color: -apple-system-selected-content-background;",
 				"  color: #fff;",
-				"  color: AccentColorText;",
+				"  color: -apple-system-alternate-selected-text;",
 				"}",
 				rowHotKids + " { color: inherit; }",
 
