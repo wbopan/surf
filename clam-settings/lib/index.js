@@ -77,6 +77,22 @@ export default createSwiftPlugin({
 	inject: ["settings"],
 	swiftDir: new URL("../swift/", import.meta.url),
 
+	// ⌘, 的声明**两家都写一份**（另一份在 clam-layout）：谁在场都该有这一项，
+	// 而两家的执行端不同——本插件在场时开原生设置窗口，只有它缺席时 layout 才
+	// 弹页内 modal（`SettingsPlugin` 占着 `settingsOwner`，layout 据此让路）。
+	// 壳按 id 去重、先登记的赢，所以**文案与默认键位必须与 clam-layout 那份逐字一致**
+	// ——不一致不会报错，只会变成"谁先挂载就听谁的"这种查不出来的漂移。
+	commands: [
+		{
+			id: "openSettings",
+			menu: "app",
+			order: 10,
+			label: { zh: "设置…", en: "Settings…" },
+			key: "cmd+,",
+			description: { zh: "打开设置窗口。", en: "Open the settings window." },
+		},
+	],
+
 	subscribe: (api) => {
 		const { ctx, push } = api;
 

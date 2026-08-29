@@ -134,59 +134,161 @@ const INSTALLED_RELEASE = "/Applications/Surfclam.app";
 const SHORTCUTS_NAMESPACE = "clam-shortcuts";
 
 /**
- * 键位表 schema。**是个函数**，因为 description 的语言在注册那一刻才定得下来
- * （计划 §7；`.description()` 没有翻译钩子，运行中切语言不追改，重启 dsh 后对齐）。
+ * 键位表 schema：**按桥的登记表现拼**（`clamBridge.commands.list()`）。
  *
- * **默认值的真相在壳里那张表**（`MainWindowController` 的 command → 默认 spec），
- * 不在这里：壳建第一版菜单时页面还没加载完，根本没有任何设置值可用，所以它必须
- * 自带一份能独立开工的默认。这里的 `.default(…)` 只为让两扇设置界面把默认值显示
- * 出来、并让「恢复默认」给回同一个东西。**两处必须逐字一致，改一处同步另一处**
- * ——分家了不报错也不校验，症状是界面上写着 A、实际生效的是 B。
+ * 从前这里是一张手抄的常量表，而壳里另有一张默认键位表——两处必须逐字一致
+ * 且**没有任何校验**，分家了不报错，症状是"设置界面写着 ⌘N、按下去却不是"。
+ * 现在两张表的上游都是插件自己的 `commands` 声明（形状见
+ * `clam-bridge/lib/plugin.js` 的 CommandDeclaration），漂移在结构上就不可能了。
+ *
+ * 语言在**注册那一刻**定下来（计划 §7；`.description()` 没有翻译钩子，
+ * 运行中切语言不追改，重启 dsh 后对齐）。
  *
  * 键位 spec 格式：小写、`+` 连接（`cmd+shift+]`、`cmd+alt+a`、`esc`）；
  * 修饰符 `cmd` / `shift` / `alt`（`option`）/ `ctrl`；键名支持单字符与
  * `backspace` / `esc` / `space` / `left`…。**空串 = 禁用**（菜单项还在，
  * 只是没有快捷键）。解析失败 = 壳退回默认并在日志记一行，配置错降级、不失能。
  *
- * 只收"改了确实更好用"的那些。系统惯例（⌘W/⌘Q/⌘H/⌘M、编辑菜单、⌘R、⌥⌘S、
- * ⌘±0、⌥⌘D、⌘⇧R、⌘/）**刻意不进设置**——它们能改只会更难用。
+ * 只收插件标了 `configurable !== false` 的那些。系统惯例（⌘W/⌘Q/⌘H/⌘M、
+ * 编辑菜单、⌘R、⌥⌘S、⌘±0、⌥⌘D、⌘⇧R、⌘/）压根不走这张表——它们由壳硬编码，
+ * 能改只会更难用。
+ *
+ * @param {"zh"|"en"} locale
+ * @param {object[]} commands 命令声明（已按登记顺序铺平、按 id 去重）。
  */
-const shortcutsSettings = (locale) => {
-	const zh = locale === "zh";
-	return z.object({
-		newSession: z.string().default("cmd+n")
-			.description(zh ? "新建会话。" : "Start a new session."),
-		prevSession: z.string().default("cmd+shift+[")
-			.description(zh ? "切到上一个会话（顺序与侧边栏列表当前显示的一致）。"
-				: "Go to the previous session, in the order the sidebar is showing."),
-		nextSession: z.string().default("cmd+shift+]")
-			.description(zh ? "切到下一个会话（顺序与侧边栏列表当前显示的一致）。"
-				: "Go to the next session, in the order the sidebar is showing."),
-		nextPendingSession: z.string().default("cmd+alt+a")
-			.description(zh ? "跳到下一个待处理会话（有东西在等你回答的那些）。"
-				: "Jump to the next session that is waiting for you."),
-		archiveSession: z.string().default("cmd+shift+backspace")
-			.description(zh ? "归档当前会话。" : "Archive the current session."),
-		renameSession: z.string().default("cmd+alt+r")
-			.description(zh ? "重命名当前会话。" : "Rename the current session."),
-		focusSearch: z.string().default("cmd+alt+f")
-			.description(zh ? "把光标送进侧边栏搜索框。"
-				: "Move the cursor to the sidebar search field."),
-		openSettings: z.string().default("cmd+,")
-			.description(zh ? "打开设置窗口。" : "Open the settings window."),
-		// ⌘1-9 是九个键位，逐个开成字段既啰嗦又留下"第 3 个和第 7 个撞车"这类
-		// 无人校验的坑，所以整组只给一个前缀选择；`off` = 九个都不装。
-		sessionDigits: z.union([z.const("cmd"), z.const("cmd+alt"), z.const("off")])
-			.default("cmd")
-			.description(zh ? "用数字键直接跳到第 1～9 个会话时按的修饰符；off = 不装这组快捷键。"
-				: "The modifier held with 1–9 to jump straight to that session; off installs no such shortcuts."),
-		// 这一条不进壳的菜单：页面自己在 keydown 上匹配（原生菜单项拦不住
-		// WebView 里的输入焦点）。见 clam-layout/lib/client.js 的 escStop。
-		stopGenerating: z.string().default("esc")
-			.description(zh ? "停止当前会话正在生成的回复（在网页内匹配，不是菜单项）。留空 = 关掉这个键。"
-				: "Stop the reply the current session is generating. Matched inside the web page rather than by a menu item; leave empty to turn the key off."),
-	});
+const shortcutsSettings = (locale, commands) => {
+	const fields = {};
+	for (const command of commands) {
+		if (command.configurable === false) continue;
+		const text = pickText(command.description ?? command.label, locale) ?? command.id;
+		const fallback = typeof command.key === "string" ? command.key : "";
+		// 值域封闭的（sessionDigits 那种"只有三个取值"）画成下拉而不是文本框：
+		// 一个自由文本框里写 `cmd+7` 是合法 spec 却不是这条命令认得的东西。
+		const field = Array.isArray(command.keyChoices) && command.keyChoices.length > 0
+			? z.union(command.keyChoices.map((choice) => z.const(choice)))
+			: z.string();
+		fields[command.id] = field.default(fallback).description(text);
+	}
+	return z.object(fields);
 };
+
+/** 从 `{zh, en}` 里取当前语言那句；缺了就退英文，再缺就 undefined。 */
+function pickText(bilingual, locale) {
+	if (bilingual === null || typeof bilingual !== "object") return undefined;
+	const value = bilingual[locale] ?? bilingual.en ?? bilingual.zh;
+	return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * 命令声明按 id 去重（同一条由多家声明时先登记的赢，与壳的规则一致）。
+ * 壳那边同样去重——两边算出来的表必须是同一份，否则设置里有的键壳不认得。
+ */
+function dedupeCommands(commands) {
+	const seen = new Set();
+	return commands.filter((command) => {
+		if (typeof command?.id !== "string" || seen.has(command.id)) return false;
+		seen.add(command.id);
+		return true;
+	});
+}
+
+/**
+ * 命令声明里**影响 schema 的那部分**的指纹。登记表一变就重算，指纹没变就不动
+ * ——重注册会让设置界面上正开着的那张表原地换掉，没必要为一次无关的登记付这个代价。
+ */
+function shortcutsFingerprint(commands, locale) {
+	return JSON.stringify([locale, commands.map((command) => [
+		command.id, command.key ?? null, command.keyChoices ?? null,
+		command.configurable ?? true, command.description ?? command.label ?? null,
+	])]);
+}
+
+/**
+ * 登记表安静多久之后才注册 schema。
+ *
+ * **必须去抖**：clam-app 多半比别的插件先挂载，那一刻登记表是空的——照它注册出来的
+ * 就是一张空表。插件是一个接一个挂上来的，等它不再动了再注册一次最省事
+ * （照 clam-sidebar 的去抖模式）。真的再变（运行时装/卸插件）也接得住，
+ * 见 `installShortcutsSettings` 的重注册那一段。
+ */
+const SHORTCUTS_QUIET_MS = 300;
+
+/**
+ * 注册 / 重注册 `clam-shortcuts` 设置 ns。
+ *
+ * **重注册的机制**：`settings.register` 重复注册同一个 ns 会 fails loud，但它把
+ * 注册挂成**调用方 fiber 上的一个 effect**（dsh-settings 源码 `register()` 里那句
+ * `this.ctx.effect(...)`，注释也写了"disposing that fiber removes the namespace"）。
+ * 所以每份注册单开一个 `ctx.inject` 子 fiber，要换表就 dispose 它再开一个。
+ * **dispose 是异步的**，两次安装叠在一起会撞"already registered"，所以串一条队。
+ *
+ * 用户存过的键位覆盖值不受影响：它们躺在设置文档里，schema 只决定怎么解析与显示。
+ */
+function installShortcutsSettings(scoped, logger) {
+	/** @type {{dispose: () => Promise<void>}|undefined} */
+	let fiber;
+	let queue = Promise.resolve();
+	let fingerprint;
+	let timer;
+	let disposed = false;
+
+	const install = () => {
+		if (disposed) return;
+		const commands = dedupeCommands(scoped.clamBridge.commands.list());
+		const locale = resolveLocale(scoped);
+		const next = shortcutsFingerprint(commands, locale);
+		if (next === fingerprint) return;
+		fingerprint = next;
+
+		queue = queue.then(async () => {
+			if (disposed) return;
+			if (fiber !== undefined) {
+				await fiber.dispose();
+				fiber = undefined;
+			}
+			if (disposed) return;
+			// 一条可配置的命令都没有 = 没有插件在场，那就别开一张空卡片。
+			const configurable = commands.filter((command) => command.configurable !== false);
+			if (configurable.length === 0) {
+				logger.info("没有插件声明可配置的快捷键，clam-shortcuts 设置面不注册。");
+				return;
+			}
+			fiber = scoped.inject(["settings"], (inner) => {
+				// 注册一个 ns 就同时点亮了两扇界面，两边都不用改一行：clam-settings
+				// 那扇原生窗口（「插件 → 插件配置」把 describe() 里的每个 ns 一视同仁
+				// 地列出来），以及 dsh 自己的页内设置对话框。
+				inner.settings.register(SHORTCUTS_NAMESPACE, shortcutsSettings(locale, commands), {
+					// 改完立刻生效，不需要重启：client 半边订着这个 ns，值一变就重推给壳，
+					// 壳原地重建整条主菜单。界面据此标注"立即生效"。
+					applies: "live",
+				});
+			});
+			logger.info(`快捷键设置面已注册：${configurable.length} 项`
+				+ `（${configurable.map((command) => command.id).join(", ")}）`);
+		}).catch((error) => {
+			// 注册失败绝不能赔掉整个 clam-app（它的正事是构建并拉起壳）。
+			// 最坏情况是设置页少一张卡片，壳仍用插件声明里的默认键位。
+			logger.warn(`快捷键设置面注册失败：${errorText(error)}`);
+			fingerprint = undefined; // 下次登记表变动时再试
+		});
+	};
+
+	const schedule = () => {
+		clearTimeout(timer);
+		timer = setTimeout(install, SHORTCUTS_QUIET_MS);
+		timer.unref?.();
+	};
+
+	const off = scoped.clamBridge.commands.subscribe(schedule);
+	schedule();
+
+	scoped.effect(() => () => {
+		disposed = true;
+		off();
+		clearTimeout(timer);
+		// 子 fiber 由 scoped 自己带走，这里不再手动 dispose（重复 dispose 无益）。
+	}, "clam-app 快捷键设置面");
+}
 
 /** 上次构建时的源码 hash，与产物同处 build/ 下——产物被清掉时它一起消失，语义自洽。 */
 const hashMarkerPath = (configuration) =>
@@ -239,25 +341,18 @@ export function apply(ctx, config) {
 		}, "clam-app ↔ clam-bridge");
 	});
 
-	// 快捷键设置面：注册完就没了。值由 clam-layout 的 client 半边经
+	// 快捷键设置面。schema 由**插件自己的命令声明**拼出来（见 shortcutsSettings），
+	// 所以要同时有桥（登记表）和 settings 才做得成。值由 clam-layout 的 client 半边经
 	// `ctx.settingsScope` 自己读、投影给壳，这半边从不碰它，也不 push 给谁。
 	//
-	// `settings` 走**运行时嵌套 inject**，不是顶层 `export const inject`。
+	// 两个服务都走**运行时嵌套 inject**，不是顶层 `export const inject`。
 	// 顶层的语义是"服务不在就整个插件不挂载"，而本插件的核心职责是构建并拉起壳
 	// ——绝不能因为一个可选的设置项就让整个 App 消失（headless profile 里
-	// settings 确实可能缺席）。缺席时壳一直用自带的默认键位表，其余一切照旧。
+	// settings 确实可能缺席）。缺席时壳一直用插件声明里的默认键位，其余一切照旧。
 	// （这个 cordis fork 的 `inject` 没有 `{required, optional}` 形态，
 	// 嵌套是它表达可选依赖的唯一方式。）
-	//
-	// 注册一个 ns 就同时点亮了两扇界面，两边都不用改一行：clam-settings 那扇原生
-	// 窗口（「插件 → 插件配置」把 `describe()` 里的每个 ns 一视同仁地列出来），
-	// 以及 dsh 自己的页内设置对话框。
-	ctx.inject(["settings"], (scoped) => {
-		scoped.settings.register(SHORTCUTS_NAMESPACE, shortcutsSettings(resolveLocale(scoped)), {
-			// 改完立刻生效，不需要重启：client 半边订着这个 ns，值一变就重推给壳，
-			// 壳原地重建整条主菜单。界面据此标注"立即生效"。
-			applies: "live",
-		});
+	ctx.inject(["clamBridge", "settings"], (scoped) => {
+		installShortcutsSettings(scoped, logger);
 	});
 
 	// 构建与拉起是长活，不能挂在 apply 的返回值上——那会把 dsh 的启动

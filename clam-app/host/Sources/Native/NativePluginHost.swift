@@ -50,6 +50,17 @@ final class NativePluginHost {
 
     /// 首次 snapshot 处理完毕（成功或失败都算）。boot 门控等的就是它。
     private(set) var didSettle = false
+
+    /// 插件声明的命令（菜单项 + 默认键位）。**壳一个 id 都不认得**——建菜单、
+    /// 装键位、画 ⌘/ 面板全靠这张表，插件缺席时对应的菜单项干脆不出现。
+    ///
+    /// 它来自 snapshot 的 `commands` 字段，**与编译无关**：一条菜单文案改了不该
+    /// 让任何 Swift 半边重编（所以它没有折进 contentHash），也不该等编译跑完才生效
+    /// ——因此这条线在 `apply(snapshot:)` 里就翻牌，不等 `reconcile`。
+    private(set) var commands: [ClamCommand] = []
+
+    /// 命令声明有变时调用。与 `onUpdate` 分开：这条线跟 registry、跟编译都没关系。
+    var onCommands: (([ClamCommand]) -> Void)?
     /// 壳自身的构建状态（clam-app v1 经桥播报，§7.5）。壳自己看，不给插件。
     private(set) var appBuild: AppBuildState?
     /// 壳构建状态有变时调用。与 `onUpdate` 分开：这条线跟 registry 没关系。
@@ -176,6 +187,7 @@ final class NativePluginHost {
     private func apply(snapshot frame: [String: Any]) {
         guard let rows = frame["plugins"] as? [[String: Any]] else { return }
         let version = frame["version"] as? Int ?? -1
+        applyCommands(rows)
         let sources: [PluginSource] = rows.compactMap { row in
             guard let name = row["name"] as? String,
                   let module = row["module"] as? String,
@@ -204,6 +216,41 @@ final class NativePluginHost {
                 self.bridge.send(["type": "snapshot"])
             }
         }
+    }
+
+    /// 收下 snapshot 里的命令声明。
+    ///
+    /// **同一个 id 由多家声明时先到的赢**：同一条命令可以有好几个可能的执行者
+    /// （「打开设置」既能开原生窗口也能弹页内 modal），谁在场都该有那一项。
+    /// clam-app 那边拼设置 schema
+    /// 时用的是同一条规则——两边算出来的必须是同一张表，否则会出现"设置里能配、
+    /// 壳却不认得"的键。
+    private func applyCommands(_ rows: [[String: Any]]) {
+        var seen = Set<String>()
+        var next: [ClamCommand] = []
+        for row in rows {
+            guard let owner = row["name"] as? String else { continue }
+            for raw in row["commands"] as? [[String: Any]] ?? [] {
+                guard let command = ClamCommand(owner: owner, raw: raw) else { continue }
+                guard seen.insert(command.id).inserted else {
+                    // 重复声明本身不是错（见上），但**内容不一致就是账对不上**，
+                    // 而症状是"谁先挂载就听谁的"——不记一行没人查得出来。
+                    if let first = next.first(where: { $0.id == command.id }),
+                       first.key != command.key || first.label != command.label {
+                        Log.write("命令 \(command.id) 被 \(first.owner) 与 \(owner) 各声明一份且内容不同，"
+                                  + "按 \(first.owner) 那份走", to: ClamPaths.logURL, tag: "menu")
+                    }
+                    continue
+                }
+                next.append(command)
+            }
+        }
+        guard next != commands else { return }
+        commands = next
+        Log.write("命令声明 \(next.count) 条："
+                  + next.map { "\($0.owner)/\($0.id)" }.joined(separator: " "),
+                  to: ClamPaths.logURL, tag: "menu")
+        onCommands?(next)
     }
 
     /// 把在役世代对齐到 snapshot。sources **已是拓扑序**（依赖在前）。

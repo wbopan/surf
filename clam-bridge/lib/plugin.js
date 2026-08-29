@@ -32,6 +32,49 @@
 import { fileURLToPath } from "node:url";
 
 /**
+ * 一条命令声明（`createSwiftPlugin({ commands: [...] })` 里的一项）。
+ *
+ * **这张表是"壳该在菜单里摆什么"的唯一真相。** 从前它在壳里硬编码了四份
+ * （菜单结构、默认键位、双语文案、设置 schema），四份必须逐字一致而没有任何校验
+ * ——分家了不报错，症状是"设置界面写着 ⌘N、按下去却不是"，或者"改了文案菜单没变"。
+ * 现在声明的一方只有插件自己，壳与 clam-app 都是读者。
+ *
+ * 消费方两个，各取所需：
+ *
+ * - 壳（经桥 snapshot 的 `commands` 字段）：建菜单项、装默认键位、⌘/ 面板；
+ *   按下去只 `emit(menuCommand, {command: id, …})`，本插件的 Swift 半边接。
+ * - clam-app：把 `configurable` 的那些拼成 `clam-shortcuts` 设置 ns 的 schema。
+ *
+ * **壳不认得任何一个 id**，所以插件缺席时那些菜单项干脆不出现（而不是灰着或报错）。
+ *
+ * @typedef {object} CommandDeclaration
+ * @property {string} id 命令名 = `menuCommand` 载荷里的 `command`，同时是设置项的键名。
+ *        全局唯一：两家声明同一个 id 时先登记的那家赢（`openSettings` 就是 layout 与
+ *        settings 各声明一次，谁在场都能用）。
+ * @property {string} [menu] 落在哪个菜单：`app` / `file` / `edit` / `view` / `window` /
+ *        `help` 是壳自带的系统菜单，其余 id 会造一个新的顶级菜单（标题取首个声明者的
+ *        `menuLabel`）。**省略 = 不进菜单**——执行在页面里的键（Esc 停止生成）就是这样，
+ *        壳不装菜单项，只在 ⌘/ 面板的「页面内」一节列出来。
+ * @property {{zh: string, en: string}} [menuLabel] 自定义菜单的标题。
+ * @property {number} [menuOrder] 自定义菜单在菜单栏里的位置（越小越靠左，都夹在
+ *        「显示」与「窗口」之间）。
+ * @property {{zh: string, en: string}} label 菜单项文案。digits 形态里可用 `{n}` 占位。
+ * @property {number} [order] 同一个菜单内的排序（越小越靠上）。
+ * @property {boolean} [separatorBefore] 本项之前插一条分隔线（菜单当时为空则不插）。
+ * @property {string} [key] 默认键位，语法见壳的 `KeymapSpec`（`cmd+shift+]`、`cmd+alt+a`、
+ *        `esc`；空串 = 不挂键）。**省略 = 没有默认键**。
+ * @property {string[]} [keyChoices] 键位只允许这几个值（设置页画成下拉而不是文本框）。
+ * @property {boolean} [configurable] 进不进 `clam-shortcuts` 设置页。默认 true；
+ *        系统惯例那些键（⌘W/⌘Q/⌘R/⌘/…）根本不该走这张表，所以这里没有对应的概念。
+ * @property {{zh: string, en: string}} [description] 设置页上的说明；省略则用 `label`。
+ * @property {boolean} [hidden] 菜单项藏起来但快捷键照常生效（⌘1-9 那九项）。
+ * @property {{count: number, command: string, argKey: string}} [digits] **一族**命令：
+ *        一个设置键装 `count` 个数字键菜单项，第 N 项 emit `command` 并带
+ *        `{[argKey]: N}`。这时 `key` 只写修饰键（`cmd` / `cmd+alt` / `off`）。
+ *        逐条声明九个键既啰嗦又留下"第 3 个和第 7 个撞车"这类无人校验的坑。
+ */
+
+/**
  * @param {object} options
  * @param {string} options.name 插件名，同时决定 Swift module 名（clam-sidebar → ClamSidebar）。
  * @param {string} [options.provide] 要 provide 的空标记服务名（让别的插件能 inject 自己）。
@@ -43,6 +86,10 @@ import { fileURLToPath } from "node:url";
  *        没声明的 module 既不 `-l` 也不进本插件的内容 hash，所以它变动时本插件不会
  *        白白全量重编；反过来，声明了就意味着"它变了我必须重编"。
  * @param {number} [options.schemaVersion] 本插件与 Swift 半身之间数据形状的版本。
+ * @param {CommandDeclaration[]} [options.commands] 本插件想让壳装进菜单/快捷键的命令。
+ *        **声明在这里是一处真相**：壳建菜单、拼默认键位、画 ⌘/ 面板，clam-app 拼
+ *        `clam-shortcuts` 设置 schema，全读同一份（形状见下面的 typedef）。
+ *        Swift 半边照旧订 `ClamEventBus.Topic.menuCommand` 应答，一行都不用改。
  * @param {object} [options.Config] schemastery 配置模式。
  * @param {(api: {ctx: object, config: object, push: (channel: string, payload: object) => void}) => void} [options.subscribe]
  *        登记完成后调用一次：在这里 `ctx.on(...)` 订宿主事件并 `push` 给 Swift 半身。
@@ -58,6 +105,7 @@ export function createSwiftPlugin(options) {
 		swiftDeps = [],
 		sharedModules = [],
 		schemaVersion = 1,
+		commands = [],
 		Config,
 		subscribe,
 		expose = {},
@@ -96,6 +144,7 @@ export function createSwiftPlugin(options) {
 				swiftDeps,
 				sharedModules,
 				schemaVersion,
+				commands,
 				expose: Object.fromEntries(Object.entries(expose)
 					.map(([action, fn]) => [action, (payload) => fn(payload, api)])),
 			});

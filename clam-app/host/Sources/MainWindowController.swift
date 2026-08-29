@@ -73,9 +73,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private lazy var rootHostingController = NSHostingController(
         rootView: ShellRootView(registry: nativeHost.registry, webView: webView))
 
-    /// 上次载入页面时用的原生侧边栏门控值。插件装载完成后若与实际不符就重载一次页面
+    /// 上次载入页面时用的那份 URL 查询参数。插件说要别的了就重载一次页面
     /// （§7.2 第一版接受"切换需重载页面"）。
-    private var nativeSidebarParamInUse = MainWindowController.rememberedNativeSidebar
 
     // 顶部拖拽条高度：比标准标题栏（28pt）更高更好抓，
     // 只管拖拽，不再与网页内容对齐：原生分栏接管排版后，WebView 装在分栏右侧，
@@ -95,13 +94,23 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     private var shortcutsPanel: ShortcutsPanel?
 
-    /// 此刻装在菜单上的那份键位表。启动时是默认表，页面推来 `clam.page.keymap`
-    /// 之后可能被换掉（见 `applyKeymap`）。
+    /// 此刻装在菜单上的那份键位表。它是 `commands`（默认键位）与 `keymapValues`
+    /// （设置里的覆盖）算出来的，两个输入哪个变了都重算（见 `resolveKeymap`）。
     private var activeKeymap = Keymap.default
+
+    /// 插件声明的命令。启动时空的——第一份桥 snapshot 到了才有。
+    private var commands: [ClamCommand] = []
+
+    /// 设置里那份键位覆盖的原文（`clam-shortcuts` 经页面投影过来）。
+    /// **要存原文而不是解析结果**：命令表晚于它到达时得能拿它重算一次。
+    private var keymapValues: [String: String] = [:]
 
     /// 键位订阅句柄。**必须有人接住**：`ClamDisposable` 在 deinit 里就把订阅撤了，
     /// 不存下来等于订完当场退订——不报错、不打日志，只是键位设置永远不生效。
     private var keymapSubscription: ClamDisposable?
+
+    /// 页面查询参数的订阅句柄。同上，不接住就等于没订。
+    private var webQuerySubscription: ClamDisposable?
 
     /// 壳有新版时右上角那条浮动提示（clam-app v1 播报，§7.5）。
     /// 用户点"稍后"就收起，直到下一次播报——不缠人。
@@ -229,15 +238,18 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         publishLocale(Self.startupLocale)
         setupWindow()
         setupContentView()
-        // 先用默认表把菜单建起来：页面还没加载完，设置里那份键位表要等
-        // clam-layout 的 client 半边投影过来（`clam.page.keymap`），届时重建。
-        setupMenus(activeKeymap)
+        // 先把只有系统惯例的那版菜单建起来：**业务菜单项一条都还没有**——它们的
+        // 声明随桥的第一份 snapshot 才到（`applyCommands`），键位表更要等
+        // clam-layout 的 client 半边投影过来（`clam.page.keymap`）。两者各自到齐时
+        // 都会重建整条菜单，所以这里不必等谁。
+        setupMenus()
         observeMenuTracking()
         observeKeymap()
+        observeWebQuery()
         // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
         nativeHost.objects.setObject(ClamObjects.Key.webView, webView)
-        nativeHost.onUpdate = { [weak self] in self?.syncNativeSidebarGate() }
+        nativeHost.onCommands = { [weak self] commands in self?.applyCommands(commands) }
         nativeHost.onAppBuild = { [weak self] state in self?.applyAppBuild(state) }
     }
 
@@ -402,12 +414,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard let base = endpoint?.httpBase,
               var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return }
         components.path = "/"
-        // 插件门控参数：带上它则网页侧边栏隐藏，由原生 sidebar 槽接管；
-        // 不带则完整网页模式（clam-sidebar 缺席时的样子）。
-        let native = Self.rememberedNativeSidebar
-        nativeSidebarParamInUse = native
-        components.queryItems = native
-            ? [URLQueryItem(name: "clam-native-sidebar", value: "1")] : nil
+        // 查询参数由插件说了算（`clam.web.query`，见 observeWebQuery）。壳不认得
+        // 任何一个参数名——它们是 dsh 网页那一侧的私有词汇，定义权在占槽的插件那儿。
+        // 排序只为稳定：同一份参数不该因为字典遍历顺序不同而被判成"变了"。
+        let query = webQuery
+        queryInUse = query
+        components.queryItems = query.isEmpty
+            ? nil : query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components.url else { return }
         webView.load(URLRequest(url: url))
         bridgeReady = false
@@ -448,27 +461,53 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         nativeHost.disconnect()
     }
 
-    // MARK: - 原生侧边栏门控
+    // MARK: - 页面查询参数（插件的门控）
 
-    private static let nativeSidebarDefaultsKey = "clam.nativeSidebar"
+    /// 插件用来告诉壳"我这套界面要页面带哪些查询参数"的粘性主题。
+    /// 载荷是 `[参数名: 值]`，**壳对参数名不设白名单也不做任何解释**——
+    /// 它们是 dsh 网页那一侧的私有词汇（今天是原生侧边栏的门控），
+    /// 定义权在占槽的那个插件手里。**粘性**：插件晚于壳启动，不粘的话壳要等到
+    /// 下一次变化才知道该带什么，而那个状态多半一直不变。
+    private static let webQueryTopic = "clam.web.query"
 
-    /// 上次运行时是否有原生侧边栏。页面必须在插件编译完成之前就开始加载
-    /// （预热 WebView），那时还不知道 sidebar 槽会不会被占，只能先按上次的答案来。
-    private static var rememberedNativeSidebar: Bool {
-        get { UserDefaults.standard.object(forKey: nativeSidebarDefaultsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: nativeSidebarDefaultsKey) }
+    private static let webQueryDefaultsKey = "clam.webQuery"
+
+    /// 上次运行时页面带的那份参数。**页面必须在插件编译完成之前就开始加载**
+    /// （预热 WebView），那一刻还没有任何插件说过话，只能先按上次的答案来。
+    private static var rememberedWebQuery: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: webQueryDefaultsKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: webQueryDefaultsKey) }
     }
 
-    /// 插件装载稳定后核对一次：实际有没有原生侧边栏与页面加载时的假设不符，
-    /// 就更新记忆并重载页面（网页侧边栏随之回归或让位）。
-    private func syncNativeSidebarGate() {
-        guard nativeHost.didSettle, endpoint != nil else { return }
-        let actual = nativeHost.registry.isOccupied("sidebar")
-        guard actual != nativeSidebarParamInUse else { return }
-        Log.write("原生侧边栏门控变化：\(nativeSidebarParamInUse) → \(actual)，重载页面",
+    /// 插件此刻要求的那份参数。
+    private var webQuery = MainWindowController.rememberedWebQuery
+    /// 上次载入页面时真正用上的那份。与 `webQuery` 不符就重载一次。
+    private var queryInUse = MainWindowController.rememberedWebQuery
+
+    /// 订插件的参数要求。变了就记住并重载页面（网页侧边栏随之回归或让位）。
+    private func observeWebQuery() {
+        webQuerySubscription = nativeHost.events.subscribe(Self.webQueryTopic) { [weak self] payload in
+            // 总线的回调类型不带隔离，得自己声明一次（与 observeKeymap 同款）。
+            MainActor.assumeIsolated {
+                self?.applyWebQuery(payload.compactMapValues { $0 as? String })
+            }
+        }
+    }
+
+    private func applyWebQuery(_ next: [String: String]) {
+        guard next != webQuery else { return }
+        webQuery = next
+        Self.rememberedWebQuery = next
+        guard endpoint != nil, next != queryInUse else { return }
+        Log.write("页面查询参数变化：\(describe(queryInUse)) → \(describe(next))，重载页面",
                   to: ClamPaths.logURL, tag: "layout")
-        Self.rememberedNativeSidebar = actual
         loadWebUI()
+    }
+
+    /// 参数字典的一行式写法，只给日志与诊断面板用。
+    private func describe(_ query: [String: String]) -> String {
+        query.isEmpty ? "（无）"
+            : query.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
     }
 
     // MARK: - 引导视图
@@ -628,41 +667,38 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 挂到 nil target（走响应链）——WKWebView 与原生文本框（设置窗口）都会正确响应，
     /// 不再依赖 Web 内容层对裸按键的偶发处理。
     ///
-    /// ## menuCommand 词汇表
+    /// ## 两段：系统惯例段 + 贡献遍历段
     ///
-    /// 业务性的菜单项一律只 `events.emit(.menuCommand, ["command": …])`，
-    /// **壳只喊命令，不做业务**。谁消费：
+    /// **壳里没有任何一条业务命令的名字**（曾经有整整一张会话菜单）。业务菜单项
+    /// 由插件的 node 半边声明（`createSwiftPlugin({ commands })`，形状见
+    /// `clam-bridge/lib/plugin.js` 的 CommandDeclaration），经桥 snapshot 到
+    /// `nativeHost.commands`，这里照着装：
     ///
-    /// | command | 消费方 |
-    /// |---|---|
-    /// | `openSettings` | clam-layout |
-    /// | `newSession` | clam-layout |
-    /// | `prevSession` / `nextSession` | clam-sidebar |
-    /// | `selectSessionAt`（带 `index`，1 起） | clam-sidebar |
-    /// | `nextPendingSession` | clam-sidebar |
-    /// | `archiveSession` / `renameSession` | clam-sidebar |
-    /// | `focusSearch` | clam-sidebar |
+    /// - `menu` 落在 `app`/`file`/`edit`/`view`/`window`/`help` 就插进对应的系统菜单
+    ///   （每个菜单有一处固定的插入点，见下面各段），其余 id 造一个新的顶级菜单，
+    ///   标题取首个声明者的 `menuLabel`，夹在「显示」与「窗口」之间；
+    /// - 没有 `menu` 的命令不进菜单栏（执行在页面里的键），只上 ⌘/ 面板；
+    /// - 按下去只 `events.emit(.menuCommand, ["command": id, …])`，**壳只喊命令，
+    ///   不做业务**。没人应答就静默无事：事件总线是广播，没有订阅者不是错误。
+    ///   插件缺席时那条菜单项根本不会出现——它连声明都没到过。
     ///
-    /// **没人应答就静默无事**：事件总线是广播，没有订阅者不是错误——
-    /// 插件缺席（逃生舱模式、或某个插件编译失败退休）时这些快捷键优雅失效，
-    /// 菜单项照常在、按下去什么都不发生，壳不该替它们报错或禁用。
-    ///
-    /// 反过来，**壳本地动作**（缩放、重载、诊断、快捷键面板）不走 emit：
-    /// 它们作用在壳自己拥有的东西上，任何插件配置下都必须可用。
+    /// 反过来，**壳本地动作**（缩放、重载、诊断、快捷键面板、退出、关窗口）留在
+    /// 系统惯例段硬编码：它们作用在壳自己拥有的东西上，任何插件配置下都必须可用。
     ///
     /// ## 哪些键位可配
     ///
-    /// 只有 `Keymap.menuCommands` 那八条 + ⌘1-9 的修饰键从 `keymap` 里取，
-    /// 其余（⌘W/⌘Q/编辑菜单/⌘R/⌥⌘S/缩放/⌥⌘D/⌘⇧R/⌘/）是 macOS 系统惯例，
-    /// 硬编码不动——它们改了只会更难用，不值得摆进设置里。
+    /// 只有插件声明里带 `key` 的那些从 `keymap` 里取（默认值也来自声明），其余
+    /// （⌘W/⌘Q/编辑菜单/⌘R/⌥⌘S/缩放/⌥⌘D/⌘⇧R/⌘/）是 macOS 系统惯例，硬编码不动
+    /// ——它们改了只会更难用，不值得摆进设置里。
     ///
-    /// **整个函数是幂等的**：换键位、换界面语言时原样再跑一遍、连 `NSApp.mainMenu`
-    /// 一起换新（入口统一走 `rebuildMenus()`，它替这里避开"菜单正张着"那一刻）。
-    /// `windowsMenu` / `helpMenu` 的重新赋值 AppKit 自己会把托管项（窗口列表、
-    /// 帮助搜索框）迁到新菜单上，不需要先拆旧的。
+    /// **整个函数是幂等的**：换键位、换命令表、换界面语言时原样再跑一遍、连
+    /// `NSApp.mainMenu` 一起换新（入口统一走 `rebuildMenus()`，它替这里避开
+    /// "菜单正张着"那一刻）。`windowsMenu` / `helpMenu` 的重新赋值 AppKit 自己会把
+    /// 托管项（窗口列表、帮助搜索框）迁到新菜单上，不需要先拆旧的。
     ///
-    /// 文案全部现取（`strings`），一个字面量都不留在这里——见 Strings.swift。
-    private func setupMenus(_ keymap: Keymap) {
+    /// 壳自己的文案全部现取（`strings`），一个字面量都不留在这里——见 Strings.swift；
+    /// 贡献项的文案则来自声明，壳不认得它们该怎么翻。
+    private func setupMenus() {
         let s = strings
         let mainMenu = NSMenu()
 
@@ -674,11 +710,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        // 壳自己已无偏好可设（Node 路径/更新频率随 spawn 层退役）；
-        // ⌘, 改为经页内桥打开 dsh 自己的设置面板。
-        let settingsItem = appMenu.addItem(withTitle: s.menuSettings, action: #selector(openSettings), keyEquivalent: "")
-        bind(settingsItem, "openSettings", keymap)
-        settingsItem.target = self
+        // 应用菜单的插入点：「关于」之下、壳自己那几项之上。⌘, 就落在这儿
+        // （壳自己已无偏好可设，设置窗口归 clam-settings / 页内 modal 归 clam-layout）。
+        addContributions("app", to: appMenu)
         let reconnectItem = appMenu.addItem(withTitle: s.menuReconnect,
                                             action: #selector(reconnectNow),
                                             keyEquivalent: "r")
@@ -705,24 +739,12 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         appItem.submenu = appMenu
         appItem.title = AppInfo.displayName
 
-        // 文件菜单（会话的增删改名 + ⌘W 关闭窗口）
+        // 文件菜单：贡献在上（会话的增删改名之类），⌘W 关闭窗口永远垫底。
+        // 一条贡献都没有时不留那条孤零零的分隔线。
         let fileItem = NSMenuItem()
         mainMenu.addItem(fileItem)
         let fileMenu = NSMenu(title: s.menuFile)
-        let newSessionItem = fileMenu.addItem(withTitle: s.menuNewSession,
-                                              action: #selector(newSession), keyEquivalent: "")
-        bind(newSessionItem, "newSession", keymap)
-        newSessionItem.target = self
-        fileMenu.addItem(.separator())
-        let renameItem = fileMenu.addItem(withTitle: s.menuRenameSession,
-                                          action: #selector(renameSession), keyEquivalent: "")
-        bind(renameItem, "renameSession", keymap)
-        renameItem.target = self
-        let archiveItem = fileMenu.addItem(withTitle: s.menuArchiveSession,
-                                           action: #selector(archiveSession), keyEquivalent: "")
-        bind(archiveItem, "archiveSession", keymap)
-        archiveItem.target = self
-        fileMenu.addItem(.separator())
+        if addContributions("file", to: fileMenu) > 0 { fileMenu.addItem(.separator()) }
         fileMenu.addItem(withTitle: s.menuCloseWindow,
                          action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
@@ -742,6 +764,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         editMenu.addItem(withTitle: s.menuDelete, action: Selector(("delete:")), keyEquivalent: "")
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: s.menuSelectAll, action: Selector(("selectAll:")), keyEquivalent: "a")
+        // 编辑菜单的插入点在末尾（眼下没人贡献；要分隔线由声明自己带 separatorBefore）。
+        addContributions("edit", to: editMenu)
         editItem.submenu = editMenu
         editItem.title = s.menuEdit
 
@@ -755,11 +779,8 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let sidebarItem = viewMenu.addItem(withTitle: s.menuToggleSidebar,
                                            action: Selector(("toggleSidebar:")), keyEquivalent: "s")
         sidebarItem.keyEquivalentModifierMask = [.command, .option]
-        viewMenu.addItem(.separator())
-        let focusSearchItem = viewMenu.addItem(withTitle: s.menuFocusSearch,
-                                               action: #selector(focusSearch), keyEquivalent: "")
-        bind(focusSearchItem, "focusSearch", keymap)
-        focusSearchItem.target = self
+        // 显示菜单的插入点：重载/边栏之下、缩放那组之上。
+        addContributions("view", to: viewMenu)
         viewMenu.addItem(.separator())
         let zoomInItem = viewMenu.addItem(withTitle: s.menuZoomIn,
                                           action: #selector(zoomIn), keyEquivalent: "+")
@@ -781,43 +802,17 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         viewItem.submenu = viewMenu
         viewItem.title = s.menuView
 
-        // 会话菜单（前后切换 + ⌘1…⌘9 直达）
-        let sessionItem = NSMenuItem()
-        mainMenu.addItem(sessionItem)
-        let sessionMenu = NSMenu(title: s.menuSession)
-        let prevItem = sessionMenu.addItem(withTitle: s.menuPrevSession,
-                                           action: #selector(prevSession), keyEquivalent: "")
-        bind(prevItem, "prevSession", keymap)
-        prevItem.target = self
-        let nextItem = sessionMenu.addItem(withTitle: s.menuNextSession,
-                                           action: #selector(nextSession), keyEquivalent: "")
-        bind(nextItem, "nextSession", keymap)
-        nextItem.target = self
-        let nextPendingItem = sessionMenu.addItem(withTitle: s.menuNextPendingSession,
-                                                  action: #selector(nextPendingSession), keyEquivalent: "")
-        bind(nextPendingItem, "nextPendingSession", keymap)
-        nextPendingItem.target = self
-        sessionMenu.addItem(.separator())
-        // ⌘1…⌘9 直达第 N 个会话。全部隐藏：九行"会话 N"占满菜单却什么信息都不给，
-        // 而快捷键本身照常生效（allowsKeyEquivalentWhenHidden，不设则隐藏项的
-        // 快捷键一并失效）。序号经 tag 带过去，九项共用一个 selector。
-        // 九项一把抓：修饰键由 `sessionDigits` 一个设置项决定，nil = 不挂键
-        // （数字键在页面里是正常输入，这条比别的更该留一个关掉的口子）。
-        for n in 1...9 {
-            let item = sessionMenu.addItem(withTitle: s.menuSessionAt(n),
-                                           action: #selector(selectSessionAt(_:)),
-                                           keyEquivalent: "")
-            if let digits = keymap.digitsMask {
-                item.keyEquivalent = "\(n)"
-                item.keyEquivalentModifierMask = digits
-            }
-            item.tag = n
-            item.target = self
-            item.isHidden = true
-            item.allowsKeyEquivalentWhenHidden = true
+        // 插件自造的顶级菜单（如 clam-sidebar 的「会话」）。全部夹在这儿：
+        // 「显示」之后、「窗口」之前——右边那两个是 macOS 的固定尾巴。
+        for menuId in customMenuIds() {
+            let item = NSMenuItem()
+            mainMenu.addItem(item)
+            let title = customMenuTitle(menuId)
+            let menu = NSMenu(title: title)
+            addContributions(menuId, to: menu)
+            item.submenu = menu
+            item.title = title
         }
-        sessionItem.submenu = sessionMenu
-        sessionItem.title = s.menuSession
 
         // 窗口菜单（⌘M 最小化）
         let windowItem = NSMenuItem()
@@ -827,6 +822,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                            action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: s.menuZoomWindow,
                            action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        addContributions("window", to: windowMenu)
         windowItem.submenu = windowMenu
         windowItem.title = s.menuWindow
         NSApp.windowsMenu = windowMenu
@@ -839,11 +835,87 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         let shortcutsItem = helpMenu.addItem(withTitle: s.menuKeyboardShortcuts,
                                              action: #selector(showShortcuts), keyEquivalent: "/")
         shortcutsItem.target = self
+        addContributions("help", to: helpMenu)
         helpItem.submenu = helpMenu
         helpItem.title = s.menuHelp
         NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: - 贡献的菜单项
+
+    /// 壳自带的那几个菜单。**这不是白名单**：不在这张表里的 `menu` id 会造一个
+    /// 新的顶级菜单，第三方插件想要一个自己的菜单不用改壳。
+    private static let systemMenuIds: Set<String> = ["app", "file", "edit", "view", "window", "help"]
+
+    /// 落在某个菜单里的贡献，按 `order` 排；同序按 id 排（稳定，不受登记顺序影响）。
+    private func contributions(in menuId: String) -> [ClamCommand] {
+        commands.filter { $0.menu == menuId }
+            .sorted { ($0.order, $0.id) < ($1.order, $1.id) }
+    }
+
+    /// 插件自造的顶级菜单 id，按 `menuOrder` 排；同序按首次出现的顺序。
+    private func customMenuIds() -> [String] {
+        var seen: [String: (order: Int, index: Int)] = [:]
+        for (index, command) in commands.enumerated() {
+            guard let menu = command.menu, !Self.systemMenuIds.contains(menu) else { continue }
+            if seen[menu] == nil { seen[menu] = (command.menuOrder, index) }
+        }
+        return seen.sorted { ($0.value.order, $0.value.index) < ($1.value.order, $1.value.index) }
+            .map(\.key)
+    }
+
+    /// 自定义菜单的标题取**首个声明者**的 `menuLabel`；谁都没写就退回 id
+    /// （难看，但比一个没有标题的菜单强，而且一眼看得出是谁忘了写）。
+    private func customMenuTitle(_ menuId: String) -> String {
+        for command in commands where command.menu == menuId {
+            if let title = command.menuTitle(activeLocale) { return title }
+        }
+        return menuId
+    }
+
+    /// 把某个菜单 id 的贡献装进菜单，返回装了几项。
+    ///
+    /// `separatorBefore` 只在菜单**当时非空**时才画——否则第一条贡献会给菜单
+    /// 顶一条孤零零的分隔线（自定义菜单的第一项尤其容易撞上）。
+    @discardableResult
+    private func addContributions(_ menuId: String, to menu: NSMenu) -> Int {
+        var added = 0
+        for command in contributions(in: menuId) {
+            if command.separatorBefore, menu.numberOfItems > 0 { menu.addItem(.separator()) }
+            if let digits = command.digits {
+                // 一族：一个设置键装 count 个数字键项。全隐藏时快捷键仍要生效，
+                // 必须显式 allowsKeyEquivalentWhenHidden（不设则隐藏项的键一并失效）。
+                let mask = activeKeymap.digits[command.id] ?? nil
+                for n in 1...max(1, digits.count) {
+                    let item = menu.addItem(withTitle: command.title(activeLocale, index: n),
+                                            action: #selector(runCommand(_:)), keyEquivalent: "")
+                    if let mask {
+                        item.keyEquivalent = "\(n)"
+                        item.keyEquivalentModifierMask = mask
+                    }
+                    item.target = self
+                    item.representedObject = MenuCommandBox(command: digits.command,
+                                                            payload: [digits.argKey: n])
+                    item.isHidden = command.hidden
+                    item.allowsKeyEquivalentWhenHidden = true
+                    added += 1
+                }
+                continue
+            }
+            let item = menu.addItem(withTitle: command.title(activeLocale),
+                                    action: #selector(runCommand(_:)), keyEquivalent: "")
+            bind(item, command.id, activeKeymap)
+            item.target = self
+            item.representedObject = MenuCommandBox(command: command.id, payload: [:])
+            if command.hidden {
+                item.isHidden = true
+                item.allowsKeyEquivalentWhenHidden = true
+            }
+            added += 1
+        }
+        return added
     }
 
     // MARK: - 菜单重建（换键位 / 换语言共用一条路）
@@ -864,7 +936,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             pendingMenuRebuild = true
             return
         }
-        setupMenus(activeKeymap)
+        setupMenus()
     }
 
     /// 盯住主菜单的张合。只认根菜单是 `NSApp.mainMenu` 的那些——
@@ -896,7 +968,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
                     // 延到下一拍：AppKit 这会儿还在收尾这次 tracking。
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
-                        self.setupMenus(self.activeKeymap)
+                        self.setupMenus()
                     }
                 }
             },
@@ -935,18 +1007,33 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             }
     }
 
-    /// 解析 + 按需重建。**只在真变了的时候重建**：页面每次加载、每次设置回调都会
+    /// 插件的命令声明到了（或变了）。**菜单必然要重建**：菜单项本身就是这张表。
+    /// 键位也跟着重算——默认键位就住在声明里。
+    private func applyCommands(_ next: [ClamCommand]) {
+        commands = next
+        resolveKeymap()
+        rebuildMenus()
+        shortcutsPanel?.refreshIfVisible(strings: strings, inPage: inPageShortcuts)
+    }
+
+    /// 设置里那份覆盖到了。**只在真变了的时候重建**：页面每次加载、每次设置回调都会
     /// 推一份，绝大多数与在役的那份一模一样，无脑重建等于反复把整条主菜单换掉。
     private func applyKeymap(_ raw: [String: Any]) {
         // 非字符串的值（JS 侧的 null / 未设置）一律当"没配"处理，退默认。
-        let values = raw.compactMapValues { $0 as? String }
-        let (keymap, failed) = Keymap.resolve(values)
+        keymapValues = raw.compactMapValues { $0 as? String }
+        resolveKeymap()
+    }
+
+    /// 用当前的命令声明 + 设置覆盖算一份键位表，变了就重建菜单。
+    private func resolveKeymap() {
+        let values = keymapValues
+        let (keymap, failed) = Keymap.resolve(values, commands: commands)
         let changed = keymap != activeKeymap
         if changed {
             activeKeymap = keymap
             rebuildMenus()
             // ⌘/ 面板开着的话，它列的键位这会儿已经过期了。
-            shortcutsPanel?.refreshIfVisible(strings: strings, stopSpec: keymap.stopSpec)
+            shortcutsPanel?.refreshIfVisible(strings: strings, inPage: inPageShortcuts)
         }
         // **解析失败要无条件落日志**：坏 spec 退回默认之后，算出来的表可能与在役的
         // 那份一模一样（把默认值打错一个字母就是这种情形），只按"变了没"记日志的话
@@ -954,11 +1041,14 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         guard changed || !failed.isEmpty else { return }
 
         let failedNames = Set(failed.map(\.command))
+        // 默认键位来自命令声明，"壳认得的可配置键"因此就是声明的那一批
+        // ——设置里多出来的键（插件下线了、或用户手改过配置文件）不计账。
+        let defaults = Dictionary(commands.map { ($0.id, $0.key ?? "") },
+                                  uniquingKeysWith: { first, _ in first })
         // 快照会把没动过的字段也填上默认值一起推下来，"在场"不等于"用户改过"
-        // ——与默认表不同才算覆盖，否则这行账永远是满打满算的 10 项。
+        // ——与默认表不同才算覆盖，否则这行账永远是满打满算的一整张表。
         let applied = values.filter { key, value in
-            Keymap.configurable.contains(key) && !failedNames.contains(key)
-                && value != Keymap.defaultSpecs[key]
+            defaults[key] != nil && !failedNames.contains(key) && value != defaults[key]
         }.count
         var line = "键位表\(changed ? "已应用" : "无变化")"
             + "（设置覆盖 \(applied) 项，解析失败退默认 \(failed.count) 项）"
@@ -977,9 +1067,11 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         for (command, binding) in keymap.bindings where !binding.keyEquivalent.isEmpty {
             groups["\(binding.mask.rawValue)|\(binding.keyEquivalent)", default: []].append(command)
         }
-        if let digits = keymap.digitsMask {
-            for n in 1...9 {
-                groups["\(digits.rawValue)|\(n)", default: []].append("selectSessionAt(\(n))")
+        // 一族命令占的是 N 个数字键，得逐个摊开才比得出撞没撞。
+        for command in commands {
+            guard let digits = command.digits, let mask = keymap.digits[command.id] ?? nil else { continue }
+            for n in 1...max(1, digits.count) {
+                groups["\(mask.rawValue)|\(n)", default: []].append("\(command.id)(\(n))")
             }
         }
         for key in groups.keys.sorted() {
@@ -1059,50 +1151,19 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         rebuildMenus()
         updateBanner?.apply(strings: s)
         diagnosticsPanel?.apply(strings: s)
-        shortcutsPanel?.refreshIfVisible(strings: s, stopSpec: activeKeymap.stopSpec)
+        shortcutsPanel?.refreshIfVisible(strings: s, inPage: inPageShortcuts)
         refreshBootstrap()
     }
 
     // MARK: - 菜单动作：喊命令
 
-    // 以下这些只 emit，不做事——词汇表与"没人应答会怎样"见 setupMenus() 顶注。
-
-    /// ⌘,：壳只负责喊一声，谁有能力谁去做（layout 拥有会话展示面）。
-    @objc private func openSettings() {
-        emitMenuCommand("openSettings")
-    }
-
-    @objc private func newSession() {
-        emitMenuCommand("newSession")
-    }
-
-    @objc private func renameSession() {
-        emitMenuCommand("renameSession")
-    }
-
-    @objc private func archiveSession() {
-        emitMenuCommand("archiveSession")
-    }
-
-    @objc private func prevSession() {
-        emitMenuCommand("prevSession")
-    }
-
-    @objc private func nextSession() {
-        emitMenuCommand("nextSession")
-    }
-
-    @objc private func nextPendingSession() {
-        emitMenuCommand("nextPendingSession")
-    }
-
-    @objc private func focusSearch() {
-        emitMenuCommand("focusSearch")
-    }
-
-    /// ⌘1…⌘9 共用的入口：序号从菜单项的 tag 上取（1 起，不是下标）。
-    @objc private func selectSessionAt(_ sender: NSMenuItem) {
-        emitMenuCommand("selectSessionAt", ["index": sender.tag])
+    /// **贡献的菜单项全部走这一个 selector**：命令名是插件给的字符串，壳编译期
+    /// 一个都不认得，所以既做不出一堆 `@objc` 方法，也不能拿 tag 当命令名。
+    /// 该喊什么挂在菜单项的 `representedObject` 上（`MenuCommandBox`）。
+    /// 只 emit，不做事——"没人应答会怎样"见 setupMenus() 顶注。
+    @objc private func runCommand(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? MenuCommandBox else { return }
+        emitMenuCommand(box.command, box.payload)
     }
 
     /// 总线是同步同线程派发，主线程 emit 即可，不需要跳队列。
@@ -1126,11 +1187,20 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         applyPageZoom(1)
     }
 
-    /// ⌘/：把当前主菜单里所有带快捷键的项摊成一张表。
+    /// ⌘/：把当前主菜单里所有带快捷键的项摊成一张表，外加那些不在菜单里的。
     @objc private func showShortcuts() {
         let panel = shortcutsPanel ?? ShortcutsPanel(strings: strings)
         shortcutsPanel = panel
-        panel.present(strings: strings, stopSpec: activeKeymap.stopSpec)
+        panel.present(strings: strings, inPage: inPageShortcuts)
+    }
+
+    /// 没有 `menu` 的命令：执行在页面里（Esc 停止生成那类），主菜单遍历不到，
+    /// 由面板单列一节。**它们照样从同一份键位表取键位**，不与设置漂移。
+    private var inPageShortcuts: [ShortcutsPanel.ExtraRow] {
+        commands.filter { $0.menu == nil }.map {
+            ShortcutsPanel.ExtraRow(title: $0.title(activeLocale),
+                                    spec: activeKeymap.specs[$0.id] ?? "")
+        }
     }
 
     @objc private func reconnectNow() {
@@ -1173,7 +1243,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
         lines.append(s.diagBridge(connected: nativeHost.isBridgeConnected))
         lines.append(s.diagPageBridge(ready: bridgeReady))
-        lines.append(s.diagSidebarGate(on: nativeSidebarParamInUse))
+        lines.append(s.diagWebQuery(describe(queryInUse)))
         // 页面还没投影过来时，显示的是缓存/系统语言那两级的猜测——分得清才好查
         // "原生和网页各说各话"这类问题。
         let localeSource = UserDefaults.standard.string(forKey: Self.localeDefaultsKey) == nil
@@ -1188,7 +1258,16 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
             lines.append(contentsOf: nativeHost.diagnostics.map { "  \($0)" })
         }
         lines.append(s.diagRootOwner(nativeHost.registry.owner(of: "root")))
-        lines.append(s.diagSidebarOwner(nativeHost.registry.owner(of: "sidebar")))
+        // 其余槽名壳一个都不认得（`root` 是唯一例外，那是壳自己的兜底），
+        // 所以这里只把 registry 现有的占用照抄一遍——第三方插件"我注册上了吗"
+        // 在这一行里有答案。
+        let slots = nativeHost.registry.entries.keys.sorted()
+            .map { "\($0) → \(nativeHost.registry.owner(of: $0) ?? "?")" }
+        lines.append(s.diagSlots(slots.isEmpty ? s.diagDiscoveredNone : slots.joined(separator: ", ")))
+        lines.append(s.diagCommands(commands.count,
+                                    detail: commands.isEmpty
+                                        ? s.diagDiscoveredNone
+                                        : commands.map { "\($0.owner)/\($0.id)" }.joined(separator: ", ")))
         lines.append("")
         lines.append(s.diagSectionShellBuild)
         if let build = nativeHost.appBuild {
@@ -1348,61 +1427,119 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     }
 }
 
-/// 装在菜单上的那份键位表，以及它的**默认值真相**。
+/// 菜单项上挂的"按下去要喊什么"。
 ///
-/// ## 默认值住在这里
+/// 用 `representedObject` 而不是 selector 或 tag：命令名是插件给的字符串，
+/// 壳编译期一个都不认得——做不出对应的 `@objc` 方法，tag 也只装得下一个 Int。
+final class MenuCommandBox: NSObject {
+    let command: String
+    /// 除 `command` 之外要一起带走的载荷（一族命令的序号就装在这儿）。
+    let payload: [String: Any]
+
+    init(command: String, payload: [String: Any]) {
+        self.command = command
+        self.payload = payload
+    }
+}
+
+/// 插件声明的一条命令，来自桥 snapshot 的 `commands` 字段。
 ///
-/// ns `clam-shortcuts` 的 schema（`clam-app/lib/index.js`）里那些 `default`
-/// 只为了让两套设置界面显示"默认是什么"，**真正决定按下去会怎样的是下面这张表**
-/// （用户没配的项走的就是它）。改一处必须同步改另一处——不同步不会报错，
-/// 只会变成"设置界面写着 ⌘N，按下去却不是"，而这种账极难对。
+/// **形状的权威文档在 `clam-bridge/lib/plugin.js` 的 `CommandDeclaration`**
+/// ——声明的一方是插件作者，壳只是读者，所以文档跟着声明走。这里只解析壳用得上的
+/// 那几个键：`description` / `keyChoices` 是给 clam-app 拼设置 schema 的，壳不看。
 ///
-/// ## 十项，三种形态
+/// 缺字段一律有兜底、不整条丢掉（`id` 例外——没有 id 的声明喊不出任何命令）：
+/// 一条声明写漏了 `order` 不该让整个菜单消失。
+struct ClamCommand: Equatable {
+
+    /// 一族命令：一个设置键装 `count` 个数字键菜单项。
+    struct Digits: Equatable {
+        let count: Int
+        /// 真正 emit 的命令名（`id` 是设置键，两者不是一回事）。
+        let command: String
+        /// 序号装进载荷的哪个键。
+        let argKey: String
+    }
+
+    /// 声明者插件名。只用于日志与"同一条被两家声明"的对账。
+    let owner: String
+    let id: String
+    /// nil = 不进菜单栏（执行在页面里的键），只上 ⌘/ 面板。
+    let menu: String?
+    let menuLabel: [String: String]
+    let menuOrder: Int
+    let label: [String: String]
+    let order: Int
+    let separatorBefore: Bool
+    /// 默认键位；nil = 没有默认键。
+    let key: String?
+    let hidden: Bool
+    let digits: Digits?
+
+    init?(owner: String, raw: [String: Any]) {
+        guard let id = raw["id"] as? String, !id.isEmpty else { return nil }
+        self.owner = owner
+        self.id = id
+        self.menu = raw["menu"] as? String
+        self.menuLabel = (raw["menuLabel"] as? [String: Any])?.compactMapValues { $0 as? String } ?? [:]
+        self.menuOrder = raw["menuOrder"] as? Int ?? 100
+        self.label = (raw["label"] as? [String: Any])?.compactMapValues { $0 as? String } ?? [:]
+        self.order = raw["order"] as? Int ?? 100
+        self.separatorBefore = raw["separatorBefore"] as? Bool ?? false
+        self.key = raw["key"] as? String
+        self.hidden = raw["hidden"] as? Bool ?? false
+        if let group = raw["digits"] as? [String: Any],
+           let command = group["command"] as? String,
+           let argKey = group["argKey"] as? String {
+            self.digits = Digits(count: group["count"] as? Int ?? 9,
+                                 command: command, argKey: argKey)
+        } else {
+            self.digits = nil
+        }
+    }
+
+    /// 菜单项文案。`index` 非空时替换 `{n}` 占位（一族命令的第 N 项）。
+    /// 一门语言都没给就退回 id——难看，但一眼看得出是谁漏了文案。
+    func title(_ locale: ClamLocale, index: Int? = nil) -> String {
+        let text = label[locale.rawValue] ?? label[ClamLocale.en.rawValue] ?? id
+        guard let index else { return text }
+        return text.replacingOccurrences(of: "{n}", with: "\(index)")
+    }
+
+    /// 自定义顶级菜单的标题；没声明就是 nil（由调用方决定怎么兜）。
+    func menuTitle(_ locale: ClamLocale) -> String? {
+        menuLabel[locale.rawValue] ?? menuLabel[ClamLocale.en.rawValue]
+    }
+}
+
+/// 装在菜单上的那份键位表。
 ///
-/// - 八条菜单项键位：普通 spec 字符串，格式见 `KeymapSpec`；
-/// - `sessionDigits`：⌘1-9 那九个隐藏项的修饰键，`cmd` / `cmd+alt` / `off`
-///   （九项一把抓——单独配九条既啰嗦又没人会去改）；
-/// - `stopGenerating`：**壳不消费**。Esc 停止生成在 clam-layout 的 client 半边
-///   就地匹配 keydown，压根不过壳。默认值列在这儿只为"一处真相"这一条。
+/// **默认值不住在这里**：它在插件的命令声明里（`ClamCommand.key`），
+/// 与 ns `clam-shortcuts` 的 schema 是同一个上游（clam-app 现拼那张 schema）。
+/// 从前壳与 clam-app 各存一份默认表、要求逐字一致而没有任何校验——
+/// 分家了不报错，只会变成"设置界面写着 ⌘N，按下去却不是"，那种账极难对。
+///
+/// 三种形态：
+///
+/// - 普通命令：spec 字符串 → `bindings`，格式见 `KeymapSpec`；
+/// - 一族命令（⌘1-9 那种）：只有修饰键 → `digits`，`off`/空 = 不挂键；
+/// - 不进菜单的命令（Esc 停止生成）：壳**不消费它的键**，执行在页面侧，
+///   `specs` 里存一份只为 ⌘/ 面板那节不与设置漂移。
 struct Keymap: Equatable {
 
-    /// 归菜单项的那八条：命令名 → 绑定。命令名与 `menuCommand` 词汇表同名
-    /// （见 `MainWindowController.setupMenus` 顶注）。
+    /// 命令 id → 绑定（一族命令不在这里）。
     var bindings: [String: KeymapSpec.Binding]
 
-    /// ⌘1…⌘9 的修饰键；`nil` = 那九项不挂键。
-    var digitsMask: NSEvent.ModifierFlags?
+    /// 一族命令 id → 修饰键。**双层可选是有意的**：外层缺席 = 没这条命令，
+    /// 内层 `nil` = 声明在、但用户关掉了那组键。
+    var digits: [String: NSEvent.ModifierFlags?]
 
-    /// `stopGenerating` 的**展示用** spec：执行在页面侧（clam-layout client 半边），
-    /// 壳存这份只为 ⌘/ 面板那行"页面内"不与设置漂移。空串 = 用户显式禁用。
-    var stopSpec: String
+    /// 命令 id → 真正生效的 spec 原文。⌘/ 面板列"页面内"那节要用；
+    /// 空串 = 禁用（用户显式配空，或声明里就没有默认键）。
+    var specs: [String: String]
 
-    /// 默认键位。改这里记得同步 `clam-app/lib/index.js` 的 ns schema。
-    static let defaultSpecs: [String: String] = [
-        "newSession": "cmd+n",
-        "openSettings": "cmd+,",
-        "renameSession": "cmd+alt+r",
-        "archiveSession": "cmd+shift+backspace",
-        "prevSession": "cmd+shift+[",
-        "nextSession": "cmd+shift+]",
-        "nextPendingSession": "cmd+alt+a",
-        "focusSearch": "cmd+alt+f",
-        "sessionDigits": "cmd",
-        "stopGenerating": "esc",
-    ]
-
-    /// 装在菜单项上的那八条（顺序无关，只用来筛）。
-    static let menuCommands = [
-        "newSession", "openSettings", "renameSession", "archiveSession",
-        "prevSession", "nextSession", "nextPendingSession", "focusSearch",
-    ]
-
-    /// 壳认得的全部可配置键。`stopGenerating` 的**执行**归页面，但壳也消费它
-    /// （⌘/ 面板展示），计入"设置覆盖了几项"的账。
-    static let configurable = Set(menuCommands + ["sessionDigits", "stopGenerating"])
-
-    /// 谁都没配时的样子。壳启动时先装它。
-    static let `default` = resolve([:]).keymap
+    /// 一条命令都没有的样子。壳启动时先装它——那一刻插件的声明还没到。
+    static let `default` = Keymap(bindings: [:], digits: [:], specs: [:])
 
     struct Failure {
         let command: String
@@ -1410,57 +1547,52 @@ struct Keymap: Equatable {
         let raw: String
     }
 
-    /// 把设置里那份 `[命令: spec]` 解析成键位表。**失败不传染**：坏的那条退回
-    /// 默认、记进 `failed`，其余照常生效——一个错别字不该让整套快捷键失灵。
-    static func resolve(_ values: [String: String]) -> (keymap: Keymap, failed: [Failure]) {
+    /// 把设置里那份 `[命令: spec]` 按当前的命令声明解析成键位表。
+    ///
+    /// **失败不传染**：坏的那条退回声明里的默认、记进 `failed`，其余照常生效
+    /// ——一个错别字不该让整套快捷键失灵。**空串是合法值 = 显式禁用**，
+    /// 尊重它、不退默认（与页面侧 clam-layout client 的 readKeySpec 同一套语义）。
+    ///
+    /// 设置里有、声明里没有的键**一律忽略**：插件下线了它的设置值还躺在文件里，
+    /// 那时壳按不出那条命令，装上去只会凭空多出一个撞键的幽灵。
+    static func resolve(_ values: [String: String],
+                        commands: [ClamCommand]) -> (keymap: Keymap, failed: [Failure]) {
         var bindings: [String: KeymapSpec.Binding] = [:]
+        var digits: [String: NSEvent.ModifierFlags?] = [:]
+        var specs: [String: String] = [:]
         var failed: [Failure] = []
 
-        for command in menuCommands {
-            if let raw = values[command] {
-                if let parsed = KeymapSpec.parse(raw) {
-                    bindings[command] = parsed
-                    continue
+        for command in commands {
+            var spec = command.key ?? ""
+            if let raw = values[command.id] {
+                let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.isEmpty {
+                    spec = ""
+                } else if command.digits != nil ? (parseDigits(text) != nil) : (KeymapSpec.parse(text) != nil) {
+                    spec = text
+                } else {
+                    failed.append(Failure(command: command.id, raw: raw))
                 }
-                failed.append(Failure(command: command, raw: raw))
             }
-            // 默认表里的 spec 是代码常量，解析不出来说明这张表写错了；
-            // 退到"不挂键"至少菜单还在，比崩掉整条菜单强。
-            bindings[command] = KeymapSpec.parse(defaultSpecs[command] ?? "") ?? .disabled
-        }
-
-        var digits = parseDigits(defaultSpecs["sessionDigits"] ?? "") ?? .some([.command])
-        if let raw = values["sessionDigits"] {
-            if let parsed = parseDigits(raw) {
-                digits = parsed
+            specs[command.id] = spec
+            if command.digits != nil {
+                // 声明里的默认值也可能是错的（插件作者打错字）；那时退到"不挂键"，
+                // 菜单项还在，比崩掉整条菜单强。
+                digits[command.id] = parseDigits(spec) ?? .some(nil)
             } else {
-                failed.append(Failure(command: "sessionDigits", raw: raw))
+                bindings[command.id] = KeymapSpec.parse(spec) ?? .disabled
             }
         }
 
-        // stopGenerating 与页面侧（clam-layout client 的 readKeySpec）同一套语义：
-        // 空串 = 显式禁用（尊重，不退默认）；解析不动 = 退默认并记失败。
-        var stop = defaultSpecs["stopGenerating"] ?? "esc"
-        if let raw = values["stopGenerating"] {
-            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty {
-                stop = ""
-            } else if KeymapSpec.parse(text) != nil {
-                stop = text
-            } else {
-                failed.append(Failure(command: "stopGenerating", raw: raw))
-            }
-        }
-
-        return (Keymap(bindings: bindings, digitsMask: digits, stopSpec: stop), failed)
+        return (Keymap(bindings: bindings, digits: digits, specs: specs), failed)
     }
 
-    /// `sessionDigits` 的三个取值。**双层可选是有意的**：外层 `nil` = 值非法，
+    /// 一族命令的修饰键。**双层可选是有意的**：外层 `nil` = 值非法，
     /// 内层 `nil` = `off`（不挂键）——两者都要能表达，而它们不是一回事。
     private static func parseDigits(_ raw: String) -> (NSEvent.ModifierFlags?)? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if text.isEmpty || text == "off" { return .some(nil) }
-        // 空掩码等于"光按数字键就切会话"——页面里数字是正常输入，这不能算合法值。
+        // 空掩码等于"光按数字键就触发"——页面里数字是正常输入，这不能算合法值。
         guard let mask = KeymapSpec.parseModifiers(text), !mask.isEmpty else { return nil }
         return .some(mask)
     }

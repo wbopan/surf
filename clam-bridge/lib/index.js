@@ -5,6 +5,8 @@
  *
  *   1. **Swift 载荷登记表**：`ctx.provide('clamBridge', api)`，各插件经
  *      `createSwiftPlugin`（见 `./plugin.js`）把自己的 `swift/` 目录登记进来。
+ *      同一张表还捎带插件的**命令声明**（菜单项 + 默认键位，形状见 `./plugin.js`）：
+ *      桥不解释它，只透传给两个读者——壳（snapshot）与 clam-app（`commands.list()`）。
  *   2. **一条 WebSocket**（`/clam/bridge`，与 dsh 同端口）：壳连上来拉 snapshot、
  *      回报编译结果、收发插件与其 TS 半身之间的信封消息。
  *   3. **盯文件**：500ms statSync 轮询各 `swift/` 目录。node 半边在 web bundle 下
@@ -69,6 +71,8 @@ export function apply(ctx, config) {
 	const registry = new Map();
 	/** @type {Set<Client>} 已握手的壳客户端 */
 	const clients = new Set();
+	/** @type {Set<() => void>} 登记表里命令声明变动时要通知的人（眼下只有 clam-app）。 */
+	const commandWatchers = new Set();
 	/** clam-app 登记的"壳请求重启自己"处理器（§7.5 v1）。 */
 	let appRestartHandler;
 	/** 登记表版本：全表 hash 的短前缀 + 单调计数，方便人眼比对。 */
@@ -84,6 +88,27 @@ export function apply(ctx, config) {
 		 * 与 `--clam-bridge-path`，壳因此永远连得上，不管用户把它改成什么。
 		 */
 		path: config.path,
+
+		/**
+		 * 命令声明的汇总视图（形状见 `./plugin.js` 的 CommandDeclaration）。
+		 *
+		 * 壳走 snapshot 的 `commands` 字段拿同一份；这条 API 是给 **clam-app** 的
+		 * ——它要按这张表现拼 `clam-shortcuts` 设置 ns 的 schema，而设置面不过桥。
+		 * 两个读者一份声明，"两张表逐字一致"那条无人校验的纪律就此消失。
+		 */
+		commands: {
+			/** 按登记顺序（插件的挂载顺序）铺平；同 id 由多家声明时先登记的在前。 */
+			list() {
+				return [...registry.values()].flatMap((record) =>
+					record.commands.map((command) => ({ ...command, owner: record.plugin })));
+			},
+			/** 登记表增删时回调；返回撤销函数。**不带载荷**——回调自己再 `list()` 一次。 */
+			subscribe(fn) {
+				commandWatchers.add(fn);
+				return () => commandWatchers.delete(fn);
+			},
+		},
+
 		register(entry) {
 			if (registry.has(entry.plugin)) {
 				logger.warn(`插件 ${entry.plugin} 重复登记 Swift 载荷，后者覆盖前者。`);
@@ -96,6 +121,10 @@ export function apply(ctx, config) {
 				// 排序落库：声明顺序不该影响 contentHash，也不该影响编译参数。
 				sharedModules: [...new Set(entry.sharedModules ?? [])].sort(),
 				schemaVersion: entry.schemaVersion ?? 1,
+				// 命令声明只是**透传的数据**：桥不解释它，也不校验它（形状的文档在
+				// `./plugin.js` 的 CommandDeclaration）。**它刻意不进 contentHash**
+				// ——改一句菜单文案不该让 Swift 半边全量重编。
+				commands: Array.isArray(entry.commands) ? entry.commands : [],
 				expose: entry.expose ?? {},
 				signature: undefined,
 				files: undefined,
@@ -105,6 +134,7 @@ export function apply(ctx, config) {
 				+ (record.swiftDeps.length ? `（依赖 ${record.swiftDeps.join(", ")}）` : "")
 				+ (record.sharedModules.length ? `（共享 module ${record.sharedModules.join(", ")}）` : ""));
 			rescan("登记");
+			notifyCommandWatchers();
 			return {
 				/** 把数据推给这个插件的 Swift 半身（下行 push 帧）。 */
 				push(channel, payload) {
@@ -114,6 +144,7 @@ export function apply(ctx, config) {
 					if (registry.get(entry.plugin) === record) {
 						registry.delete(entry.plugin);
 						rescan("撤销登记");
+						notifyCommandWatchers();
 					}
 				},
 			};
@@ -142,6 +173,20 @@ export function apply(ctx, config) {
 			},
 		},
 	});
+
+	/**
+	 * 通知命令声明的读者。**一个订阅者抛错不许连累别人**，也不许把登记打断
+	 * ——它是在 `register` 里同步调用的。
+	 */
+	function notifyCommandWatchers() {
+		for (const fn of commandWatchers) {
+			try {
+				fn();
+			} catch (error) {
+				logger.warn(`命令声明订阅者抛错：${errorText(error)}`);
+			}
+		}
+	}
 
 	// ---- WebSocket ----
 	const wss = new WebSocketServer({ noServer: true });
@@ -267,6 +312,7 @@ export function apply(ctx, config) {
 				sharedModules: record.sharedModules,
 				contentHash: record.contentHash,
 				schemaVersion: record.schemaVersion,
+				commands: record.commands,
 			})),
 		};
 	}

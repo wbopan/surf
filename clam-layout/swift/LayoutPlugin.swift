@@ -16,6 +16,19 @@ final class LayoutPlugin: ClamPlugin {
     /// 主题名是字符串而不是闭包，所以它天然跨得过世代替换。
     static let newSessionTopic = "clam.layout.newSession"
 
+    /// 告诉壳"页面 URL 要带哪些查询参数"的粘性主题（壳侧同名常量在
+    /// `MainWindowController.webQueryTopic`）。
+    ///
+    /// **参数名是 dsh 网页那一侧的私有词汇，定义权在这儿**：壳既不认得
+    /// `clam-native-sidebar`，也不认得 `sidebar` 这个槽名——它从前两样都认得，
+    /// 于是第三方写一个占 `sidebar` 槽的替代品必须沿用这两个字符串，
+    /// 换个槽名就永远拿不到门控（网页侧边栏被藏、原生侧边栏又不存在）。
+    static let webQueryTopic = "clam.web.query"
+
+    /// 原生侧边栏在场时页面要带的那个参数：网页自己的侧边栏让位。
+    /// clam-layout 的 client 半边认这一个（`?clam-native-sidebar=1`）。
+    static let nativeSidebarParam = "clam-native-sidebar"
+
     func activate(host: ClamHost) -> AnyObject? {
         guard let webView = host.objects.object(ClamObjects.Key.webView, as: WKWebView.self) else {
             // WKWebView 归壳所有；它不在说明壳还没造好窗口，这时不该装配。
@@ -86,11 +99,27 @@ struct SplitRepresentable: NSViewControllerRepresentable {
     func makeNSViewController(context: Context) -> LayoutSplitController {
         let controller = LayoutSplitController(host: host, webView: webView)
         controller.syncSidebar()
+        publishWebQuery()
         return controller
     }
 
     func updateNSViewController(_ controller: LayoutSplitController, context: Context) {
         controller.syncSidebar()
         controller.syncToolbar()
+        publishWebQuery()
+    }
+
+    /// 告诉壳页面该带哪些查询参数。**发布点在这儿是有理由的**：`sidebarVersion`
+    /// 是这个 representable 的输入，槽被占/被释放时 SwiftUI 必然重新算它一次
+    /// ——不必再另外盯 registry。
+    ///
+    /// **只在真变了的时候发**：`emitSticky` 是广播，每轮 update 都发一遍会让壳
+    /// 反复比对（虽然它也去重，但那是它的好意，不该指望）。
+    private func publishWebQuery() {
+        let query = host.registry.isOccupied(LayoutSlots.sidebar)
+            ? [LayoutPlugin.nativeSidebarParam: "1"] : [:]
+        let last = host.events.last(LayoutPlugin.webQueryTopic)?.compactMapValues { $0 as? String }
+        guard last != query else { return }
+        host.events.emitSticky(LayoutPlugin.webQueryTopic, query)
     }
 }

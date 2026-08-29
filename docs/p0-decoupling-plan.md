@@ -152,3 +152,105 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
 ## 3. 执行日志
 
 （执行者追加：日期 · 波次 · 做了什么 · 验证了什么 · 遗留）
+
+- **2026-08-29 · Wave 1 · B（P0 #5：toolbar metadata 代码化 + 槽名常量）**
+
+  新建 `clam-layout/swift/LayoutContracts.swift`：`public enum LayoutSlots`（眼下只有
+  `sidebar`）+ `public struct ToolbarSpec`（12 个 metadata 键各一个有类型的属性，
+  `region`/`align`/`kind`/`priority`/`sizing` 收成五个 `String` raw value 枚举，
+  `items` 保持 `[[String: Any]]`，`menu` 保持 `@convention(block) (NSMenu) -> Void`）。
+  `metadata()` **缺省值一律省略而不是写进字典**——消费方每个键都是"读不到就用缺省"，
+  两者等价；而 `kind` 缺席 ≠ `kind: "view"`（缺席是"按 symbol 推断"），
+  所以它必须能表达"没说"，整张表就统一成同一条规则。
+
+  改用方：`LayoutSplitController.swift` 那段 99 行的槽约定注释精简成"载荷为什么是字典
+  （SDK 容器中立）+ 契约见 `ToolbarSpec`"（四条渲染路线的表、items 元素形状、
+  流量 vs 拓扑那几段都搬进了 `ToolbarSpec` 的文档注释，一条都没丢）；
+  `isOccupied` / `registry.view(for:)` / `version(of:)` 三处 `"sidebar"` → `LayoutSlots.sidebar`
+  （`contributionIdentifiers(in: "sidebar")` **没动**：那是 region 值不是槽名）；
+  `SidebarPlugin.swift` 的 `register(slot:)` 与筛选按钮的字面量字典；
+  `HeaderPlugin.swift` 删掉 `private static let toolbarSlot = "toolbar"` 改用
+  `LayoutToolbar.slot`，`contribute` 辅助改为收 `ToolbarSpec`（`region = .content`
+  在辅助里定死，四格不再各写一遍）。ClamSDK 一个字没动。
+
+  验证：三份 metadata 与改前**逐键等价**（唯一差别是 subagents/export 两格不再写
+  `spaced: false`，消费方读的是 `== true`，且 `refreshToolbarSnapshot` 的签名走的是
+  `Self.spaced(of:)` 归一化后的值，签名也不变）。离线 typecheck 全绿：
+  `ClamLayout` `-emit-module` 通过，`ClamSidebar` / `ClamHeader` `-typecheck` 通过
+  （sidebar 只剩 `SidebarFilter.swift:79` 那条 Swift 6 actor 隔离警告，先于本次改动存在）。
+
+  遗留：① 没跑 `./dev` 的整合验收（归 Wave 3）；② `ToolbarItemState` 那条**活通道**的
+  载荷键还是手写字典，本次只覆盖了拓扑侧——要收的话是同一手法，但它跨插件双向、
+  改动面比 metadata 大，留给 Wave 2/C 或后续；③ `LayoutSlots` 眼下只有一个成员，
+  `root` 是壳的槽、故意不收进来。
+
+- **2026-08-29 · Wave 1 · A（P0 #1：命令注册表 + P0 #3：sidebar 门控改粘性事件）**
+
+  **命令声明成了一处真相**（形状的权威文档写在 `clam-bridge/lib/plugin.js` 的
+  `CommandDeclaration` typedef 里，声明方是插件作者，所以文档跟着声明走）。
+  `createSwiftPlugin({ commands: [...] })` → 桥登记表（**不进 contentHash**：
+  改一句菜单文案不该让 Swift 半边重编）→ 两个读者：壳（snapshot 的 `commands` 字段）
+  与 clam-app（新的 `clamBridge.commands.list()/subscribe()`）。定稿形状与计划一致，
+  三处出入：① 增加 `hidden`（⌘1-9 那九项要"藏起来但键照常生效"）；
+  ② 一族命令用 `digits: {count, command, argKey}` + `keyChoices`，
+  `key` 只写修饰键——这样 `sessionDigits` 仍是**一个**设置项（union 三取值），
+  用户存过的值与设置页条目一个不变；③ `stopGenerating` 计划里写 `configurable: false`，
+  实际保留可配置——它今天就在 `clam-shortcuts` 里，关掉等于丢用户已存的覆盖，
+  与不变量 2 冲突（不变量优先）。
+
+  壳：`setupMenus()` 拆成系统惯例段 + 贡献遍历段（每个系统菜单一处插入点，
+  未知 `menu` id 造顶级菜单夹在「显示」与「窗口」之间）；九个 `@objc` 业务 selector
+  收成一个 `runCommand(_:)`，命令名挂在 `representedObject`（`MenuCommandBox`）
+  ——命令名是插件给的字符串，壳编译期一个都不认得，做不出对应的 `@objc` 方法。
+  `Keymap` 从"编译期三张常量表"变成 `resolve(values:commands:)`：默认键位来自声明，
+  `menuCommands` / `configurable` / `defaultSpecs` 三个常量删除；`Strings.swift` 的
+  十条业务文案删掉（`menuSettings` 也删——⌘, 那一项本就随插件在场与否出现）；
+  ⌘/ 面板的手工 `stopGenerating` 行改成"没有 `menu` 的命令"现采（`ShortcutsPanel.ExtraRow`）。
+  snapshot 里命令有变就 `applyCommands` → 重算键位 → `rebuildMenus()`。
+
+  **clam-app 的时序**：查过 `dsh-settings` 源码，`register()` 里是
+  `this.ctx.effect(() => { registrations.set(ns, …); return () => registrations.delete(ns) })`
+  ——重复注册 fails loud，但**撤销调用方 fiber 就能解注册**。所以做法是
+  "登记表静默 300ms 后注册一次；之后指纹变了就 dispose 子 fiber 再注册一份"，
+  两次安装串一条 Promise 队列（`dispose` 是异步的，叠在一起会撞 already registered）。
+  指纹只含影响 schema 的字段，无关登记不会把设置界面上正开着的表原地换掉。
+  用户存过的覆盖值不受影响（它们在设置文档里，schema 只管解析与显示）。
+  一条可配置命令都没有时**不注册**——不开空卡片。
+
+  **#3**：壳删掉 `isOccupied("sidebar")` 与 `clam-native-sidebar` 字面量，改订粘性主题
+  `clam.web.query`（载荷 `[参数名: 值]`，壳侧常量在 `MainWindowController` 顶注、
+  插件侧在 `LayoutPlugin.webQueryTopic`）；clam-layout 在 `SplitRepresentable` 的
+  make/update 里发布（`sidebarVersion` 本就是它的输入，槽被占/释放时必然重算一次，
+  不必另盯 registry），只在值真变了才 `emitSticky`。记忆键随之从
+  `clam.nativeSidebar`（Bool）换成 `clam.webQuery`（字典），**代价是升级后首次启动
+  会多重载一次页面**（旧键不迁移），之后照常。诊断面板那两行也跟着通用化：
+  `原生侧边栏门控` → `页面查询参数`，`sidebar 槽占用者` → `已占用的槽`（照抄 registry），
+  另加一行 `命令声明：N 条（owner/id …）`——第三方"我这条注册上了吗"有地方查了。
+
+  验证：`node --check` 六个改过的 JS 全绿；`node --test clam-sidebar/test/*.test.js`
+  18/18 通过；离线 typecheck `ClamLayout` `-emit-module`、`ClamSidebar` /
+  `ClamSettings` `-typecheck` 全绿（sidebar 仍只有那条先于本次存在的 actor 警告）；
+  壳 `xcodegen + xcodebuild -derivedDataPath build` **BUILD SUCCEEDED**；
+  不变量 4 的 grep **为空**。整合：`./dev` 起来后
+  `surfclam.arch-coupling-audit.log` 无 `编译失败`，五个插件全部装载，
+  `页面查询参数变化：（无） → clam-native-sidebar=1，重载页面` 与
+  `WebView 加载完成：…/?clam-native-sidebar=1` 证明 #3 通链；
+  `快捷键设置面已注册：10 项` 与旧 schema 同一批键；
+  `peekaboo menu list` 的菜单结构与改前逐项一致（设置…⌘, / 新建会话⌘N /
+  重命名会话⌘⌥R / 归档会话⌘⇧⌫ / 聚焦搜索⌘⌥F / 会话菜单三项 ⌘⇧[ ⌘⇧] ⌘⌥A）；
+  点「显示 › 聚焦搜索」后 sidebar 日志出现 `菜单命令：focusSearch`，
+  声明 → 菜单 → emit → 插件应答整条链通。
+
+  遗留：① **截图没截成**——`tools/shot.sh` 与 `peekaboo see` 这台机器此刻都在报
+  SCK `-3811 / Bridge operation target attribution failed`（与本次改动无关，
+  换 `menu list` + 日志取证），Wave 3 补一张；② 首轮 `./dev` 撞上了 CLAUDE.md 记过的
+  "别的 worktree 的壳串进来"——主 worktree 那个 `Surfclam Dev` 连上了本 worktree 的
+  dsh，两个壳往同一个世代目录写源码，报 `input file … was modified during the build`；
+  **我把它 SIGTERM 掉了**（它当时没有自己的 dsh、停在引导页），重跑即全绿——
+  需要它的话双击重开即可；③ 设置页字段顺序变成了"声明顺序"（layout 三条在前、
+  sidebar 七条在后），条目与默认值一个没变，但顺序与旧版不同；
+  ④ 桥的 `rescan` 只在 `swift/` 文件签名变化时 bump 版本，所以**命令声明单独变化
+  不会推 snapshot**（插件注册/注销时顺带 bump，实际够用；真要精确得把 commands
+  折进 tableHash，那是 Wave 2 动 `clam-bridge/lib/index.js` 时更顺手的事）；
+  ⑤ 冷启动那一瞬间菜单只有系统惯例项，声明到齐（毫秒级）才补上业务项——
+  声明住在 node 半边就必然如此。

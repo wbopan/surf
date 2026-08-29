@@ -14,11 +14,19 @@ import AppKit
 /// `refreshIfVisible`。
 @MainActor
 final class ShortcutsPanel: NSWindowController {
+    /// 不在任何 NSMenu 里的一条快捷键（执行在页面侧的那些）。
+    /// 文案与键位都是**插件声明**来的，壳不认得它们——所以这里只收已经算好的字符串。
+    struct ExtraRow {
+        let title: String
+        /// 键位 spec 原文；空串 = 已禁用。
+        let spec: String
+    }
+
     private let textView = NSTextView()
     private let copyButton = NSButton()
     private var strings: L
-    /// 最近一次展示时的「停止生成」键位，换语言重画时要照旧。
-    private var stopSpec = ""
+    /// 最近一次展示时那些页内快捷键，换语言重画时要照旧。
+    private var extraRows: [ExtraRow] = []
 
     init(strings: L) {
         self.strings = strings
@@ -66,10 +74,10 @@ final class ShortcutsPanel: NSWindowController {
 
     /// 每次打开都重新遍历一次：菜单不是常量（插件换代、用户改配置都可能动它），
     /// 缓存一份就是在准备一张过期的表。
-    /// `stopSpec`：页面侧「停止生成」的当前键位（`Keymap.stopSpec`），空串 = 已禁用。
-    func present(strings: L, stopSpec: String) {
+    /// `inPage`：不在菜单里的那些键（插件声明里没有 `menu` 的命令），可以为空。
+    func present(strings: L, inPage: [ExtraRow]) {
         self.strings = strings
-        self.stopSpec = stopSpec
+        self.extraRows = inPage
         applyStrings()
         render()
         showWindow(nil)
@@ -78,9 +86,9 @@ final class ShortcutsPanel: NSWindowController {
     }
 
     /// 换语言 / 换键位：面板开着才重画。**关着的不用管**——下次打开本来就是现采的。
-    func refreshIfVisible(strings: L, stopSpec: String) {
+    func refreshIfVisible(strings: L, inPage: [ExtraRow]) {
         self.strings = strings
-        self.stopSpec = stopSpec
+        self.extraRows = inPage
         applyStrings()
         guard window?.isVisible == true else { return }
         render()
@@ -130,22 +138,23 @@ final class ShortcutsPanel: NSWindowController {
             guard !rows.isEmpty else { continue }
             out.append(Self.render(section: top.title, rows: rows))
         }
-        // 页面自己吃掉的按键：不在任何 NSMenu 里，遍历拿不到。键位跟着设置走
-        // （`Keymap.stopSpec` 由调用方递进来），不再手写死值——手写的那版在
-        // stopGenerating 变成可配置项之后就会与设置漂移。
-        // 这一节每加一条都意味着"页面侧实现了一个壳不知道的快捷键"。
-        let stopShortcut: String
-        if stopSpec.isEmpty {
-            stopShortcut = strings.shortcutsDisabled
-        } else if let binding = KeymapSpec.parse(stopSpec) {
-            stopShortcut = Self.symbols(for: binding.keyEquivalent, modifiers: binding.mask,
+        // 页面自己吃掉的按键：不在任何 NSMenu 里，遍历拿不到。文案与键位都来自
+        // **插件的命令声明**（没有 `menu` 的那些）——壳既不认得这些命令，也不该
+        // 手写它们的名字；手写的那版在 stopGenerating 变成可配置项之后就与设置漂移了。
+        // 一条都没有（相关插件缺席）时整节不画，而不是画一个空标题。
+        guard !extraRows.isEmpty else { return out }
+        out.append(Self.render(section: strings.shortcutsInPage, rows: extraRows.map { row in
+            let shortcut: String
+            if row.spec.isEmpty {
+                shortcut = strings.shortcutsDisabled
+            } else if let binding = KeymapSpec.parse(row.spec) {
+                shortcut = Self.symbols(for: binding.keyEquivalent, modifiers: binding.mask,
                                         spaceName: strings.keySpace)
-        } else {
-            stopShortcut = stopSpec // 解析不动就原样展示，至少不骗人
-        }
-        out.append(Self.render(section: strings.shortcutsInPage, rows: [
-            Row(title: strings.shortcutsStopGenerating, shortcut: stopShortcut),
-        ]))
+            } else {
+                shortcut = row.spec // 解析不动就原样展示，至少不骗人
+            }
+            return Row(title: row.title, shortcut: shortcut)
+        }))
         return out
     }
 

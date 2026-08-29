@@ -47,7 +47,6 @@ struct L {
     // MARK: - 菜单栏：应用菜单
 
     var menuAbout: String { t("关于 \(AppInfo.displayName)", "About \(AppInfo.displayName)") }
-    var menuSettings: String { t("设置…", "Settings…") }
     var menuReconnect: String { t("重新连接 dsh", "Reconnect to dsh") }
     var menuOpenLogs: String { t("打开日志文件夹", "Open Log Folder") }  // 原：打开日志目录
     var menuDiagnostics: String { t("诊断信息…", "Diagnostics…") }
@@ -58,10 +57,11 @@ struct L {
 
     // MARK: - 菜单栏：文件
 
+    // **业务菜单项的文案不在这儿**：新建/重命名/归档会话、聚焦搜索、整个「会话」
+    // 菜单都随插件的命令声明走（`ClamCommand.label`，见 setupMenus 顶注）。
+    // 壳只保留自己那些永远在场的项——它们在任何插件配置下都必须可用。
+
     var menuFile: String { t("文件", "File") }
-    var menuNewSession: String { t("新建会话", "New Session") }
-    var menuRenameSession: String { t("重命名会话…", "Rename Session…") }
-    var menuArchiveSession: String { t("归档会话", "Archive Session") }
     var menuCloseWindow: String { t("关闭窗口", "Close Window") }
 
     // MARK: - 菜单栏：编辑
@@ -81,19 +81,9 @@ struct L {
     var menuReloadPage: String { t("重新载入页面", "Reload Page") }
     /// macOS 系统术语是"边栏"（访达 → 显示 → 显示边栏），不是"侧边栏"。
     var menuToggleSidebar: String { t("切换边栏", "Toggle Sidebar") }  // 原：切换侧边栏
-    var menuFocusSearch: String { t("聚焦搜索", "Focus Search") }
     var menuZoomIn: String { t("放大", "Zoom In") }
     var menuZoomOut: String { t("缩小", "Zoom Out") }
     var menuActualSize: String { t("实际大小", "Actual Size") }
-
-    // MARK: - 菜单栏：会话
-
-    var menuSession: String { t("会话", "Session") }
-    var menuPrevSession: String { t("上一个会话", "Previous Session") }
-    var menuNextSession: String { t("下一个会话", "Next Session") }
-    var menuNextPendingSession: String { t("下一个待处理会话", "Next Pending Session") }
-    /// ⌘1…⌘9 那九个隐藏项。隐藏归隐藏，⌘/ 面板会把它们列出来，所以文案照样要翻。
-    func menuSessionAt(_ n: Int) -> String { t("会话 \(n)", "Session \(n)") }
 
     // MARK: - 菜单栏：窗口 / 帮助
 
@@ -175,9 +165,10 @@ struct L {
     func diagPageBridge(ready: Bool) -> String {
         t("页内桥：\(ready ? "已就绪" : "未就绪")", "Page bridge: \(ready ? "ready" : "not ready")")
     }
-    func diagSidebarGate(on: Bool) -> String {
-        t("原生侧边栏门控：\(on ? "开（?clam-native-sidebar=1）" : "关（完整网页模式）")",
-          "Native sidebar gate: \(on ? "on (?clam-native-sidebar=1)" : "off (full web mode)")")
+    /// 页面 URL 上那些查询参数（由插件经 `clam.web.query` 说了算，壳不解释）。
+    /// `text` 已经拼成 `a=1&b=2` 的样子，空的时候是"（无）"。
+    func diagWebQuery(_ text: String) -> String {
+        t("页面查询参数：\(text)", "Page query: \(text)")
     }
     /// `source` 用下面两条描述这个值是从哪一级决议来的。
     func diagLocale(_ id: String, source: String) -> String {
@@ -199,8 +190,14 @@ struct L {
         t("root 槽占用者：\(owner ?? "无（兜底 WebView）")",
           "root slot owner: \(owner ?? "none (fallback web view)")")
     }
-    func diagSidebarOwner(_ owner: String?) -> String {
-        t("sidebar 槽占用者：\(owner ?? "无")", "sidebar slot owner: \(owner ?? "none")")
+    /// 此刻被占着的槽。**壳只认得 `root`**，别的槽名是插件之间的约定，
+    /// 所以这一行照抄 registry 现有的占用，不预设任何槽名。
+    func diagSlots(_ list: String) -> String {
+        t("已占用的槽：\(list)", "Occupied slots: \(list)")
+    }
+    /// 插件声明的命令（菜单项 + 快捷键）。第三方"我这条注册上了吗"在这行里有答案。
+    func diagCommands(_ count: Int, detail: String) -> String {
+        t("命令声明：\(count) 条（\(detail)）", "Declared commands: \(count) (\(detail))")
     }
 
     var diagSectionShellBuild: String { t("── 壳自身构建 ──", "── Shell Build ──") }
@@ -221,8 +218,8 @@ struct L {
 
     var shortcutsTitle: String { t("键盘快捷键", "Keyboard Shortcuts") }
     /// 不在任何 NSMenu 里、由页面自己吃掉的按键单列一节。
+    /// **这一节里每一行的文案都来自插件的命令声明**，壳只出这个小标题。
     var shortcutsInPage: String { t("页面内", "In Page") }
-    var shortcutsStopGenerating: String { t("停止生成", "Stop Generating") }  // 原：停止正在生成的回复
     var shortcutsDisabled: String { t("已禁用", "Disabled") }
     /// 空格键没有可读字形，键帽写成词。
     var keySpace: String { t("空格", "Space") }

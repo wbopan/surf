@@ -137,6 +137,98 @@ export default createSwiftPlugin({
 	// 没有 sharedModules：Swift 半身只 import ClamSDK（无条件）与 ClamLayout。
 	// 曾经声明的 DSHKit 随本次迁移整体退役。
 
+	// 壳菜单里那些会话命令（形状见 clam-bridge/lib/plugin.js 的 CommandDeclaration）。
+	// 执行端全在 `swift/SidebarShortcuts.swift`——顺序、选中态、筛选状态都只有这边有。
+	// **本插件缺席时这些菜单项干脆不出现**（而不是灰着或按下去没反应）。
+	commands: [
+		{
+			id: "renameSession",
+			menu: "file",
+			order: 20,
+			separatorBefore: true,
+			label: { zh: "重命名会话…", en: "Rename Session…" },
+			key: "cmd+alt+r",
+			description: { zh: "重命名当前会话。", en: "Rename the current session." },
+		},
+		{
+			id: "archiveSession",
+			menu: "file",
+			order: 30,
+			label: { zh: "归档会话", en: "Archive Session" },
+			key: "cmd+shift+backspace",
+			description: { zh: "归档当前会话。", en: "Archive the current session." },
+		},
+		{
+			id: "focusSearch",
+			menu: "view",
+			order: 10,
+			separatorBefore: true,
+			label: { zh: "聚焦搜索", en: "Focus Search" },
+			key: "cmd+alt+f",
+			description: {
+				zh: "把光标送进侧边栏搜索框。",
+				en: "Move the cursor to the sidebar search field.",
+			},
+		},
+		// 「会话」是壳没有的菜单，由本插件造：标题取首个声明者的 menuLabel，
+		// 位置夹在「显示」与「窗口」之间（menuOrder 只在多个自定义菜单之间比大小）。
+		{
+			id: "prevSession",
+			menu: "session",
+			menuLabel: { zh: "会话", en: "Session" },
+			menuOrder: 50,
+			order: 10,
+			label: { zh: "上一个会话", en: "Previous Session" },
+			key: "cmd+shift+[",
+			description: {
+				zh: "切到上一个会话（顺序与侧边栏列表当前显示的一致）。",
+				en: "Go to the previous session, in the order the sidebar is showing.",
+			},
+		},
+		{
+			id: "nextSession",
+			menu: "session",
+			order: 20,
+			label: { zh: "下一个会话", en: "Next Session" },
+			key: "cmd+shift+]",
+			description: {
+				zh: "切到下一个会话（顺序与侧边栏列表当前显示的一致）。",
+				en: "Go to the next session, in the order the sidebar is showing.",
+			},
+		},
+		{
+			id: "nextPendingSession",
+			menu: "session",
+			order: 30,
+			label: { zh: "下一个待处理会话", en: "Next Pending Session" },
+			key: "cmd+alt+a",
+			description: {
+				zh: "跳到下一个待处理会话（有东西在等你回答的那些）。",
+				en: "Jump to the next session that is waiting for you.",
+			},
+		},
+		{
+			// ⌘1…⌘9：**一个设置键装九个菜单项**。九项全隐藏——九行「会话 N」占满菜单
+			// 却什么信息都不给，而快捷键照常生效（壳负责 allowsKeyEquivalentWhenHidden）。
+			// `key` 这里只写修饰键；`off` = 九个都不装（数字键在页面里是正常输入，
+			// 这一条比别的更该留一个关掉的口子）。
+			id: "sessionDigits",
+			menu: "session",
+			order: 40,
+			separatorBefore: true,
+			hidden: true,
+			label: { zh: "会话 {n}", en: "Session {n}" },
+			key: "cmd",
+			keyChoices: ["cmd", "cmd+alt", "off"],
+			digits: { count: 9, command: "selectSessionAt", argKey: "index" },
+			description: {
+				zh: "用数字键直接跳到第 1～9 个会话时按的修饰符；off = 不装这组快捷键。",
+				en: "The modifier held with 1–9 to jump straight to that session; "
+					+ "off installs no such shortcuts.",
+			},
+		},
+	],
+
 	subscribe: (api) => {
 		const { ctx, push } = api;
 		const log = reporter(ctx.logger("clam-sidebar"));
