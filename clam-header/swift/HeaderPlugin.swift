@@ -45,9 +45,6 @@ final class HeaderPlugin: ClamPlugin {
     private static let tabsKey = "clam.header.tabs"
     /// 保管箱里那份最后的 header 投影（数据桥那条）。
     private static let snapshotKey = "clam.header.snapshot"
-    /// clam-layout 的工具栏贡献槽名。**槽名是插件之间约定的字符串**，
-    /// 壳一个都不认得，所以这里就该硬写而不是去 import 一个常量。
-    private static let toolbarSlot = "toolbar"
 
     func activate(host: ClamHost) -> AnyObject? {
         // WKWebView 归壳所有；它不在说明壳还没造好窗口，这时不该装配。
@@ -192,9 +189,10 @@ final class HeaderPlugin: ClamPlugin {
                 // 的项顶走（见 clam-layout 那条注释）。而且 Mail / Notes 本来就不在
                 // 标题右边放按钮——标题一侧只有文字，动作全在另一头。
                 Self.contribute(host, id: "subagents", order: 0,
-                                label: strings.subagentsLabel,
-                                align: "trailing", kind: "menu",
-                                symbol: "arrow.triangle.branch", priority: "low"),
+                                ToolbarSpec(label: strings.subagentsLabel,
+                                            symbol: "arrow.triangle.branch",
+                                            align: .trailing, kind: .menu,
+                                            priority: .low)),
                 // 四格靠右钉死。中间那段留白是设计的一部分：会话正文列的正中
                 // 不放东西，视线从标题落下去一路无遮挡。
                 //
@@ -205,29 +203,32 @@ final class HeaderPlugin: ClamPlugin {
                 // 整组进了溢出，而占 220pt 的标题纹丝不动——正好反了。
                 // 现在是：任务(low) → 标识/模式(standard) → 段控/导出(high)。
                 Self.contribute(host, id: "viewTabs", order: 10,
-                                label: strings.viewTabsLabel,
-                                align: "trailing", spaced: true, kind: "group",
-                                // 开局的分段。真名单由页面报上来，随后经活通道换掉。
-                                //
-                                // **这两个名字不进 `L`，也不该翻**：它们只是
-                                // 「页面还没报过」那一瞬的占位，真名单是
-                                // `model.tabs`（dsh 的 ui-conversation 自己按它的
-                                // locale 给的字，我们照搬）。翻了反而会出现
-                                // 「原生写“对话”、页面写“Chat”」的分叉。
-                                items: [
-                                    ["id": "chat", "label": "Chat", "symbol": "text.bubble"],
-                                    ["id": "trajectory", "label": "Trajectory",
-                                     "symbol": "list.bullet.indent"],
-                                ],
-                                priority: "high"),
-                Self.contribute(host, id: "mode", order: 20, label: strings.modeLabel,
-                                align: "trailing", spaced: true, kind: "menu",
-                                symbol: "cube"),
+                                ToolbarSpec(label: strings.viewTabsLabel,
+                                            align: .trailing, spaced: true,
+                                            kind: .group, priority: .high,
+                                            // 开局的分段。真名单由页面报上来，随后经活通道换掉。
+                                            //
+                                            // **这两个名字不进 `L`，也不该翻**：它们只是
+                                            // 「页面还没报过」那一瞬的占位，真名单是
+                                            // `model.tabs`（dsh 的 ui-conversation 自己按它的
+                                            // locale 给的字，我们照搬）。翻了反而会出现
+                                            // 「原生写“对话”、页面写“Chat”」的分叉。
+                                            items: [
+                                                ["id": "chat", "label": "Chat",
+                                                 "symbol": "text.bubble"],
+                                                ["id": "trajectory", "label": "Trajectory",
+                                                 "symbol": "list.bullet.indent"],
+                                            ])),
+                Self.contribute(host, id: "mode", order: 20,
+                                ToolbarSpec(label: strings.modeLabel, symbol: "cube",
+                                            align: .trailing, spaced: true, kind: .menu)),
                 // 后台任务那一格**没了**：上游 ui-jobs 自己也只给看不给停，做成按钮
                 // 是在承诺一件按下去不会发生的事。计数改进 `window.subtitle`。
-                Self.contribute(host, id: "export", order: 40, label: strings.exportLabel,
-                                align: "trailing", kind: "button",
-                                symbol: "square.and.arrow.down", priority: "high"),
+                Self.contribute(host, id: "export", order: 40,
+                                ToolbarSpec(label: strings.exportLabel,
+                                            symbol: "square.and.arrow.down",
+                                            align: .trailing, kind: .button,
+                                            priority: .high)),
             ]
             previous.forEach { $0.dispose() }
         }
@@ -328,7 +329,11 @@ final class HeaderPlugin: ClamPlugin {
         return handle
     }
 
-    /// 一格贡献。四格的参数只差那么几样，收成一个辅助函数。
+    /// 一格贡献。槽名与 `region` 四格都一样，收成一个辅助函数。
+    ///
+    /// 拓扑本身走 clam-layout 的 `ToolbarSpec` 而不是手抄字典：键名拼错一个
+    /// 字母是**静默退化**——那一格照样上墙，只是安静地丢了 kind 或 priority，
+    /// 既没有编译错误也没有日志（`ToolbarSpec` 的存在理由就是这个）。
     ///
     /// `make` 缺省给一个空视图：原生路线（group / menu / button）根本不看它，
     /// 但槽的签名要求有一个视图工厂——那是给 `view` 路线用的。
@@ -337,27 +342,17 @@ final class HeaderPlugin: ClamPlugin {
     /// 是调用点的事（见 `activate` 里 `contributeAll` 上面那段注释）。
     /// 也因此是 `static`——闭包捕获 `self` 只会多一条谁也放不掉谁的引用。
     private static func contribute(_ host: ClamHost,
-                                   id: String, order: Double, label: String,
-                                   align: String = "leading", spaced: Bool = false,
-                                   kind: String = "view", symbol: String? = nil,
-                                   sizing: String? = nil,
-                                   items: [[String: Any]] = [],
-                                   priority: String? = nil,
+                                   id: String, order: Double,
+                                   _ spec: ToolbarSpec,
                                    make: @escaping () -> AnyView = { AnyView(EmptyView()) })
         -> ClamDisposable {
-        var metadata: [String: Any] = [
-            "label": label,
-            "region": "content", // 与主内容区对齐，在分栏分隔线右边
-            "align": align,      // leading = 跟着内容起排；trailing = 推到右缘
-            "spaced": spaced,    // 之前插一个标准间距 = 另起一枚玻璃胶囊
-            "kind": kind,        // group / menu / button 走原生，view 走兜底
-        ]
-        if let symbol { metadata["symbol"] = symbol }
-        if let sizing { metadata["sizing"] = sizing }
-        if let priority { metadata["priority"] = priority }
-        if !items.isEmpty { metadata["items"] = items }
-        return host.contribute(to: Self.toolbarSlot, id: id, order: order,
-                               metadata: metadata, make: make)
+        var spec = spec
+        // **四格无一例外落在内容区**（分栏分隔线右边，与会话正文对齐）：
+        // 这是本插件的定位，不是每一格各自的选择，所以在这儿定死而不是让
+        // 调用点重复四遍。
+        spec.region = .content
+        return host.contribute(to: LayoutToolbar.slot, id: id, order: order,
+                               metadata: spec.metadata(), make: make)
     }
 
     /// 标题栏那条带子有多高。`contentLayoutGuide` 是窗口自己算的，

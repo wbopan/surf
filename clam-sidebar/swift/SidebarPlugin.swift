@@ -106,7 +106,7 @@ final class SidebarPlugin: ClamPlugin {
             }
         }.kept(by: handle)
 
-        host.register(slot: "sidebar") {
+        host.register(slot: LayoutSlots.sidebar) {
             AnyView(SidebarView(model: model, filter: filter, surface: surface, locale: locale))
         }.kept(by: handle)
 
@@ -143,12 +143,14 @@ final class SidebarPlugin: ClamPlugin {
                 to: LayoutToolbar.slot,
                 id: "filter",
                 order: -100,
-                metadata: [
-                    "label": strings.filterLabel,
-                    "symbol": "line.3.horizontal.decrease",
-                    "tooltip": strings.filterTooltip,
-                    "menu": buildMenu,
-                ]) {
+                // 键名不手抄：拼错一个字母是静默退化（按钮照样上墙，只是
+                // 丢了 tooltip 或菜单），`ToolbarSpec` 让它变成编译错误。
+                metadata: ToolbarSpec(
+                    label: strings.filterLabel,
+                    symbol: "line.3.horizontal.decrease",
+                    tooltip: strings.filterTooltip,
+                    menu: buildMenu
+                ).metadata()) {
                 // 兜底视图：系统认不出那个 SF Symbol 时才用得上。菜单路线走不了，
                 // 退化成"把筛选清空"这一个动作——比一颗点不动的按钮有用。
                 AnyView(

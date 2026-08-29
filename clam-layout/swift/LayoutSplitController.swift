@@ -165,7 +165,7 @@ final class LayoutSplitController: NSSplitViewController {
     /// registry 的 sidebar 槽占用状态变了就装上/摘掉。槽内插件自己换代不走这里——
     /// `SidebarSlotView` 观察 registry，版本号跳变时自己整棵重建。
     func syncSidebar() {
-        let occupied = host.registry.isOccupied("sidebar")
+        let occupied = host.registry.isOccupied(LayoutSlots.sidebar)
         if occupied && sidebarItem == nil {
             installSidebar()
         } else if !occupied, let item = sidebarItem {
@@ -470,105 +470,25 @@ extension LayoutSplitController {
     }
 }
 
-/// ## `toolbar` 贡献槽的约定（第三方插件照这个写，不用改壳也不用改本插件）
+/// ## `toolbar` 贡献槽的载荷为什么是一份 `[String: Any]`
 ///
-/// ```swift
-/// host.contribute(to: "toolbar", id: "myButton", order: 10, metadata: [
-///     "label":   "我的按钮",              // 必填：标题 + 无障碍名
-///     "symbol":  "sparkles",              // 选填：SF Symbol 名
-///     "tooltip": "干点什么",               // 选填，缺省取 label
-///     "event":   "myplugin.doSomething",  // 选填，缺省 "clam.toolbar.activate"
-///     "region":  "content",               // 选填，缺省 "sidebar"（见下）
-///     "align":   "trailing",              // 选填，缺省 "leading"（见下）
-///     "spaced":  true,                    // 选填，缺省 false（见下）
-///     "sizing":  "dynamic",               // 选填，缺省 "fixed"（只对 view 路线有意义）
-///     "kind":    "button",                // 选填，见下；缺省由 symbol 推断
-///     "priority": "low",                  // 选填，缺省 "standard"（窗口收窄谁先让）
-///     "items":   [[...]],                 // group 的分段 / menu 的初始菜单（数据路线）
-///     // 选填：菜单的**另一条**路线——自己现场建。给了它就不看 `kind`/`items`，
-///     // 点开是菜单而不是发事件。类型必须是
-///     // `@convention(block) (NSMenu) -> Void`（跨 dylib 装箱只有 ObjC block 稳）。
-///     "menu":    buildMenu as @convention(block) (NSMenu) -> Void,
-/// ]) { AnyView(MyFallbackButton()) }
-/// host.events.subscribe("myplugin.doSomething") { _ in ... }
-/// ```
+/// SDK 的贡献槽只收容器不收词汇（见 `ClamContributions` 顶注）：把
+/// `ToolbarItemSpec` 之类的类型冻进 ABI，等于把"工具栏长什么样"钉死在
+/// 预编译的壳里，而壳恰恰是第三方改不了的那一层。所以键名由**占槽的消费方**
+/// （也就是这里）定义，传输格式是字典。
 ///
-/// ### 四条渲染路线（`kind`）
+/// **但贡献方不该手抄那份字典**：键名拼错一个字母是**静默退化**——那一格照样
+/// 上墙，只是安静地丢了 region / kind / priority，既没有编译错误也没有日志。
+/// 生产端的契约因此收在 `LayoutContracts.swift` 的 `ToolbarSpec`：一个键一个
+/// 有类型的属性，`metadata()` 翻成本文件读的这份字典。**那里是这个槽的文档**，
+/// 加键先改那里。
 ///
-/// **能走原生就别自己画**：`NSToolbarItem` 那身系统皮——macOS 26 的圆形玻璃
-/// 按钮、按下态、红绿灯对齐——全是白送的，拿 SwiftUI 重画只会得到一个更差的
-/// 仿制品。代价是点击回调必须另有通道，于是统一走事件总线：消费方只管 emit，
-/// 贡献者自己 subscribe。这也顺手解决了"闭包跨世代"的问题：主题名是字符串，
-/// 热替换后新一代重新订阅即可。
+/// 读的一侧仍在本文件与 `ToolbarContribution.swift`——`region(of:)` /
+/// `align(of:)` / `kind(of:)` / `sizing(of:)` / `priority(of:)` 那组 static
+/// 就是"缺省值"的唯一定义，`ToolbarSpec` 只是照着它们写生产端。
 ///
-/// | kind | 造出来的东西 | 白送什么 |
-/// |---|---|---|
-/// | `button`（给了 `symbol` 时的缺省） | `NSToolbarItem` + `isBordered` | 圆形玻璃按钮、按下态、红绿灯对齐 |
-/// | `group` | `NSToolbarItemGroup`（`.selectOne` + `.expanded`） | 段控外观、选中态、键盘、无障碍 |
-/// | `menu` | `NSMenuToolbarItem` | 下拉 indicator、菜单定位、键盘导航 |
-/// | `view`（没给 `symbol` 时的缺省） | `NSHostingView` 装 `AnyView` | **什么都不送，宽度间距自己算** |
-///
-/// **能用前三条就别用第四条。** 自定义视图路线里 AppKit 只看见一块不透明的
-/// 矩形：显示模式（Icon Only / Icon and Text / Text Only）、玻璃胶囊分组、
-/// 溢出退让、徽标全都失效，而且算错是静默的。
-///
-/// `group` / `menu` 的 `items` 元素：
-///
-/// ```swift
-/// ["id": "chat", "label": "Chat", "symbol": "text.bubble"]          // group 的一段
-/// ["id": "std", "label": "标准模式", "state": true, "enabled": true] // menu 的一项
-/// ["separator": true]                                                // menu 的分隔线
-/// ```
-///
-/// ### 回调统一走事件总线
-///
-/// 原生项拿不到闭包（`NSToolbarItem` 的 target/action 必须是 `@objc`，而闭包
-/// 跨不了世代），所以点击一律翻译成广播：`button` / `group` 发
-/// `clam.toolbar.activate`（`group` 额外带 `index` 与 `itemId`），菜单项发
-/// `clam.toolbar.menuSelect`（带 `itemId`）。主题名是字符串，热替换后新一代
-/// 重新订阅即可。
-///
-/// ### 流量不走 metadata，走 `clam.toolbar.update`
-///
-/// metadata 是**拓扑**，一变就重建整条工具栏。徽标数字、菜单内容、选中态、
-/// 显隐是**流量**，一秒能变好几次——走 metadata 等于每次把工具栏拆了重装
-/// （按钮会闪、popover 会掉）。所以：
-///
-/// ```swift
-/// host.events.emit("clam.toolbar.update", [
-///     "owner": "clam-header", "id": "jobs",   // 认人，必填
-///     "hidden": false, "badge": 3,            // 以下都是选填，没提到的原样保留
-///     "enabled": true, "selectedIndex": 1,
-///     "label": "标准模式", "tooltip": "...",
-///     "menu": [["id": "a", "label": "A", "state": true]],
-/// ])
-/// ```
-///
-/// 消费方把 patch 记进 `ToolbarItemState` **并**就地改活着的那一项。记账是
-/// 必须的：项会因换代/溢出而重造，那时得把状态补回去。只有 `items`
-/// （段控的分段）会触发那一项重建——images/labels 是构造时给的，改不了。
-///
-/// **`region` 选边**：`sidebarTrackingSeparator` 把工具栏切成两段，分隔线跟着
-/// 分栏 divider 走。`"sidebar"`（缺省）排在分隔线左边，与红绿灯同区；
-/// `"content"` 排在右边，与主内容区对齐——想跟会话内容对齐的东西选它。
-/// 组内按 `order` 升序。
-///
-/// **`align` 选左右（只对 `content` 区有意义）**：`leading`（缺省）跟着内容区
-/// 起排，`trailing` 被一个 `.flexibleSpace` 推到窗口右缘。中间那段空白是设计
-/// 的一部分——会话正文列的正中不放东西，视线从标题落下去一路无遮挡。
-/// 想守住它就别给第三方开 `center`：只有两组，就没有「往中间挤」这个选项。
-///
-/// **`spaced` 断胶囊**：macOS 26 把相邻的工具栏项合成一枚玻璃胶囊，
-/// 一个 `.space` 把它断成两枚。空隙就是分组语法——想单独成一枚就打开它，
-/// 想和前一项挤在同一枚玻璃里就别开。
-///
-/// 除此之外系统项（`.flexibleSpace` / `.toggleSidebar` / 分隔线）的位置不开放：
+/// 系统项（`.flexibleSpace` / `.toggleSidebar` / 分隔线）的位置不开放给贡献方：
 /// 它们与红绿灯、分栏分隔线的对齐关系是 AppKit 的，乱插只会把观感搞坏。
-///
-/// **`sizing` 只对 `view` 路线有意义**：缺省 `"fixed"` 把
-/// 尺寸当场冻死，适合长相固定的控件；`"dynamic"` 交给 Auto Layout，
-/// 适合内容本来就会变的（段控的标签随会话/语言变、带计数的徽标）。
-/// 选 `dynamic` 就等于接受"工具栏会跟着内容变宽"——对这类控件那是对的行为。
 extension LayoutSplitController: NSToolbarDelegate {
     // sidebarTrackingSeparator 把工具栏切成两段：之前的项落在侧边栏区域，
     // 之后的落在内容区域。贡献用 `region` 选边（缺省 sidebar）。
@@ -637,8 +557,8 @@ struct SidebarSlotView: View {
     let registry: ClamRegistry
 
     var body: some View {
-        if let view = registry.view(for: "sidebar") {
-            view.id(registry.version(of: "sidebar"))
+        if let view = registry.view(for: LayoutSlots.sidebar) {
+            view.id(registry.version(of: LayoutSlots.sidebar))
         } else {
             Color.clear
         }
