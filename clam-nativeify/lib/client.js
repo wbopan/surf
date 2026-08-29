@@ -546,7 +546,8 @@ window.__ModuleLoader__.load({
 				"  align-content: center;",
 				"  border-bottom: 0;",
 				"}",
-				// 底边那条 1px 线：Apple 的工具栏没有分隔线，内容从底下穿过。
+				// dsh 自带的底线先关掉；「滚动边缘效果」那节（本函数尾部）会把这个
+				// ::after 重新定义成随滚动淡入的细线——同特异性，靠源码顺序赢。
 				S + " > header::after { display: none; }",
 				// 三层纯布局容器摊平，让 header 直接看见里面的东西。
 				S + ' [class*="_titleRow"],',
@@ -795,6 +796,86 @@ window.__ModuleLoader__.load({
 				"}",
 				S + ' button[class*="_sessionLogButton"] span { font-size: 0; }',
 				S + ' button[class*="_sessionLogButton"] svg { width: 16px; height: 16px; }',
+
+				// ── 滚动边缘效果（scroll edge effect，计划 §3.5 复活成"随滚动出现"）──
+				// 官方构成（tools/apple-kit「Kit / Scroll Edge Effect」三元件，解包实测）：
+				//   Soft = 一层背景模糊 + 纵向线性渐变遮罩（顶端全显 → 底端全透明），
+				//          **没有底色、没有细线**；
+				//   Hard = 不透明底色 + 模糊 + 底边 ⅔px rgba(0,0,0,.05) 细线。
+				// 原生侧三条路全试过走不通（CLAUDE.md「NSScrollPocket」条）：效果由滚动
+				// 内容视图自己画，而 dsh 滚的是内层 div，主 frame 永远在顶。所以照官方
+				// 配方在页面里画：Soft 的渐变遮罩模糊带打底，叠上 Hard 的那根细线
+				// （Apple 自家 App 内容穿过时也有一根极淡的）。显隐由 --clam-scroll-edge
+				// 驱动（watchScrollEdge 喂 0..1）：顶部 = 0 = 完全透明。
+				//
+				// header 浮出文档流，锚在 wSkVaW_root 上（它原本 position: static）。
+				":root *:has(> " + S + ") { position: relative; }",
+				S + ' > header:not([class*="_headerHidden"]) {',
+				"  position: absolute;",
+				"  top: 0;",
+				"  left: 0;",
+				"  right: 0;",
+				// composerSeat 是 sticky z-index:7，要压过它；下拉浮层都是 portal
+				// 到 body 的，够不着也压不到。
+				"  z-index: 10;",
+				"  background: none;",
+				"}",
+				// 滚动起点补回 52：内容顶着 header 底边起步，scrollTop=0 时没有任何
+				// 东西在 header 底下 = 全透明是事实陈述，不是样式选择。
+				// 只在 header 实际在场时补（hero 空会话 header 隐藏，别白吃 52px）。
+				// 轨迹/浮层模式（scrollBody :has(composer-overlay) 变 overflow:hidden）
+				// 里同样成立：padding 把内层 viewArea 一起顶下来，内容不会被盖住，
+				// 只是那时不滚 = 效果不出现，和"没有东西穿过边缘"自洽。
+				":root " + S + ':has(> header:not([class*="_headerHidden"])) + [data-conversation-scroll] {',
+				"  padding-top: 52px;",
+				"}",
+				// Soft 带：模糊 + 55% 底色洗 + 渐变遮罩。底色洗是对官方的一处偏离——
+				// 官方 Soft 靠系统的变量模糊（越靠边糊得越重）保住文字对比度，
+				// backdrop-filter 只有均匀模糊，不洗底的话标题会陷进滚过的正文里。
+				// 遮罩到 32px（标题底线附近）前全量、向下渐隐到 76px，近似"越靠边越重"。
+				S + ' > header:not([class*="_headerHidden"])::before {',
+				'  content: "";',
+				"  position: absolute;",
+				// 负 z-index 沉到 header 的文字与胶囊底下（header 自己 z-index:10
+				// 建了 stacking context，这里的 -1 出不了 header）。
+				"  z-index: -1;",
+				"  pointer-events: none;",
+				"  left: 0;",
+				"  right: 0;",
+				"  top: 0;",
+				"  height: calc(100% + 24px);",
+				"  background: color-mix(in srgb, var(--dsw-alias-bg-base) 55%, transparent);",
+				"  -webkit-backdrop-filter: blur(10px) saturate(180%);",
+				"  backdrop-filter: blur(10px) saturate(180%);",
+				"  -webkit-mask-image: linear-gradient(to bottom, black 32px, transparent 100%);",
+				"  mask-image: linear-gradient(to bottom, black 32px, transparent 100%);",
+				"  opacity: var(--clam-scroll-edge, 0);",
+				"}",
+				// 减少透明度：退到 Hard 形态——不透明底、无模糊、齐边收口不渐出。
+				":root[data-clam-reduce] " + S + ' > header:not([class*="_headerHidden"])::before {',
+				"  height: 100%;",
+				"  background: var(--dsw-alias-bg-base);",
+				"  -webkit-backdrop-filter: none;",
+				"  backdrop-filter: none;",
+				"  -webkit-mask-image: none;",
+				"  mask-image: none;",
+				"}",
+				// 细线：Hard 的 rgba(0,0,0,.05) 原值（⅔px 在 web 里取 1px）。
+				S + " > header::after {",
+				'  content: "";',
+				"  display: block;",
+				"  position: absolute;",
+				"  left: 0;",
+				"  right: 0;",
+				"  bottom: 0;",
+				"  height: 1px;",
+				"  pointer-events: none;",
+				"  background: rgba(0, 0, 0, 0.05);",
+				"  opacity: var(--clam-scroll-edge, 0);",
+				"}",
+				"body[data-ds-dark-theme] " + S + " > header::after {",
+				"  background: rgba(255, 255, 255, 0.08);",
+				"}",
 			];
 		}
 
@@ -1136,6 +1217,46 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		/**
+		 * 滚动边缘效果的信号源：把会话滚动容器的 scrollTop 折成 0..1，写进根元素
+		 * 的 --clam-scroll-edge，headerRules 那节的模糊带与细线拿它当 opacity。
+		 *
+		 * 常驻巡检而不是绑死节点：scrollBody 是 React 组件的产物，换会话/换视图
+		 * 都可能把节点整个换掉，observer 绑死旧节点会永久失效（CLAUDE.md 踩过）。
+		 * 每 500ms 校一次身份并迁移监听；scroll 事件本体 passive，不碰滚动性能。
+		 * 巡检自身每轮也 apply 一次，兜住"新节点带着恢复出来的 scrollTop 出场、
+		 * 监听还没挂上"的空窗。
+		 *
+		 * 淡入斜坡 24px：scrollTop 1px 即满会闪（越界回弹时一抖一抖），24px 内
+		 * 线性升满在肉眼上是"一滚就有、不突兀"，接近系统效果的出场速度。
+		 *
+		 * cleanup **不摘**根上的变量：HMR 是新实例先启、旧实例后清，摘了会砍掉
+		 * 新实例刚写的值；留着无害——本代 style 一撤，没有任何规则再读它。
+		 */
+		function watchScrollEdge() {
+			const root = document.documentElement;
+			let bound = null;
+			const apply = () => {
+				const t = bound ? Math.min(1, bound.scrollTop / 24) : 0;
+				root.style.setProperty("--clam-scroll-edge", t.toFixed(3));
+			};
+			const bind = () => {
+				const el = document.querySelector("[data-conversation-scroll]");
+				if (el !== bound) {
+					bound?.removeEventListener("scroll", apply);
+					bound = el;
+					el?.addEventListener("scroll", apply, { passive: true });
+				}
+				apply();
+			};
+			bind();
+			const timer = setInterval(bind, 500);
+			return () => {
+				clearInterval(timer);
+				bound?.removeEventListener("scroll", apply);
+			};
+		}
+
 		function watchWindowFocus() {
 			const root = document.documentElement;
 			const token = makeToken();
@@ -1213,6 +1334,7 @@ window.__ModuleLoader__.load({
 			// 变量落在按钮上；只有按在 textarea 这类非按钮区才落到卡片。
 			ctx.effect(() => watchPressPoint(SOLID_BUTTONS.concat([HEADER_SEAT + ' [role="tablist"]', COMPOSER_CARD]).join(",")));
 			ctx.effect(watchDragPassthrough);
+			ctx.effect(watchScrollEdge);
 
 			/** 当前生效的对话区字号。设置服务缺席或还没就绪时就是这个默认值。 */
 			let body = BODY_DEFAULT;
