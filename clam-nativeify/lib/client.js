@@ -919,17 +919,23 @@ window.__ModuleLoader__.load({
 			];
 			const inSurf = (parts) => FLOAT_SURFACES.flatMap((s) => parts.map((p) => s + " " + p)).join(",\n");
 			const row = inSurf(ROWS);
-			// 悬停/键盘高亮。禁用与 danger 排除；键盘高亮三种写法都收：
-			// listbox 的 aria-selected（命令面板）、`_active`/`_rowActive` 类（@ 补全）。
+			// 悬停/键盘高亮。禁用与 danger 排除。两条边界都是踩过的坑：
+			// - **treeitem（子代理目录树）不进强调色组**：它是两行富内容行，dsh
+			//   自己画选中/悬停灰底（宽度正好），我们再叠一层全宽蓝就是双层背景
+			//   （用户 2026-08-29 截图发现）。
+			// - **`_active` 类只在 `[role="listbox"]` 里当键盘高亮**：命令面板 /
+			//   @ 补全的键盘导航用 `_rowActive`/`_active` 类，但同名后缀在别处是
+			//   「当前项」状态类（子代理树的当前会话行就叫 `_active`），不锚定
+			//   listbox 就会把持久状态渲染成持久蓝条。
 			const HOT = ':not(:disabled):not([aria-disabled="true"]):not([class*="_danger"])';
 			const rowHot = inSurf(
-				ROWS.map((r) => r + ":hover" + HOT).concat([
-					'[role="option"][aria-selected="true"]',
-					'[class*="_rowActive"]',
-					'[class$="_active"]',
-					'[class*="_active "]',
-				]),
-			);
+				ROWS.filter((r) => r !== '[role="treeitem"]').map((r) => r + ":hover" + HOT),
+			) + ",\n" + [
+				'[role="option"][aria-selected="true"]',
+				'[class*="_rowActive"]',
+				'[class$="_active"]',
+				'[class*="_active "]',
+			].map((a) => '[role="listbox"] ' + a).join(",\n");
 			const rowHotKids = rowHot.split(",\n").map((s) => s + " *").join(",\n");
 
 			const sep = inSurf(['[role="separator"]', '[class*="_separator"]']);
