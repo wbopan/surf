@@ -458,6 +458,14 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
 - `clam-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
+  **菜单快捷键一律只 emit `menuCommand`**（词汇表在 `setupMenus()` 顶注——
+  那份注释是这套命令唯一的文档，加命令要同步改它）：newSession/openSettings
+  归 clam-layout，会话导航（⌘⇧[ ]、⌘1-9、⌘⌥A）与归档/重命名/聚焦搜索归
+  clam-sidebar（`SidebarShortcuts`，顺序真相 = `SidebarFilterState.orderedSessions`，
+  和列表画的是同一份）；没人应答就静默无事，插件缺席时快捷键优雅失效。
+  缩放（⌘±，`pageZoom` + UserDefaults）与 ⌘/ 快捷键面板是壳本地动作，不走 emit。
+  Esc 停止生成在 clam-layout 的 **client 半边**（走停止按钮同款的
+  scoped `conversation.cancel()` 服务路径，不点 DOM；dsh 页面自己不绑 Esc）。
   页内桥**不设白名单**：`postMessage({type, ...})` 的任意 type 一律广播成
   `clam.page.<type>`（`ClamEventBus.Topic.pagePrefix`），插件订阅即可，不用改壳。
   ready/currentSession/debug 留特化分支只因为壳自己也要用它们。

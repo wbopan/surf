@@ -100,6 +100,60 @@ const productPath = (configuration) =>
 /** 没有 Xcode 时的兜底产物：上次装到 /Applications 的 Release。 */
 const INSTALLED_RELEASE = "/Applications/Surfclam.app";
 
+/**
+ * 壳快捷键的设置命名空间（计划：docs/clam-shortcuts-settings-plan.md）。
+ *
+ * 名字里没有 `clam-app`，因为它描述的是**壳的菜单**而不是本插件的构建行为；
+ * 登记权在这儿只是因为 clam-app 就是壳的 node 半身。ns 名进了 wire——
+ * client 半边 `clam-layout` 用同一个字符串 bind scope，改名要两边一起改。
+ */
+const SHORTCUTS_NAMESPACE = "clam-shortcuts";
+
+/**
+ * 键位表 schema。
+ *
+ * **默认值的真相在壳里那张表**（`MainWindowController` 的 command → 默认 spec），
+ * 不在这里：壳建第一版菜单时页面还没加载完，根本没有任何设置值可用，所以它必须
+ * 自带一份能独立开工的默认。这里的 `.default(…)` 只为让两扇设置界面把默认值显示
+ * 出来、并让「恢复默认」给回同一个东西。**两处必须逐字一致，改一处同步另一处**
+ * ——分家了不报错也不校验，症状是界面上写着 A、实际生效的是 B。
+ *
+ * 键位 spec 格式：小写、`+` 连接（`cmd+shift+]`、`cmd+alt+a`、`esc`）；
+ * 修饰符 `cmd` / `shift` / `alt`（`option`）/ `ctrl`；键名支持单字符与
+ * `backspace` / `esc` / `space` / `left`…。**空串 = 禁用**（菜单项还在，
+ * 只是没有快捷键）。解析失败 = 壳退回默认并在日志记一行，配置错降级、不失能。
+ *
+ * 只收"改了确实更好用"的那些。系统惯例（⌘W/⌘Q/⌘H/⌘M、编辑菜单、⌘R、⌥⌘S、
+ * ⌘±0、⌥⌘D、⌘⇧R、⌘/）**刻意不进设置**——它们能改只会更难用。
+ */
+const ShortcutsSettings = z.object({
+	newSession: z.string().default("cmd+n")
+		.description("新建会话。"),
+	prevSession: z.string().default("cmd+shift+[")
+		.description("切到上一个会话（顺序与侧边栏列表当前显示的一致）。"),
+	nextSession: z.string().default("cmd+shift+]")
+		.description("切到下一个会话（顺序与侧边栏列表当前显示的一致）。"),
+	nextPendingSession: z.string().default("cmd+alt+a")
+		.description("跳到下一个待处理会话（有东西在等你回答的那些）。"),
+	archiveSession: z.string().default("cmd+shift+backspace")
+		.description("归档当前会话。"),
+	renameSession: z.string().default("cmd+alt+r")
+		.description("重命名当前会话。"),
+	focusSearch: z.string().default("cmd+alt+f")
+		.description("把光标送进侧边栏搜索框。"),
+	openSettings: z.string().default("cmd+,")
+		.description("打开设置窗口。"),
+	// ⌘1-9 是九个键位，逐个开成字段既啰嗦又留下"第 3 个和第 7 个撞车"这类
+	// 无人校验的坑，所以整组只给一个前缀选择；`off` = 九个都不装。
+	sessionDigits: z.union([z.const("cmd"), z.const("cmd+alt"), z.const("off")])
+		.default("cmd")
+		.description("用数字键直接跳到第 1～9 个会话时按的修饰符；off = 不装这组快捷键。"),
+	// 这一条不进壳的菜单：页面自己在 keydown 上匹配（原生菜单项拦不住
+	// WebView 里的输入焦点）。见 clam-layout/lib/client.js 的 escStop。
+	stopGenerating: z.string().default("esc")
+		.description("停止当前会话正在生成的回复（在网页内匹配，不是菜单项）。留空 = 关掉这个键。"),
+});
+
 /** 上次构建时的源码 hash，与产物同处 build/ 下——产物被清掉时它一起消失，语义自洽。 */
 const hashMarkerPath = (configuration) =>
 	join(HOST_DIR, "build", `.clam-app-source-hash.${configuration}`);
@@ -149,6 +203,27 @@ export function apply(ctx, config) {
 				}
 			};
 		}, "clam-app ↔ clam-bridge");
+	});
+
+	// 快捷键设置面：注册完就没了。值由 clam-layout 的 client 半边经
+	// `ctx.settingsScope` 自己读、投影给壳，这半边从不碰它，也不 push 给谁。
+	//
+	// `settings` 走**运行时嵌套 inject**，不是顶层 `export const inject`。
+	// 顶层的语义是"服务不在就整个插件不挂载"，而本插件的核心职责是构建并拉起壳
+	// ——绝不能因为一个可选的设置项就让整个 App 消失（headless profile 里
+	// settings 确实可能缺席）。缺席时壳一直用自带的默认键位表，其余一切照旧。
+	// （这个 cordis fork 的 `inject` 没有 `{required, optional}` 形态，
+	// 嵌套是它表达可选依赖的唯一方式。）
+	//
+	// 注册一个 ns 就同时点亮了两扇界面，两边都不用改一行：clam-settings 那扇原生
+	// 窗口（「插件 → 插件配置」把 `describe()` 里的每个 ns 一视同仁地列出来），
+	// 以及 dsh 自己的页内设置对话框。
+	ctx.inject(["settings"], (scoped) => {
+		scoped.settings.register(SHORTCUTS_NAMESPACE, ShortcutsSettings, {
+			// 改完立刻生效，不需要重启：client 半边订着这个 ns，值一变就重推给壳，
+			// 壳原地重建整条主菜单。界面据此标注"立即生效"。
+			applies: "live",
+		});
 	});
 
 	// 构建与拉起是长活，不能挂在 apply 的返回值上——那会把 dsh 的启动

@@ -11,6 +11,10 @@
  * 2. **收起 web 侧边栏**：经 ui-layout 的公开服务 ctx.layout.toggleSidebar()
  *    把侧边栏收起，再用 CSS 抵消折叠后残留的 56px rail 轨道，会话列从窗口
  *    左缘起排——原生侧边栏（clam-sidebar）占的就是那块地方。
+ * 3. **键位表投影**：订 settings 的 `clam-shortcuts` 命名空间（schema 由 clam-app
+ *    的 node 半边注册），值一变就经同一条页内桥推给壳，壳据此重建主菜单。
+ *    住这儿是因为页 → 壳的上报通道（ready / currentSession）本来就归它。
+ *    计划：docs/clam-shortcuts-settings-plan.md。
  *
  * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
  * 那是 clam-nativeify 的事，它零服务依赖、要抢首帧。
@@ -33,6 +37,122 @@ window.__ModuleLoader__.load({
 		const OCCUPANCY_VAR = "--clam-sidebar-occupancy";
 		// ui-layout computeColumns：折叠（sidebar 偏好为 0）时轨道仍占 56px rail。
 		const RAIL_PX = 56;
+
+		/* ------------------------------------------------------------------ *
+		 * 快捷键设置（ns `clam-shortcuts`，schema 由 clam-app 的 node 半边注册）。
+		 * ------------------------------------------------------------------ */
+
+		/** 设置命名空间。与 clam-app/lib/index.js 的 SHORTCUTS_NAMESPACE 逐字一致。 */
+		const SHORTCUTS_NS = "clam-shortcuts";
+
+		/**
+		 * `stopGenerating` 的兜底 spec。**其余键位的默认值不在这儿**——那些归壳，
+		 * 页面从不解析它们，只是把整份 values 原样转交（见 installBridge 的 keymap
+		 * 投影）。这一条例外只因为它是**页面自己**匹配的：原生菜单项拦不住焦点在
+		 * WebView 里的按键，所以停止生成必须在这边做。
+		 */
+		const STOP_DEFAULT = "esc";
+
+		/** spec 里的修饰符别名 → 规范名。 */
+		const SPEC_MODIFIERS = {
+			cmd: "cmd", command: "cmd", meta: "cmd",
+			shift: "shift",
+			alt: "alt", option: "alt", opt: "alt",
+			ctrl: "ctrl", control: "ctrl",
+		};
+
+		/**
+		 * spec 里的具名键 → `KeyboardEvent.key` 的值。表外的 token 必须是**单字符**
+		 * （`a`、`,`、`]`），否则视为写错、整条 spec 解析失败——宁可退回默认，也不要
+		 * 留一个"装上了但永远匹配不到"的死键位。
+		 */
+		const SPEC_KEYS = {
+			esc: "Escape", escape: "Escape",
+			backspace: "Backspace",
+			space: " ",
+			tab: "Tab",
+			enter: "Enter", return: "Enter",
+			left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown",
+			plus: "+",
+		};
+
+		/**
+		 * 解析一条键位 spec（小写、`+` 连接，如 `cmd+alt+.`）。
+		 * @param {unknown} spec
+		 * @returns {{key: string, cmd: boolean, shift: boolean, alt: boolean, ctrl: boolean} | null}
+		 *   null = 空串（明确禁用）或解析失败，两者由调用方 readKeySpec 区分。
+		 */
+		function parseKeySpec(spec) {
+			try {
+				if (typeof spec !== "string") return null;
+				// `cmd++`（键本身就是加号）split 出来是两个空片段，先换成具名 token。
+				const text = spec.trim().toLowerCase().replace(/\+\+$/, "+plus");
+				if (text === "") return null;
+				const out = { key: "", cmd: false, shift: false, alt: false, ctrl: false };
+				for (const part of text.split("+")) {
+					const modifier = SPEC_MODIFIERS[part];
+					if (modifier) { out[modifier] = true; continue; }
+					if (out.key !== "") return null; // 两个非修饰符 = 写错了
+					const named = Object.prototype.hasOwnProperty.call(SPEC_KEYS, part) ? SPEC_KEYS[part] : null;
+					if (named === null && part.length !== 1) return null;
+					out.key = named === null ? part : named;
+				}
+				return out.key === "" ? null : out;
+			} catch {
+				return null;
+			}
+		}
+
+		/**
+		 * 按"空串 = 禁用、解析失败 = 退默认"的语义读一条 spec。
+		 * @param {unknown} value 设置里的值
+		 * @param {string} fallback 解析失败时的默认 spec
+		 * @returns {ReturnType<typeof parseKeySpec>} null = 不匹配任何键
+		 */
+		function readKeySpec(value, fallback) {
+			// **空串是用户的明确意愿，不是坏值**：不能退回默认，否则关不掉。
+			if (typeof value === "string" && value.trim() === "") return null;
+			return parseKeySpec(value) || parseKeySpec(fallback);
+		}
+
+		/**
+		 * 事件是否命中 spec。四个修饰符**逐项相等**（不是"包含"）：`esc` 只该在
+		 * 光秃秃的 Esc 上生效，⌘Esc 不算。
+		 *
+		 * 注意 shift 的老问题：按住 shift 时浏览器报的 `event.key` 是上档字符
+		 * （`]` → `}`），所以页面侧的 spec 别带 shift 加符号键。壳那半边解析的是
+		 * 菜单快捷键，走 AppKit 自己的键位等价物，没有这个坑。
+		 * @param {KeyboardEvent} event
+		 * @param {ReturnType<typeof parseKeySpec>} spec
+		 * @returns {boolean}
+		 */
+		function matchesKeySpec(event, spec) {
+			if (!spec) return false;
+			if (event.metaKey !== spec.cmd) return false;
+			if (event.shiftKey !== spec.shift) return false;
+			if (event.altKey !== spec.alt) return false;
+			if (event.ctrlKey !== spec.ctrl) return false;
+			const key = typeof event.key === "string" ? event.key : "";
+			// 单字符大小写不敏感（`a` 与 shift 无关时 event.key 就是 "a"）；
+			// 具名键（"Escape"）本来就是固定拼写，原样比。
+			if (key.length === 1 && spec.key.length === 1) return key.toLowerCase() === spec.key;
+			return key === spec.key;
+		}
+
+		/**
+		 * 平坦对象的浅比较——键位表就是一层 string，够用。
+		 * @param {Record<string, unknown> | null | undefined} a
+		 * @param {Record<string, unknown> | null | undefined} b
+		 * @returns {boolean}
+		 */
+		function sameKeymap(a, b) {
+			if (a === b) return true;
+			if (!a || !b) return false;
+			const keys = Object.keys(a);
+			if (keys.length !== Object.keys(b).length) return false;
+			for (const key of keys) { if (a[key] !== b[key]) return false; }
+			return true;
+		}
 
 		/**
 		 * 每次 effect 启动生成的实例 token，写进全局状态当所有权标记。
@@ -102,6 +222,48 @@ window.__ModuleLoader__.load({
 			// 服务迟到接线时由 fiber 回调触发补报（installBridge 末尾赋值）。
 			let onWired = () => {};
 
+			// 「停止生成」当前生效的键位。设置缺席就一直是默认的 Esc。
+			let stopSpec = parseKeySpec(STOP_DEFAULT);
+
+			// 键位表投影：settings（dsh 权威）→ 壳的主菜单。
+			//
+			// 走页内桥而不是桥的 app 通道：`announce` 明确"不为后来者留底"（那是构建
+			// 事件的语义），而键位表是**状态**。页面的生命周期天然解决补发——壳重启 =
+			// WebView 重载 = 本文件重跑 = 重新投影，一个 sticky 机制都不用加。
+			// 桥协议也一个字不加：页内桥不设白名单，壳把任意 type 广播成
+			// `clam.page.<type>`，这里发的 `keymap` 到那边就是 `clam.page.keymap`。
+			//
+			// **原样转交，不在这儿解析**：除 stopGenerating 外的每一条都归壳解析
+			// （菜单是壳的），页面认识的键位越少，两边分家的机会越少。
+			//
+			// settingsScope 缺席（远程浏览器的设置 RPC 只走 loopback，那边永远缺席）
+			// = 永远不推，壳一直用自带的默认键位表——**退化，不是故障**。
+			try {
+				ctx.inject(["settingsScope"], (kctx) => {
+					try {
+						const scope = kctx.settingsScope.bind({ namespace: SHORTCUTS_NS });
+						let lastValues = null;
+						const sync = () => {
+							try {
+								const snap = scope.getSnapshot();
+								// `loading` / `unavailable` 时 value 还没有意义，什么都不做——
+								// 推一份半成品比不推糟：壳会拿它盖掉正确的默认表。
+								if (!snap || snap.status !== "ready") return;
+								const values = snap.value;
+								if (!values || typeof values !== "object") return;
+								if (sameKeymap(values, lastValues)) return;
+								lastValues = values;
+								// Esc 那条自己留下，其余整份交给壳。
+								stopSpec = readKeySpec(values.stopGenerating, STOP_DEFAULT);
+								postToShell({ type: "keymap", values });
+							} catch { /* 读取失败静默 */ }
+						};
+						kctx.effect(() => scope.subscribe(sync), "clam-layout: keymap 投影");
+						sync();
+					} catch { /* 服务形状不符静默 */ }
+				});
+			} catch { /* ctx.inject 不可用静默 */ }
+
 			// selectSession + 当前会话反向回报（sessions.list 快照 store，
 			// 与 ui-agent-preset 的订阅方式一致——同一份渲染数据源）。
 			try {
@@ -133,6 +295,45 @@ window.__ModuleLoader__.load({
 							};
 							report();
 							sctx.effect(() => sessions.list.subscribe(report), "clam-layout: currentSession channel");
+						}
+						// Esc → 停止当前会话正在生成的回复（语义对齐 Claude Code 桌面版）。
+						// 键位可改（设置 `clam-shortcuts.stopGenerating`，上面那段投影
+						// 顺手把它解析进 stopSpec）；**空串 = 关掉**，那时 stopSpec 是
+						// null，监听照常装着但一个键都不拦——比按条件装卸监听简单，
+						// 也就不会在设置来回改时漏掉一次卸载。
+						// dsh 页面自己没绑这条：全量查过它的 keydown，Escape 只用来关
+						// 浮层/对话框，没有一处碰 stop。走停止按钮同款的服务路径
+						// （scoped conversation.cancel，见 ui-conversation InputBar 的
+						// stop 回调），不去点 DOM 按钮——按钮的类名 `_primary` 发送/停止
+						// 共用，靠 aria-label 认按钮会跟着语言设置断。
+						// 三道闸：生成中才拦（byId[current].running；对 idle 会话 cancel
+						// 会 reject 并落进 promptError，等于凭空报错）；有浮层开着时 Esc
+						// 归它们（关闭优先）；别人已 preventDefault 的不碰。
+						// capture 相 + 不 preventDefault：焦点在 composer 里时它自己的
+						// Escape（dismissPopup）照常走，两边各干各的。
+						if (sessions && typeof sessions.scope === "function"
+							&& sessions.list && typeof sessions.list.getSnapshot === "function") {
+							const escStop = (event) => {
+								try {
+									if (event.defaultPrevented) return;
+									if (!matchesKeySpec(event, stopSpec)) return;
+									if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+									const snap = sessions.list.getSnapshot();
+									const id = snap.current;
+									if (id === undefined || !snap.byId?.[id]?.running) return;
+									const scoped = sessions.scope(id);
+									const conversation = scoped && typeof scoped.get === "function"
+										? scoped.get("conversation") : undefined;
+									if (conversation && typeof conversation.cancel === "function") {
+										// 失败 reject 会同时落到 promptError，页面自己会展示。
+										conversation.cancel().catch(() => { /* 静默 */ });
+									}
+								} catch { /* 静默 */ }
+							};
+							sctx.effect(() => {
+								document.addEventListener("keydown", escStop, true);
+								return () => document.removeEventListener("keydown", escStop, true);
+							}, "clam-layout: esc-stop");
 						}
 					} catch { /* 服务形状不符静默 */ }
 				});

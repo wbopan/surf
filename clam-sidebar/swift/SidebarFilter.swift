@@ -72,6 +72,65 @@ final class SidebarFilterState: ObservableObject {
     func isShown(_ key: String) -> Bool { !hiddenGroups.contains(key) }
 }
 
+extension SidebarGroup {
+    /// 分组在「隐藏」集合里的键：真工作区用 workspaceId，兜底组用固定键。
+    var filterKey: String { workspaceId ?? SidebarFilterState.otherGroupKey }
+}
+
+/// 筛选规则的唯一实现。列表（SidebarView）与菜单快捷键导航（SidebarShortcuts）
+/// 都从这里取"用户此刻看到的会话及其顺序"——规则分两份的话，⌘1-9 跳到的
+/// 就不是屏幕上数出来的那一条。
+extension SidebarFilterState {
+    /// 一条会话过不过筛：归档开关 → 待处理模式 → 搜索词。
+    /// 搜索匹配标题**与摘要**（摘要是用户真正记得住的那句话）。
+    func passes(_ session: SidebarSession) -> Bool {
+        if session.archived && !showArchived { return false }
+        if mode == .pending && !session.status.needsAttention { return false }
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return true }
+        return session.displayTitle.lowercased().contains(q)
+            || session.preview.lowercased().contains(q)
+    }
+
+    /// 工作区视图的分组（已按筛选裁过；空组不出现，但搜到组名时整组保留）。
+    func filteredGroups(from groups: [SidebarGroup]) -> [SidebarGroup] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return groups.compactMap { group in
+            if hiddenGroups.contains(group.filterKey) { return nil }
+            let hits = group.sessions.filter(passes)
+            if !hits.isEmpty {
+                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
+                                    title: group.title, sessions: hits)
+            }
+            // 组名命中搜索：整组留着（但仍要过归档/待处理那两关）。
+            if !q.isEmpty && group.title.lowercased().contains(q) {
+                let rest = group.sessions.filter { session in
+                    if session.archived && !showArchived { return false }
+                    if mode == .pending && !session.status.needsAttention { return false }
+                    return true
+                }
+                if rest.isEmpty { return nil }
+                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
+                                    title: group.title, sessions: rest)
+            }
+            return nil
+        }
+    }
+
+    /// 展示序的扁平会话表——快捷键导航（⌘⇧[ ]、⌘1-9、⌘⌥A）按它数数：
+    /// 「按时间」= 全量按 updatedAt 倒序（分段视图段内就是这个序，段与段
+    /// 首尾相接）；其余模式 = 分组序 × 组内序。收起的分组不跳过——收起只是
+    /// 折叠了显示，行仍是列表成员，⌘1-9 的数法要和「筛选」的世界观一致。
+    func orderedSessions(from groups: [SidebarGroup]) -> [SidebarSession] {
+        if mode == .time {
+            return groups.filter { !hiddenGroups.contains($0.filterKey) }
+                .flatMap { $0.sessions.filter(passes) }
+                .sorted { $0.updatedAt > $1.updatedAt }
+        }
+        return filteredGroups(from: groups).flatMap(\.sessions)
+    }
+}
+
 /// 把闭包挂到 `NSMenuItem` 上的小把手。
 ///
 /// `NSMenuItem.target` 是 **weak**，所以 handler 还得由 menu item 自己强持有一份

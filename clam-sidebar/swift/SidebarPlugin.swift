@@ -85,6 +85,18 @@ final class SidebarPlugin: ClamPlugin {
         // 筛选 / 视图状态。列表（SwiftUI）与工具栏那枚菜单（AppKit）共读这一份。
         let filter = SidebarFilterState()
 
+        // 壳菜单快捷键的执行端（⌘⇧[ ] / ⌘1-9 / ⌘⌥A / ⌘⇧⌫ / ⌘⌥R / ⌥⌘F）。
+        // 壳只喊命令，这里才有投影顺序、选中态与筛选——能力在谁家，命令就归谁接。
+        // shortcuts 被订阅闭包强持有，订阅由 handle 按住，这就是它的生命周期锚。
+        let shortcuts = SidebarShortcuts(model: model, filter: filter,
+                                         log: { host.log($0) })
+        host.events.subscribe(ClamEventBus.Topic.menuCommand) { payload in
+            guard let command = payload["command"] as? String else { return }
+            MainActor.assumeIsolated {
+                shortcuts.handle(command: command, payload: payload)
+            }
+        }.kept(by: handle)
+
         host.register(slot: "sidebar") {
             AnyView(SidebarView(model: model, filter: filter, surface: surface))
         }.kept(by: handle)
