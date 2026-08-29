@@ -242,9 +242,9 @@ window.__ModuleLoader__.load({
 		const CONTROL = 13;   // NSFont.systemFontSize：控件 / 工具调用行 / 次级标签
 
 		/**
-		 * 对话阅读列的字号——**唯一可配置的旋钮**（设置 → 插件 → clam-nativeify →
-		 * 对话区字号）。其余全部派生，包括标题阶梯、行内代码、代码块、表格、
-		 * 用户气泡与 composer。
+		 * 对话阅读列的字号（设置 → 插件 → clam-nativeify → 对话区字号；本 ns 的
+		 * 另一个旋钮是 headerScrollBlur，见 headerRules 尾部）。其余全部派生，
+		 * 包括标题阶梯、行内代码、代码块、表格、用户气泡与 composer。
 		 *
 		 * **CONTROL 不给调，这是有意的**：13 = `NSFont.systemFontSize`，它不是口味
 		 * 而是"像原生"这件事的定义本身。菜单、工具栏、列表行在 macOS 上就是这一档，
@@ -851,8 +851,12 @@ window.__ModuleLoader__.load({
 				"  mask-image: linear-gradient(to bottom, black 32px, transparent 100%);",
 				"  opacity: var(--clam-scroll-edge, 0);",
 				"}",
-				// 减少透明度：退到 Hard 形态——不透明底、无模糊、齐边收口不渐出。
-				":root[data-clam-reduce] " + S + ' > header:not([class*="_headerHidden"])::before {',
+				// 退到 Hard 形态——不透明底、无模糊、齐边收口不渐出。两个入口：
+				// 系统「减少透明度」，以及设置里把 headerScrollBlur 关掉
+				// （品味开关，node 半边注册；client 侧 sync 翻成 data-clam-header-noblur）。
+				// 细线（下面那条 ::after）在两种形态下都在，不跟着开关走。
+				":root[data-clam-reduce] " + S + ' > header:not([class*="_headerHidden"])::before,',
+				":root[data-clam-header-noblur] " + S + ' > header:not([class*="_headerHidden"])::before {',
 				"  height: 100%;",
 				"  background: var(--dsw-alias-bg-base);",
 				"  -webkit-backdrop-filter: none;",
@@ -2217,10 +2221,21 @@ window.__ModuleLoader__.load({
 				const sync = () => {
 					const snap = scope.getSnapshot();
 					// `loading` / `unavailable` 时 value 还没有意义，退到默认值。
-					const next = clampBody(snap.status === "ready" ? snap.value?.bodyFontSize : BODY_DEFAULT);
-					if (next === body) return;
-					body = next;
-					if (fontStyle) fontStyle.textContent = fontRules(next).join("\n");
+					const ready = snap.status === "ready";
+					const next = clampBody(ready ? snap.value?.bodyFontSize : BODY_DEFAULT);
+					if (next !== body) {
+						body = next;
+						if (fontStyle) fontStyle.textContent = fontRules(next).join("\n");
+					}
+					// header 模糊带开关 → 根属性（关才打标记，默认开）。
+					// 语义是「关掉 Soft、退到 Hard」，CSS 在 headerRules 尾部和
+					// 「减少透明度」共用同一条降级规则。cleanup 刻意不摘它：HMR
+					// 新实例先启后清，摘会砍新实例刚写的；留着无害——本代 style
+					// 一撤就没有规则再读这个属性（同 --clam-scroll-edge 的理由）。
+					const blur = ready ? snap.value?.headerScrollBlur !== false : true;
+					const root = document.documentElement;
+					if (blur) root.removeAttribute("data-clam-header-noblur");
+					else root.setAttribute("data-clam-header-noblur", "");
 				};
 				scoped.effect(() => scope.subscribe(sync));
 				sync();

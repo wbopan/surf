@@ -82,7 +82,9 @@ clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：clien
                    ——52pt 单行、玻璃胶囊、可点矩形上报给壳的拖动条放行，权威计划
                    docs/web-header-native-match-plan.md；全是 CSS，无构建步骤）；
                    node 半边注册设置 ns
-                   `clam-nativeify`（唯一一项是对话区字号，client 半边订它）并把
+                   `clam-nativeify`（两项：对话区字号、header 滚动模糊带开关
+                   headerScrollBlur——关掉退 Hard 形态不透明底，细线不受开关管；
+                   client 半边订它）并把
                    **dsh 的 `ui-theme` 投影给 swift 半边**；swift 半边不占槽、不贡献
                    界面，只按投影设 `NSApp.appearance` 与主窗口 `backgroundColor`
                    （消首帧/resize 露底闪色）。**主题的真相始终是 dsh，原生侧只跟随**，

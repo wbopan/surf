@@ -115,6 +115,12 @@ export default createSwiftPlugin({
 				// role('slider') + min/max 让原生设置窗口给出滑杆而不是一个让人手敲
 				// 数字的文本框；认不出 role 的界面退化成数字输入，仍然可用。
 				bodyFontSize: z.number().min(12).max(22).step(1).default(15).role("slider"),
+				// header 滚动边缘的 Soft 模糊带开关（品味项，用户裁决要可配）。
+				// **关 ≠ 裸穿**：关掉退到官方 Hard 形态（不透明底 + 细线），
+				// 细线两种形态都在、不设开关——内容穿过边缘时那根线是"这里有
+				// 边界"的最低限度陈述。CSS 侧的消费在 client 半边
+				// `data-clam-header-noblur` 那几条规则。
+				headerScrollBlur: z.boolean().default(true),
 			}), {
 				// 改完立刻重画，不需要重启：client 半边订着这个 ns，值一变就重写
 				// 字体那张 style。界面据此标注"立即生效"。
