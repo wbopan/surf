@@ -94,9 +94,24 @@ extension SidebarFilterState {
             || session.preview.lowercased().contains(q)
     }
 
-    /// 工作区视图的分组（已按筛选裁过；空组不出现，但搜到组名时整组保留）。
+    /// 工作区视图的分组（已按筛选裁过）。
+    ///
+    /// **真工作区组恒显示，一条会话都没有也显示**——对齐 dsh Web 的
+    /// `deriveGroups`（注释原话 "Every group shows"，它对每个 workspace 记录
+    /// 无条件出一个组）。曾经是"空组不出现"，那让「添加工作区」变成一个**看上去
+    /// 毫无反应**的按钮：新建的工作区 `sessionIds` 必然是空的（dsh 的
+    /// `createCanonical` 写死 `sessionIds: []`，不认领该目录下已有的会话），
+    /// 于是请求成功了、记录也落盘了，屏幕上却一点动静都没有。
+    /// 会话全被归档掉的组同理——组头消失会让人以为工作区被删了。
+    ///
+    /// 兜底组（未分组）不适用：它是个桶，没东西就不该有桶。
+    ///
+    /// **「查询」模式下也不摆空组头**（搜索词在场，或按待处理筛）：那两种模式下
+    /// 用户问的是"哪些符合"，一排空组头是噪音。dsh 没有这两个模式，这条取舍是
+    /// 我们自己的。
     func filteredGroups(from groups: [SidebarGroup]) -> [SidebarGroup] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let querying = !q.isEmpty || mode == .pending
         return groups.compactMap { group in
             if hiddenGroups.contains(group.filterKey) { return nil }
             let hits = group.sessions.filter(passes)
@@ -114,6 +129,11 @@ extension SidebarFilterState {
                 if rest.isEmpty { return nil }
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
                                     title: group.title, sessions: rest)
+            }
+            // 空的真工作区：组头留着（见上面的整段说明）。
+            if !querying, group.workspaceId != nil {
+                return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
+                                    title: group.title, sessions: [])
             }
             return nil
         }
