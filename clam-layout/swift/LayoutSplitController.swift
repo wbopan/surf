@@ -579,6 +579,7 @@ final class ContributionMenuDelegate: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        NSMenuToolbarItem.padPullDownTitleSlot(menu)
         build(menu)
     }
 }

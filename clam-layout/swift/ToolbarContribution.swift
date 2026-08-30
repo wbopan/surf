@@ -313,6 +313,9 @@ extension LayoutSplitController {
                            specs: [[String: Any]],
                            isRoot: Bool = true) -> NSMenu {
         let menu = NSMenu()
+        // 最外层那份要垫一个 pull-down 标题位，否则第一条贡献进去的项不渲染。
+        // 子菜单是普通 submenu，不走 pull-down，不能垫（垫了就真多一行空的）。
+        if isRoot { NSMenuToolbarItem.padPullDownTitleSlot(menu) }
         for spec in specs {
             if spec["separator"] as? Bool == true {
                 menu.addItem(.separator())
@@ -550,5 +553,29 @@ extension LayoutSplitController {
             "id": contribution.id,
             "itemId": info["itemId"] ?? "",
         ])
+    }
+}
+
+extension NSMenuToolbarItem {
+    /// 给一份**要挂在 `NSMenuToolbarItem` 上的根菜单**垫出 pull-down 的标题位。
+    ///
+    /// **实测（2026-08-29）：`NSMenuToolbarItem` 弹出的菜单会吞掉第 0 项。**
+    /// 它内部是 pull-down 形态的弹出按钮，而 pull-down 的语义就是"第 0 项是按钮
+    /// 自己的标题，不进列表"。症状极其误导：贡献方明明填了 N 项，日志里也是 N 项，
+    /// 屏幕上却只有后 N-1 项——看上去像数据少了一条，或者像 model 是旧世代的。
+    /// （clam-sidebar 的「筛选」菜单就栽在这上面：工作区列表永远少最上面那个。
+    /// 更早还被误判成"分区标题在菜单首项不渲染"，其实不限于分区标题，**整个首项**
+    /// 都没了。）
+    ///
+    /// 垫的这一项 **`isHidden = true`**：标题位只看下标、不看显隐，所以它照样顶得住；
+    /// 而 `NSMenuToolbarItem` 在溢出/纯文字模式下会把同一份菜单当作
+    /// `menuFormRepresentation` 的子菜单来画——那条路是普通 submenu，不吃第 0 项，
+    /// 不隐藏的话就会在那儿露出一行空白。
+    ///
+    /// 只垫最外层。子菜单是普通 submenu，垫了就真多一行。
+    static func padPullDownTitleSlot(_ menu: NSMenu) {
+        let slot = NSMenuItem()
+        slot.isHidden = true
+        menu.addItem(slot)
     }
 }

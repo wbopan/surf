@@ -196,12 +196,16 @@ final class SidebarPlugin: ClamPlugin {
     @MainActor
     private static func populate(menu: NSMenu, model: AppSidebarModel, filter: SidebarFilterState) {
         let groups = model.groups
-        // 每次弹出前现取：菜单内容不是拓扑，不必重新贡献就能跟上语言。
+        // 每次弹出前现取：菜单内容不是拓扑，不必跟着重新贡献就能跟上语言。
         let strings = model.strings
         if !groups.isEmpty {
-            // 这一段**不加分区标题**：四个带勾的工作区名自己已经说清是什么，
-            // 而 AppKit 在菜单**首项**上的分区标题不渲染（`.sectionHeader` 和
-            // disabled 的普通项都试过，一个都不出来）。
+            // 这一段不加分区标题：带勾的工作区名自己已经说清是什么。
+            //
+            // 这里曾经写着"AppKit 在菜单首项上的分区标题不渲染"，那条结论是**错的**
+            // ——不渲染的不是分区标题，是**整个首项**，因为 `NSMenuToolbarItem` 走
+            // pull-down 语义、把第 0 项当自己的标题吃掉。症状是工作区列表永远少最上面
+            // 那一个（数据和日志里都在，只有屏幕上没有）。已在 clam-layout 收口，
+            // 见 `NSMenuToolbarItem.padPullDownTitleSlot`——**这里照常从第一项填起**。
             for group in groups {
                 let key = group.workspaceId ?? SidebarFilterState.otherGroupKey
                 menu.addItem(MenuActionTarget.item(group.title, checked: filter.isShown(key)) {
