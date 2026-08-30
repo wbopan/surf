@@ -153,6 +153,11 @@ const spec = {
 	frameworksDir: join(contents, "Frameworks"),
 	outputRoot: join(resources, "ClamPlugins"),
 	manifestPath: join(resources, "ClamPrebuilt.json"),
+	// 产物要和外层同一个签名身份（计划 §4.2）。`EXPANDED_CODE_SIGN_IDENTITY` 是
+	// Xcode 解析 `CODE_SIGN_IDENTITY` 得到的那一份：开发形态 `-`，分发形态
+	// （scripts/release-dmg.sh 用 xcodebuild 覆盖传进来）是 Developer ID。
+	signIdentity: process.env.EXPANDED_CODE_SIGN_IDENTITY || process.env.CODE_SIGN_IDENTITY || "-",
+	hardenedRuntime: (process.env.ENABLE_HARDENED_RUNTIME ?? "NO") === "YES",
 	plugins,
 };
 const specPath = join(mkdtempSync(join(tmpdir(), "clam-prebuild-")), "spec.json");

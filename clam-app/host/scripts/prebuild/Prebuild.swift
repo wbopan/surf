@@ -51,6 +51,11 @@ struct Prebuild {
                 resolved[plugin.name] = compiled
                 dropDiagnosticArtifacts(besides: compiled.dylibURL)
                 stripLocalSymbols(compiled.dylibURL)
+                // **每一轮都签，不管这份 dylib 是刚编的还是命中缓存复用的**
+                // （`compiled.origin == .reused`）：增量构建里绝大多数插件都是复用，
+                // 只签新编的那些就等于发出一个内层身份混杂的包。`--force` 让重签幂等。
+                sign(compiled.dylibURL, identity: spec.signIdentity ?? "-",
+                     hardenedRuntime: spec.hardenedRuntime ?? false)
                 entries.append(Manifest.Entry(
                     plugin: plugin.name, module: plugin.module,
                     generatedModule: compiled.module, contentHash: compiled.contentHash,
@@ -94,6 +99,10 @@ struct Prebuild {
         let manifestPath: String
         /// **拓扑序**（依赖在前）。
         let plugins: [Plugin]
+        /// `EXPANDED_CODE_SIGN_IDENTITY`：开发形态是 `-`，分发形态是 Developer ID。
+        let signIdentity: String?
+        /// `ENABLE_HARDENED_RUNTIME == YES`。
+        let hardenedRuntime: Bool?
 
         struct Plugin: Decodable {
             let name: String
@@ -173,6 +182,53 @@ struct Prebuild {
         if process.terminationStatus != 0 {
             // 不致命：没 strip 成功只是包大一点，产物本身是好的。
             print("prebuild: strip 失败（\(dylib.lastPathComponent)），产物照用")
+        }
+    }
+
+    /// 给预编译产物签名。
+    ///
+    /// **这些 dylib 是 bundle 里的可执行代码，必须和外层同一个身份**——外层
+    /// Developer ID、内层 ad-hoc 的包公证直接拒收，而 Gatekeeper 那边的症状是
+    /// "已损坏"。签在这里而不是事后由打包脚本扫一遍，理由有三条（计划 §4.2）：
+    ///
+    /// 1. **inside-out 是结构性的**：本步骤是最后一个 postBuildScript，Xcode 的
+    ///    `CodeSign` 阶段排在它之后封外层——签完就被封进去，顺序不靠人记。
+    ///    事后再签嵌套代码则会**破坏已封好的印**，必须连外层一起重签，
+    ///    于是 entitlements / Hardened Runtime / 身份这三样知识就有了第二个副本。
+    /// 2. **身份从同一个源头来**：`EXPANDED_CODE_SIGN_IDENTITY` 是 Xcode 解析
+    ///    `CODE_SIGN_IDENTITY` 的结果，和 embed-modules.sh 用的是同一个值。
+    /// 3. **顺序对**：必须排在 `strip -x` 之后（strip 会把签名打掉重盖）。
+    ///
+    /// 真身份下签失败 = **fails loud**：那是个装到用户机器上会被 Gatekeeper 拦下的
+    /// 坏包，而构建日志没人看。ad-hoc 下只是警告（strip 已经留了个有效的 ad-hoc 签名）。
+    private static func sign(_ dylib: URL, identity: String, hardenedRuntime: Bool) {
+        var args = ["codesign", "--force", "--sign", identity]
+        // ad-hoc 拿不到 secure timestamp；真身份必须带（公证要求）。
+        args += identity == "-" ? ["--timestamp=none"] : ["--timestamp"]
+        if hardenedRuntime { args += ["--options", "runtime"] }
+        args.append(dylib.path)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = args
+        let errPipe = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errPipe
+        do {
+            try process.run()
+        } catch {
+            fail("跑不起 codesign：\(error)")
+        }
+        let stderrText = String(decoding: errPipe.fileHandleForReading
+            .readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            if identity == "-" {
+                print("prebuild: ad-hoc 重签失败（\(dylib.lastPathComponent)），"
+                      + "沿用 strip 留下的签名：\(stderrText)")
+                return
+            }
+            fail("给 \(dylib.lastPathComponent) 签名失败（身份 \(identity)）：\(stderrText)")
         }
     }
 

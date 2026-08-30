@@ -67,3 +67,6 @@ docs/spikes/hover/*
 
 # 预编译工具的产物（scripts/prebuild-plugins.sh 按源码 hash 重编）
 /clam-app/host/build-prebuild/
+
+# 分发流水线的产物（scripts/release-dmg.sh 的独立 derivedDataPath + dmg）
+/clam-app/host/build-dist/

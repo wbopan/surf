@@ -633,16 +633,16 @@ Debug 配置下后两个脚本直接 `exit 0`、不产出文件，output 缺失�
 **验证方法**（复现原始触发条件，别用 clean build——那必然重签、测不出来）：
 只改一个插件的 `.swift`，构建，确认日志里 `CodeSign` 出现且 `codesign -v` 通过。
 
-### 4.2 四处必须改的（都很小，但缺一不可）
+### 4.2 四处必须改的 ✅ 已做（2026-08-30 M5）
 
-| 位置 | 现状 | 改成 |
+| 位置 | 原状 | 现在 |
 |---|---|---|
-| `embed-modules.sh:30` | `codesign --force --sign -` 给嵌套 dylib **ad-hoc 签名** | `--sign "${EXPANDED_CODE_SIGN_IDENTITY}"`。外层 Developer ID + 内层 ad-hoc = 公证直接拒 |
-| `embed-modules.sh:30` | `--timestamp=none` | **去掉**。公证要求 secure timestamp |
-| `embed-modules.sh:34` | 外层再 ad-hoc 重签一次 | **删掉**。今天是死动作（Xcode 13 行之后就替换掉了），但它是个活陷阱——写死了 `-`，阶段一旦被重排或脚本被单独执行，就会**静默把整个 App 降级成 ad-hoc** |
-| `project.yml` | 未设 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS`（默认 YES） | 分发配置显式设 **NO** |
+| `embed-modules.sh:30` | `codesign --force --sign -` 给嵌套 dylib **ad-hoc 签名** | `--sign "${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"`。开发形态照旧 `-`，分发形态自动是 Developer ID |
+| `embed-modules.sh:30` | `--timestamp=none` | 身份是 `-` 才 `--timestamp=none`（ad-hoc 拿不到 secure timestamp），真身份一律 `--timestamp`；`ENABLE_HARDENED_RUNTIME=YES` 时再补 `--options runtime` |
+| `embed-modules.sh:34` | 外层再 ad-hoc 重签一次 | **已删**。`$APP` 变量随之删掉，顶注也换成了"这里不需要、也不许再签外层"，不再是那条已被证伪的旧说法 |
+| `project.yml` | 未设 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS` | 由 `scripts/release-dmg.sh` 在 xcodebuild 命令行上传 `NO`（连同 `CODE_SIGN_IDENTITY` / `ENABLE_HARDENED_RUNTIME=YES` / `OTHER_CODE_SIGN_FLAGS=--timestamp`）。**不写进 project.yml**，见 §4.3 |
 
-关于最后一条：**当前 Release 产物上确实带着 `get-task-allow`**，实测——
+关于最后一条：**当时的 Release 产物上确实带着 `get-task-allow`**，实测——
 
 ```
 $ codesign -dv --entitlements - /Applications/Surfclam.app
@@ -652,74 +652,169 @@ Signature=adhoc
 ```
 
 它是 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS` 因为身份是 `-`（"Sign to Run Locally"）
-而注入的。**公证对这个 entitlement 是直接拒绝**。
-**要显式设 NO，不要指望"配了真身份 Xcode 就会自己去掉"。**
+而注入的。**公证对这个 entitlement 是直接拒绝。**
+
+### 4.2a 第五处：`ClamPlugins/**/prebuilt/*.dylib` 也是嵌套代码（M5 新增）
+
+§4.2 那张表是 M3 之前写的，漏了 M3 才出现的那五个预编译 dylib。它们同样是
+bundle 里的可执行代码，公证会**递归检查每一个 Mach-O**，ad-hoc 的一律拒。
+
+**签在哪里：`scripts/prebuild/Prebuild.swift` 的编译循环里，`strip -x` 之后。**
+另一条路（打包脚本事后 `find … -name '*.dylib'` 扫一遍逐个签）被否掉，三条理由：
+
+1. **inside-out 是结构性的**。预编译是最后一个 postBuildScript，Xcode 的
+   `CodeSign` 阶段排在它之后封外层——签完就被封进去，顺序不靠人记。
+   事后签嵌套代码则**破坏已封好的印**，必须连外层一起重签，于是
+   entitlements / Hardened Runtime / 身份这三样知识就有了第二个副本，
+   而 §4.3 刚刚才把它收成一份。
+2. **身份从同一个源头来**：`EXPANDED_CODE_SIGN_IDENTITY` 经
+   `prebuild-plugins.mjs` 进 spec，和 `embed-modules.sh` 读的是同一个值。
+   打包脚本那条路要自己再解析一次身份，两处会漂移。
+3. **顺序对**：必须排在 `strip -x` 之后（strip 会把签名打掉重盖），
+   而 strip 就在那个循环里。
+
+**签的是每一轮的全部产物，不只是"这次新编的那些"**：增量构建下绝大多数插件
+`origin == .reused`，只签新编的等于发一个内层身份混杂的包。`--force` 让重签幂等。
+
+真身份下签失败 = fails loud（那是个会被 Gatekeeper 拦下的坏包，而构建日志没人看）；
+ad-hoc 下只警告（strip 已经留了个有效的 ad-hoc 签名）。
+
+打包脚本那边保留的是**验收**而不是签名：`release-dmg.sh` 逐个 dylib 查
+`Authority=Developer ID Application`，缺一个就当场停。
 
 ### 4.3 entitlements 必须改在 `project.yml` 里，不能改 plist
 
-`project.yml:76-79` 声明了 `entitlements.properties`，所以
+`project.yml` 声明了 `entitlements.properties`，所以
 **每次 `xcodegen generate` 都会重写 `Sources/surfclam.entitlements`**，
 手改静默丢失。这正是那种"修好一次、然后神秘地回退"的坑。
 
-分发配置需要的 entitlements（Hardened Runtime 形态）：
+现在那张表是（✅ 已做）：
 
-- `com.apple.security.app-sandbox: false`（已有）
+- `com.apple.security.app-sandbox: false`
 - `com.apple.security.cs.disable-library-validation: true`
-  ——**热插件机制的存亡所系**。开了 Hardened Runtime（公证的前提）之后
-  library validation 会拒绝 dlopen 非同 Team ID 签名的 dylib，
-  而运行时 swiftc 编出来的正是这种。缺了它的症状是**所有插件装载失败**，
-  且完全不像签名问题。
-- **不要** `get-task-allow`（见 4.2）
+  ——**热插件机制的存亡所系**，M5 实测的控制组见 §4.4a。
 
-Debug 与分发两份 entitlements 要分开（Debug 那份留着 `get-task-allow` 才能调试）。
+**只有一份 entitlements 文件，不是两份**（M5 定案，推翻本节早先那句
+"Debug 与分发两份要分开"）。理由：两份的差别只有 `get-task-allow` 一项，
+而那一项**从来不是我们写的**——它是 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS`
+在身份为 `-` 时替我们注入的。于是：
 
-### 4.4 签名 → 公证 → staple 的命令序列
+| | 身份 | 注入开关 | 结果 |
+|---|---|---|---|
+| 开发形态（`./dev` / `./release` / `build.sh`） | `-` | 默认 YES | 自动带 `get-task-allow`，照旧能挂调试器 |
+| 分发形态（`release-dmg.sh`） | Developer ID | 命令行传 `NO` | 没有 `get-task-allow` |
+
+维护两份内容相同、只差一个注入项的 plist，只会让它们互相漂移。
+`disable-library-validation` 留在开发形态里无害（那边 Hardened Runtime 是关的）。
+
+**分发形态的四个 build setting 也不写进 project.yml，走 xcodebuild 命令行覆盖**
+（命令行传的 build setting 优先级高于 project.yml 里的一切）。这样
+**开发形态一个字都不受影响**——不然每台机器都得有那张 Developer ID 证书才编得动。
+
+### 4.4 签名 → 公证 → staple ✅ 已跑通（2026-08-30，两次 Accepted）
+
+实现是 `clam-app/host/scripts/release-dmg.sh`（+ `scripts/dmg-settings.py`）。
+用法：
+
+```sh
+scripts/release-dmg.sh --notarize-profile surfclam      # 全流程
+scripts/release-dmg.sh --skip-notarize                  # 只出未公证的 dmg（退出码 0）
+scripts/release-dmg.sh                                  # 同上但退出码 3（"别把忘了公证当成功"）
+```
+
+**产物落 `build-dist/`，不碰 `/Applications`、也不碰 `build/`**：用独立的
+`-derivedDataPath` 有两个理由——① 开发形态那份 ad-hoc 的 Release 产物
+（`./release` 装机用的）不被 Developer ID 产物覆盖；② 顺带保证 `CodeSign`
+阶段必然真的跑一遍（增量构建下它可能被判定为不必重跑，§4.1a）。
+
+**顺序（inside-out + 两次公证、两处 staple，一步都不能换）**：
+
+```
+1. xcodebuild（Release）
+   ├─ embed-modules.sh    → 签 Frameworks/libClamSDK.dylib
+   ├─ pack-payload.sh
+   ├─ prebuild-plugins.sh → 编 5 个插件 dylib → strip -x → 逐个签（§4.2a）
+   └─ Xcode 的 CodeSign   → 封外层，带 entitlements + runtime + timestamp
+2. 验：codesign -v --deep --strict；entitlements 有 disable-library-validation、
+   没有 get-task-allow；6 个嵌套 dylib 全部 Authority=Developer ID Application
+3. ditto -c -k app → zip → notarytool submit --wait → **stapler staple 那个 .app**
+4. 用**已 staple 的 app** 打 dmg（§5）→ 签 dmg
+5. notarytool submit dmg --wait → stapler staple dmg → stapler validate
+6. spctl --assess --type open --context context:primary-signature
+```
+
+**第 3 步为什么在第 4 步之前**：stapler 按 cdhash 取票。先打 dmg 再回头 staple
+里面的 app，就等于换了一个 dmg，之前那张票对不上号。zip 只是运输容器——
+**zip 本身不能 staple**，这正是别的项目那套 "ditto -c -k → 公证 → staple →
+再 ditto -c -k" 舞步的由来。
+
+**`--issuer` 的规则**（`notarytool` 1.1.2 / Xcode 27 的帮助文本原话）：
+*"Required for Team API Keys. **Do not provide for Individual API Keys.**"*
+——个人 key 传了反而报错。本机走的是 keychain profile（`--keychain-profile surfclam`），
+绕开了这一条。
 
 **一条让人安心的事实**（2026-08-30 调研，穷举式确认）：把 Apple Developer News
 的 142 条 RSS 逐条读完，**2024-09 到 2026-08 之间没有任何一条涉及
 notarization / notary service / notarytool / Developer ID / Gatekeeper**。
-「Upcoming Requirements」里仍然只挂着 2023-11-01 的 altool 截止日。
 2026-04-28 那条 SDK 新规**不管我们**——它限定在 "uploaded to App Store Connect"，
-而且列表里根本没有 macOS。**这套流程是稳的，照做即可。**
+而且列表里根本没有 macOS。
 
-**顺序（inside-out，一步都不能换）**：
+#### 实测记录（2026-08-30）
 
-```sh
-# 1. 嵌套代码逐个签（这一步替换掉 embed-modules.sh 现在的 ad-hoc 重签，见 §4.2）
-codesign --force --timestamp --options runtime \
-         --sign "Developer ID Application: …" \
-         "$APP/Contents/Frameworks/libClamSDK.dylib"
-# ClamPlugins/**/prebuilt/*.dylib 同样逐个签（M3 产出的那些）
+| | submission id | 结果 |
+|---|---|---|
+| app（zip） | `be1b0d1f-6aa8-4f83-90a6-82c1ec962c4b` | **Accepted**，约 1.5 分钟 |
+| dmg | `eeca3454-5dc9-4fbf-bccc-0f7c95e8c19a` | **Accepted**，约 2 分钟 |
 
-# 2. 最后签 app，带 entitlements
-codesign --force --timestamp --options runtime \
-         --entitlements Sources/surfclam-release.entitlements \
-         --sign "Developer ID Application: …" "$APP"
+`stapler` 两处都是 `The staple and validate action worked!` / `The validate action worked!`。
 
-# 3. 打 dmg（§5）→ 签 dmg
-codesign --force --timestamp --sign "Developer ID Application: …" Surfclam.dmg
+**`spctl` 公证前后的对照**（同一个 dmg、同一条签名，唯一变量是那张票）：
 
-# 4. 公证（API key；三个字段必须是三个独立的 secret，GitHub 明确警告
-#    不要把结构化数据塞进一个 secret）
-xcrun notarytool submit Surfclam.dmg \
-      --key "$API_KEY_P8" --key-id "$KEY_ID" --issuer "$ISSUER" --wait
+```
+# 公证前
+$ spctl --assess --type open --context context:primary-signature --verbose=4 Surfclam-0.1.0.dmg
+Surfclam-0.1.0.dmg: rejected
+source=Unnotarized Developer ID          ← 退出码 3
+$ spctl --assess --type execute --verbose=4 Surfclam.app
+Surfclam.app: rejected
+source=Unnotarized Developer ID
 
-# 5. staple **两处**：dmg 与里面的 app
-xcrun stapler staple Surfclam.dmg
-xcrun stapler validate Surfclam.dmg
-spctl --assess --type open --verbose=4 Surfclam.dmg
+# 公证 + staple 后
+$ spctl --assess --type open --context context:primary-signature --verbose=4 Surfclam-0.1.0.dmg
+Surfclam-0.1.0.dmg: accepted
+source=Notarized Developer ID            ← 退出码 0
+# 从 dmg 里拖出来的那份 app 同样：
+$ spctl --assess --type execute --verbose=4 /tmp/…/Surfclam.app
+accepted / source=Notarized Developer ID
+$ xcrun stapler validate /tmp/…/Surfclam.app   → The validate action worked!
 ```
 
-**`--issuer` 的规则**（`notarytool` 1.1.2 / Xcode 27 的帮助文本原话）：
-*"Required for Team API Keys. **Do not provide for Individual API Keys.**"*
-——个人 key 传了反而报错。
+**`source=Unnotarized Developer ID` 是个好症状**：它说明签名链本身是对的
+（Gatekeeper 已经认出这是 Developer ID），只缺票。签错了会是别的话
+（`obsolete resource envelope`、`no usable signature` 之类）。
 
-**`--wait` 要配宽裕的 `--timeout` 并留重试路径**：2026 年有若干论坛帖报告公证卡在
-"In Progress" 超过 24 小时（新入会账号居多）。无法核实，但保守成本很低。
+### 4.4a 控制组：`disable-library-validation` 到底扛不扛得住（M5 实测）
 
-**zip 不能 staple**（Apple 文档；Quinn 在论坛 thread 128166 里的说法与之冲突，
-以文档为准）。我们走 dmg，不受影响——记一笔是因为它解释了为什么别的项目会有
-`ditto -c -k → 公证 → staple → 再 ditto -c -k` 那套重打包舞步。
+计划里那句"缺了它所有插件装载失败，且完全不像签名问题"一直没人验过。M5 拿
+**同一个 app、同一份代码、同一个 Developer ID、同样开着 Hardened Runtime**，
+只换 entitlements 重签了一次，跑了对照：
+
+| entitlements | 现场编译（ad-hoc dylib） | bundle 预编译（Developer ID dylib） |
+|---|---|---|
+| 带 `disable-library-validation` | **五个全部 dlopen 成功** | 五个全部装载 |
+| 不带 | **dlopen 全部失败**，见下 | （没测，理论上照常——同 Team ID） |
+
+失败时 dyld 的原话（这条值得记住，因为它**不提"library validation"五个字**）：
+
+```
+dlopen 失败：… (code signature in <…> '/…/libClamNativeify_….dylib'
+not valid for use in process: mapping process and mapped file (non-platform)
+have different Team IDs)
+```
+
+"different Team IDs" = 壳有 Team ID（HJDT6NYKJC）、运行时 swiftc 编出来的 dylib
+是 `adhoc,linker-signed`（`TeamIdentifier=not set`）。**这就是 library validation
+本身**，不是别的什么东西。
 
 ## §5 dmg 打包
 
@@ -731,15 +826,26 @@ spctl --assess --type open --verbose=4 Surfclam.dmg
 | npm `create-dmg` 8.1.0 | ❌ 窗口 660×400、icon-size 160、背景图**全部硬编码**（全部 flag 只有 `--overwrite` / `--no-version-in-filename` / `--identity=` / `--dmg-title=` / `--no-code-sign`） | ✅ | 依赖链已停更：`appdmg@0.6.6`(2023) → `ds-store`(**npm 最后发布 2016**) + `fs-xattr`(node-gyp)；`npm audit` 报 3 条 high "No fix available" |
 | shell `create-dmg` | ✅ | ❌ **别用** | [#191](https://github.com/create-dmg/create-dmg/issues/191) 仍开着：*"Headless/Actions: Eternally stuck at 'Creating Disk Image...'"*，维护者诊断是 `hdiutil` 卡在 root 授权提示上 |
 
-### 5.2 必须显式覆盖文件系统与格式
+### 5.2 必须显式覆盖文件系统与格式 ✅ 已做
 
-**两个工具都默认 HFS+ / UDZO**，而 Sparkle 与现代 macOS 推荐 APFS / ULFO：
+**两个工具都默认 HFS+ / UDZO**，而 Sparkle 与现代 macOS 推荐 APFS / ULFO。
+实现在 `clam-app/host/scripts/dmg-settings.py`：
 
 ```python
-# dmgbuild settings.py
 filesystem = "APFS"
 format = "ULFO"
 ```
+
+实测确认（`hdiutil imageinfo`，2026-08-30）：
+
+```
+Format: ULFO
+Format Description: UDIF read-only compressed (lzfse)
+Name: disk image (Apple_APFS : 4)
+```
+
+产物 **3.8 MB**（app 本体 8.3 MB）。挂载、拖出 `Surfclam.app`、`codesign -v
+--deep --strict` + `stapler validate` + `spctl` 三项全过。
 
 （`man hdiutil` 在 macOS 27 上已改口说默认是 APFS，但那只管 `hdiutil` 自己，
 不管这两个工具。npm `create-dmg` 的硬编码默认值恰好就是 `ULFO`/`APFS`，
@@ -1047,7 +1153,7 @@ M5 才涉及外部成本。
 | **M2** | **profile 分片改名**（`surfclam-dev` / 见 §3.6）+ **profile 自举**（壳侧新增 `Native/ProfileBootstrap.swift`，只在 Release 壳、`BackendManager.start()` 之前跑）+ `.stamp` + 三条纪律 + 7.1 的迁移检查 | ① 清空 profile → 双击 App → 自举 + spawn + 五个插件装载 + 会话列表出来；② 往 `surfclam` 里 `dsh plugin add` 一个包，重启 App，那个包**还在**；③ **常驻 App 与主 worktree `./dev` 同时跑，互不干扰**（今天做不到） |
 | ~~**M3**~~ **✅ 2026-08-30** | **预编译 dylib**：编译入口从 `CompilerService` 抽成可执行、构建流水线跑一次真编译落进 `ClamPlugins/<Module>/prebuilt/<hash>/`；壳侧查找顺序加一层；顺带解掉 §7.3 的硬阻断与 §7.10 的轮询浪费 | 全部实跑通过，见 §9 |
 | **M4** ✅ | **砍掉壳自构建**：构建那 389 行**整体移出随包分发的部分**（新目录 `clam-app/host-build/`，`files` 白名单只收 `lib/`）；`surfclam.js` 删 registry 模式（`./release` 转 dmg 流水线薄封装那一步**留给 M5**） | ✅ `npm pack` 出来的 `@wenbo/clam-app` 不含 `host/` 也不含构建代码（20.2 KB / 4 文件）；`./dev` 全流程（缓存 + 构建 + 盯源码 + `app-build`）正常；`CLAM_RELEASE` 已删干净。执行日志见 §9 |
-| **M5** | **签名 + 公证 + dmg**：entitlements 重写、`embed-modules.sh` 签名顺序重排、inside-out 逐个签、notarytool、staple、dmg 打包脚本 | **在一台没有开发者证书的机器上**下载 dmg → 拖进「应用程序」→ 双击 → 全流程跑通 |
+| **M5** ✅ **2026-08-30**（流水线部分） | **签名 + 公证 + dmg**：entitlements 加 `disable-library-validation`、`embed-modules.sh` 与预编译工具改用 `EXPANDED_CODE_SIGN_IDENTITY`、新增 `scripts/release-dmg.sh` + `dmg-settings.py`、notarytool + 两处 staple | ✅ 六项本机验收全过（含**控制组**：去掉 `disable-library-validation` 后现场编译的插件 dlopen 全灭，§4.4a）；两次公证 Accepted、`spctl` 由 `Unnotarized` 翻成 `Notarized Developer ID`。**仍欠**：在一台没有开发者证书的机器上下载 dmg → 拖进「应用程序」→ 双击的端到端 |
 | **M6** | **Sparkle 自动更新**（本轮不做） | —— |
 
 **M6 的接口在本轮就要留好**（不实现）：
@@ -1083,6 +1189,59 @@ M5 才涉及外部成本。
 ## §9 执行日志
 
 （每完成一个里程碑在此追加一行。）
+
+- **2026-08-30 M5：Developer ID 签名 + Hardened Runtime + dmg + 公证** 完成
+  （权威细节在 §4.2 / §4.2a / §4.3 / §4.4 / §4.4a / §5.2，这里只记决策与踩坑）。
+  - **改了五处**：`project.yml` 的 entitlements 表加
+    `com.apple.security.cs.disable-library-validation`；`embed-modules.sh` 改用
+    `EXPANDED_CODE_SIGN_IDENTITY` + 条件化 timestamp/runtime、删掉那句死的外层重签、
+    换掉已被证伪的顶注；`scripts/prebuild/Prebuild.swift` 在 `strip -x` 之后加签名
+    （身份经 `prebuild-plugins.mjs` 从 spec 递进来）；新增
+    `scripts/release-dmg.sh` + `scripts/dmg-settings.py`；`.gitignore` 收 `build-dist/`。
+  - **entitlements 只留一份**（推翻 §4.3 早先那句"要两份"）：Debug 与分发的差别
+    只有 `get-task-allow`，而那一项是 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS` 注入的，
+    不是我们写的。两份只差一个注入项的 plist 必然互相漂移。
+  - **分发形态的四个 build setting 走 xcodebuild 命令行覆盖，不进 project.yml**：
+    命令行优先级最高，于是**开发形态一个字都不受影响**——不然每台机器都得有
+    Developer ID 证书才编得动。
+  - **预编译 dylib 签在预编译工具里而不是打包脚本里**（§4.2a 三条理由）。
+  - **六项验收全部实跑**：
+    ① **现场编译的 ad-hoc dylib 在 Hardened Runtime 下照样 dlopen**——清空用户缓存 +
+    从 bundle 里摘掉 `ClamPlugins/` 再重签，逼它走 swiftc，五个插件全部
+    「现场编译」并装载（1.41 / 0.55 / 2.49 / 0.94 / 5.10 s），产出的 dylib 实测是
+    `flags=0x20002(adhoc,linker-signed)`、`TeamIdentifier=not set`；
+    ② 零编译启动：清空用户缓存、原样的 bundle，五个插件全是「bundle 预编译」；
+    ③ `codesign -v --deep --strict` 过，entitlements 有 `disable-library-validation`、
+    没有 `get-task-allow`，外层 `flags=0x10000(runtime)`；
+    ④ 公证前 `spctl` = `rejected / source=Unnotarized Developer ID`，
+    公证 + staple 后 = `accepted / source=Notarized Developer ID`（§4.4 有完整对照）；
+    ⑤ dmg 挂载、拖出 app、`ULFO` + `Apple_APFS` 确认，3.8 MB；
+    ⑥ 开发形态零回归：`./dev` 拉起的 Debug 壳仍是
+    `Signature=adhoc` / `TeamIdentifier=not set` / 带 `get-task-allow` / 无 Hardened
+    Runtime，嵌套 dylib 也是 ad-hoc，构建日志里
+    `embed-modules: ClamSDK → Surfclam Dev.app（签名身份 -）`，插件热编译照常。
+  - **顺手把 §4.3 那句"缺了它完全不像签名问题"验成了硬事实**（§4.4a 的控制组）。
+    dyld 的原话是 `mapping process and mapped file (non-platform) have different
+    Team IDs`——**通篇不提 "library validation"**，所以这条记进计划正文了。
+  - **四个踩坑（都不报错或报得驴唇不对马嘴）**：
+    ① **bash 3.2 + `set -u` + 全角括号**：`echo "… $WRAPPER_NAME（…）"` 会报
+    `WRAPPER_NAME\357: unbound variable`——变量名把多字节字符的首字节吃进去了。
+    构建当场失败，而看上去像 Xcode 没传那个环境变量。**这类 echo 一律写 `${VAR}`。**
+    ② **`codesign -dv` 不打印 `Authority=` 行**（要 `--verbose=4`）：拿它做
+    "是不是 Developer ID 签的"判据，会把**签得好好的**六个 dylib 全判成没签。
+    ③ **`codesign … | grep -q` 在 `set -o pipefail` 下必然判失败**：`grep -q` 命中
+    即退出，上游吃 SIGPIPE（141），整条管道于是"失败"。先取字符串再 grep。
+    ④ **两个壳并发编同一份内容寻址目录会互相拆台**：报的是
+    `input file '…/src/X.swift' was modified during the build` 和
+    `no such module 'ClamLayout'`——**长得完全像签名/依赖出了问题**，其实只是
+    测试环境里多起了一个壳。验这类事情之前先 `ps` 数一遍实例。
+  - **公证记录**：app（zip）`be1b0d1f-6aa8-4f83-90a6-82c1ec962c4b`、
+    dmg `eeca3454-5dc9-4fbf-bccc-0f7c95e8c19a`，两次都是 **Accepted**，
+    各约 1.5～2 分钟。凭据走 keychain profile `surfclam`。
+  - **`dmgbuild` 本机是 `uv tool install dmgbuild` 装的**（1.6.7）；系统 python3.9 的
+    site-packages 要 sudo，别往那儿装。`release-dmg.sh` 找不到它会 fails loud 并给补法。
+  - **还欠一条验收**：在一台没有开发者证书、没装过本 App 的机器上下载 dmg →
+    拖进「应用程序」→ 双击。本机测不出 Gatekeeper 首次打开那一幕（§7.4）。
 
 - **2026-08-30 M3：预编译 dylib + 解掉 §7.3 硬阻断 + 关掉 §7.10 轮询** 完成。
   - **A1 选了「`swift/` 打进 `ClamNode/<pkg>/`」**（§3.2a 记了两条路的取舍与
