@@ -25,7 +25,8 @@
 		"@wenbo/clam-header": "^0.1.0",
 		"@wenbo/clam-notify": "^0.1.0",
 		"@wenbo/clam-settings": "^0.1.0",
-		"@wenbo/clam-nativeify": "^0.1.0"
+		"@wenbo/clam-nativeify": "^0.1.0",
+		"@wenbo/clam-memory": "^0.1.0"
 	},
 	"dsh": {
 		"bundle": {
