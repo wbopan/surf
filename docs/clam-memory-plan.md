@@ -349,3 +349,75 @@ M1/M3 需要单测。参照 `clam-sidebar/test/*.test.js`（`node --test`，零�
   会在启动时炸 `Cannot find package '@wenbo/clam-memory'`；存储层的错误消息原本是
   中文，而它们经 tool-error 路径直接进模型上下文，已统一为英文（面向模型的文案
   一律英文，面向人的文档与注释一律中文）。
+
+- 2026-08-30 — **删掉 `memory_read` / `memory_write` 两个专用工具**（用户裁决）。
+  起因是用户指出本插件与 Claude Code auto memory 形状不同：后者只有「一个目录 +
+  一段 system prompt 注入」，读写走通用文件工具，没有任何专用工具。复核确认
+  **§1.3 那份实测清单只记了磁盘格式与治理常量，没有一栏记「它用什么接口读写」**，
+  而 §2.4 直接以「两个，都用 `defineTool`」开场——**专用工具从未被当成一个岔路口
+  审议过**，§2.6 的三处决策里也没有它。这是计划本身的缺口，不是实现偏离。
+
+  裁决与改动：**只取文案、保留现有架构**（项目级 + 索引注入 + 扁平命名空间不变），
+  工具删除，模型改用 dsh 自带的 `read` / `write` / `edit` / `grep`
+  （`dsh-tool-fs` 与 `dsh-tool-fs-search`，两者都在 `dsh-base` 的编排表里，
+  已核实）。`lib/prompt.js` 因此同时承担读者视角与作者视角，新增的维护段取材自
+  Anthropic 跨 surface 个人记忆那套提示词，按本插件语境改写。28/28 单测绿。
+
+  **本次推翻了计划的两条**：
+
+  1. **§0 不变量 3「记忆目录为空时零注入」不再成立。** 那条隐含的前提是有工具
+     ——工具定义本身就是「这个机制存在」的信号。工具删掉后还坚持零注入，等于这个
+     插件永远写不出第一条记忆。现在空目录时**仍注入维护段**（含目录绝对路径），
+     只是信封、pinned、索引三段不在。真正的零注入只剩「没有会话因而没有 cwd」。
+  2. **§2.4 「不提供 `memory_delete`」那条论证作废。** 它的前提是删除得由工具提供，
+     而现在模型手上本来就有能删文件的工具。约束从「够不着」降级为注入文本里的一条
+     约定（FORGETTING 段：用户要求忘记时删掉那些行）。**同理 §2.6 D3 的 `pinned`
+     也从「模型够不着」降级为约定**——这一点在裁决时已明确接受。
+
+  连带的删除（都是失去调用者的死代码）：`store.write()` / `store.read()`、原子写
+  （临时文件 + fsync + rename）、`paths.js` 的 `validateName` / `fileFor` /
+  `resolveInside` / `realpathDeep` 那套路径加固、`MEMORY_TYPES` 枚举、
+  `renderOversizeWarning`，以及 `@deepseek-ai/dsh-tools` 这条 peerDependency。
+  存储层现在**只读**，唯一的写动作是新增的 `ensureDir`（每级 0o700、一个目录只建
+  一次、建不出来也不抛）——注入文本对模型说「目录已存在，别自己建」，那句话得是真的。
+
+  **代价记录在案**（README 有同样一段）：frontmatter 的正确性从「代码保证」降级成
+  「提示词约定」。存储层对写坏的文件是容错的（解析不了就跳过、`modified` 缺失退回
+  mtime 排序，而实测 190 条真实记忆里 `modified` 只有 22% 有，mtime 兜底本来就是
+  主路径），所以这个降级不致命，但它是真实的。
+
+- 2026-08-30（同日第二次）— **注入从 B 通道改判为 C**（用户裁决）。起因是用户在
+  Web UI 上看到 `Context injection · CLAUDE.md` 与 `Context injection · skill-catalog`
+  各占独立一行，而 clam-memory 没有自己的行——它被并进了署名
+  `@deepseek-ai/dsh-system-prompt` 的那一条里，和 `sandbox:policy`、`approval:policy`
+  同属一个快照的三个 `sections`。
+
+  **这是 §1.1 那张 A/B/C 对照表的缺口**：表里比的是「异步 / 抗压缩 / KV cache」三栏，
+  **没有「界面上怎么署名」这一栏**。§2.6 D1 裁决走 B 时的论证是「B 与 C 抗压缩性
+  完全一样，差别只在框架白送 vs 自己写，而我们没有 skill catalog 那个异步约束，
+  所以 B 严格占优」——那个比较里压根没有可归属性这个维度。与上一条日志里
+  「专用工具从未被当成岔路口审议过」是同一类漏洞：**比较维度不全，而不是比较错了。**
+
+  机制事实（新增，可复核）：Web UI 的标签取自 `contextProvenance`
+  （`dsh-client-runtime/lib/client.js:10426-10446`），按 `source.kind` 分派——
+  `agent-instructions` 取 `changes[].path`（显示 `CLAUDE.md`）、`plugin` 取
+  `source.plugin`、**default 分支直接拿 kind 当标签**（`skill-catalog` 就是这么显示的）。
+  所以自定义 kind 是被设计支持的向前兼容路径，源码注释明确说不认识的值降级成朴素
+  展示而**不是丢掉那一行**。`form` 白名单 `KNOWN_FORMS`
+  （`:10452`）= instructions / catalog / snapshot / notice / relay / recall。
+
+  改动：`source: { kind: "clam-memory", form: "snapshot", sections, digest }`，
+  界面上显示 `Context injection · clam-memory`，`snapshot` 这个 form 让 UI 走
+  `SnapshotBody` 分段展示（每段一个 `<dt>`）。`prompt.js` 的出口从「一整段文本」
+  （`renderInjection`）改成**分段**（`renderSections` + `joinSections`），两段：
+  `clam-memory:memories` 与 `clam-memory:maintenance`。`inject` 从 `["systemPrompt"]`
+  改成 `["agents"]`，新增 peerDependency `@deepseek-ai/dsh-llm`（`createUserMessage`）。
+
+  §1.2 那四条「我们全抄」这次真的全抄了：digest 算在结构化事实上、消息带结构化
+  `source`、基线从 `agent.session.events` 倒扫、整表替换。**一处有意偏离**：
+  skill-catalog 把结构化 `entries` 存进 source 再重算 digest，我们**直接存 digest**
+  ——pinned 是全文，`content` 里已有一份，再存一遍等于把每条消息撑成两倍；
+  `sections` 仍在 source 里，所以「真相在 source 里」这条没丢。
+
+  29/29 单测绿。实机：托管后端重启后 `clam-memory: 已挂载`、无报错；离线验证
+  `createUserMessage` 接受该 source，两段 sections 与 digest 齐备。

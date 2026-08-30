@@ -8,19 +8,24 @@
 //     **不引 watcher 依赖**。
 //  3. **不新建第二个真相源**（§0.1）——磁盘上的 markdown 就是全部真相，
 //     索引每次实时从 frontmatter 组装，不落任何索引文件。
+//
+// **2026-08-30 起本层只读**：`memory_read` / `memory_write` 两个专用工具删掉之后，
+// 写入路径整个搬到了模型手里的普通 `write` / `edit` 工具上，所以这里没有 write()、
+// 没有原子写、也没有按名字拼路径那套加固（没有调用者的加固只是死代码）。唯一保留的
+// 写动作是 `ensureDir` —— 注入文本里那句"目录已存在"得是真的。
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 
-import { fileFor, memoryDirFor, mkdirp700, validateName } from "./paths.js";
+import { memoryDirFor, mkdirp700 } from "./paths.js";
 
 /** §3 的常量，逐条抄自 §1.3 的实测值。 */
 export const LIMITS = {
 	indexLines: 200,
 	indexBytes: 25000,
 	scanFiles: 200,
-	// 召回时显示多少字节的上限（**不是**写入上限，见 write()）。
+	// 召回时显示多少字节的上限。**本层不再截断正文**（pinned 全文照发），它现在只是
+	// 一个说给模型听的数字：注入文本里"超过这么多就该拆"的那句引的就是它。
 	recordBytes: 4096,
 	descriptionChars: 200,
 	nameChars: 60,
@@ -31,9 +36,6 @@ export const LIMITS = {
 
 /** 保留子目录名，不进扫描（§1.3）。 */
 export const RESERVED_DIRS = new Set(["team", "logs", "sessions", "proposals"]);
-
-/** `memory_write` 认的 type（§2.2）。 */
-export const MEMORY_TYPES = ["user", "feedback", "project", "reference"];
 
 const FRONTMATTER_KEYS = new Set(["name", "description", "metadata"]);
 const METADATA_KEYS = new Set(["node_type", "type", "originSessionId", "modified", "pinned"]);
@@ -152,6 +154,8 @@ export function createMemoryStore({ dir = "", limits } = {}) {
 	const L = limits ? { ...LIMITS, ...limits } : LIMITS;
 	/** @type {Map<string, { sig: string, records: object[], files: number }>} */
 	const cache = new Map();
+	/** 已经确保存在过的目录（见 ensureDir）。 */
+	const ensured = new Set();
 
 	function resolveDir(cwd) {
 		return memoryDirFor({ dir, cwd });
@@ -311,133 +315,29 @@ export function createMemoryStore({ dir = "", limits } = {}) {
 		};
 	}
 
-	/** 按精确名字读一条正文。不存在返回 undefined。 */
-	function read(name, cwd) {
-		validateName(name);
-		const root = resolveDir(cwd);
-		let file;
-		try {
-			file = fileFor(root, name);
-		} catch {
-			return undefined;
-		}
-		if (!fs.existsSync(file)) return undefined;
-		const doc = readRecordFile(file, name);
-		if (!doc) return undefined;
-		return { name: doc.name, description: doc.description, type: doc.type, content: doc.content };
-	}
-
 	/**
-	 * 新建或整体替换一条（§2.4）。
-	 * 代码盖 `modified` / `originSessionId` / `node_type`；**拒绝 rec 里出现 `pinned`**（D3）。
+	 * 保证记忆目录存在，返回它的绝对路径。
+	 *
+	 * 注入文本告诉模型"The directory already exists; do not create it"——这句话必须是
+	 * 真的，否则模型第一次写记忆就得先自己 mkdir，而它手上的 `write` 工具未必肯建
+	 * 多级目录。**一个目录只建一次**：注入回调每 step 都跑，不该每步都进系统调用。
+	 * 建不出来（只读挂载、权限）也不抛——注入照常，模型写的时候会自己撞上真错误。
 	 */
-	function write(rec, cwd) {
-		if (!rec || typeof rec !== "object") throw new Error("memory_write needs a record object.");
-		if ("pinned" in rec) {
-			throw new Error(
-				"`pinned` cannot be set by memory_write. What stays permanently in context is the " +
-					"user's decision, not yours. To pin a memory, the user edits that file and adds " +
-					"`pinned: true` under `metadata` in its frontmatter.",
-			);
-		}
-		const name = validateName(rec.name);
-		const description = typeof rec.description === "string" ? rec.description.replace(/\s+/g, " ").trim() : "";
-		if (description === "") {
-			throw new Error(
-				"`description` cannot be empty. It is the only thing a future session sees before " +
-					"deciding whether to open this memory, so make it specific.",
-			);
-		}
-		if (!MEMORY_TYPES.includes(rec.type)) {
-			throw new Error(`\`type\` must be one of ${MEMORY_TYPES.map((t) => `\`${t}\``).join(" / ")} (got \`${rec.type}\`).`);
-		}
-		const content = typeof rec.content === "string" ? rec.content : "";
-
+	function ensureDir(cwd) {
 		const root = resolveDir(cwd);
-		mkdirp700(root);
-		const file = fileFor(root, name);
-
-		// pinned 是人设的（D3）。整体替换时把它保下来，别让模型的一次覆写把人的钉子拔了。
-		let keepPinned;
-		if (fs.existsSync(file)) {
-			const prev = readRecordFile(file, name);
-			if (prev && truthy(prev.pinnedRaw)) keepPinned = true;
+		if (ensured.has(root)) return root;
+		try {
+			mkdirp700(root);
+		} catch {
+			// 吞掉：装配路径不该因为建目录失败而赔掉一个 agent step。
 		}
-
-		const meta = [
-			"  node_type: memory",
-			`  type: ${rec.type}`,
-			`  originSessionId: ${rec.sessionId == null ? "" : String(rec.sessionId)}`,
-			`  modified: ${nowStamp()}`,
-		];
-		if (keepPinned) meta.push("  pinned: true");
-
-		const body = content.endsWith("\n") || content === "" ? content : `${content}\n`;
-		const text = ["---", `name: ${name}`, `description: ${description}`, "metadata:", ...meta, "---", "", body].join("\n");
-		const buf = Buffer.from(text, "utf8");
-
-		// **`recordBytes` 是"召回时显示多少"的上限，不是"能写多大"的上限。**
-		// 实测本机 190 条真实 Claude Code 记忆里有 29 条（15%）超过 4096，最大 13 KB
-		// ——硬拒绝会让我们连 Claude 自己写的大记忆都改不动（读得到、写不回）。
-		// 所以照写不误，只是把"超出部分未来的会话看不见"这件事回给模型。
-		const warning =
-			buf.length > L.recordBytes
-				? `This memory is ${buf.length} bytes. Only the first ${L.recordBytes} are shown when a ` +
-					"memory is recalled, so everything past that point is invisible to future sessions. " +
-					"Trim it, or split it by topic into two memories that cross-reference each other with [[name]]."
-				: undefined;
-
-		atomicWrite(file, buf);
-		invalidate();
-		return { name, file, bytes: buf.length, warning };
+		ensured.add(root);
+		return root;
 	}
 
 	function invalidate() {
 		cache.clear();
 	}
 
-	return { resolveDir, index, pinned, read, write, invalidate, limits: L };
-}
-
-/** ISO 8601，秒精度，带 Z。 */
-function nowStamp(d = new Date()) {
-	return `${d.toISOString().slice(0, 19)}Z`;
-}
-
-/**
- * 原子写：同目录临时文件 → fsync → rename。
- * **不要 `writeFileSync` 直接盖**——那是先截断再写，崩在中间就留半个文件，
- * 而半个文件的 frontmatter 恰好可能还是合法的（于是一条记忆安静地少了一半正文）。
- */
-function atomicWrite(file, buf) {
-	const dir = path.dirname(file);
-	const base = path.basename(file, ".md");
-	const tmp = path.join(dir, `.${base}.${crypto.randomBytes(6).toString("hex")}.tmp`);
-	const flags = fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY;
-	let fd;
-	try {
-		fd = fs.openSync(tmp, flags, 0o600);
-		fs.writeSync(fd, buf, 0, buf.length, 0);
-		fs.fsyncSync(fd);
-	} catch (err) {
-		if (fd !== undefined) {
-			try {
-				fs.closeSync(fd);
-			} catch {}
-			fd = undefined;
-		}
-		try {
-			fs.unlinkSync(tmp);
-		} catch {}
-		throw err;
-	}
-	fs.closeSync(fd);
-	try {
-		fs.renameSync(tmp, file);
-	} catch (err) {
-		try {
-			fs.unlinkSync(tmp);
-		} catch {}
-		throw err;
-	}
+	return { resolveDir, ensureDir, index, pinned, invalidate, limits: L };
 }

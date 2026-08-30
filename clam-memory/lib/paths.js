@@ -1,31 +1,23 @@
-// clam-memory 的路径决议与路径加固。
+// clam-memory 的路径决议。
 //
 // 硬约束（docs/clam-memory-plan.md §0）：**零依赖**——只用 node 内置模块，
 // 不 import 任何 clam-* 也不 import @deepseek-ai/*。这个文件必须能在
 // 一台只有 node 的 Linux 机器上原样跑起来。
 //
-// 三件事：
+// 两件事：
 //   1. 目录决议（三种 dir 模式 + slug）
 //   2. slug = git repo root 的绝对路径把 `/` 换成 `-`（与 Claude Code 逐字节一致，
 //      §2.5 风险 1：算错会在 Claude 旁边安静地建一个空目录）
-//   3. 路径加固（名字白名单 + 逐级 realpath 的逃逸检查 + 逐级 0o700 mkdir），
-//      思路抄 anthropic-sdk-typescript 的 src/tools/memory/node.ts
+//
+// **曾经还有第三件事：路径加固**（名字白名单 + 逐级 realpath 的逃逸检查，思路抄
+// anthropic-sdk-typescript 的 src/tools/memory/node.ts）。2026-08-30 随两个专用工具
+// 一起删了——加固的对象是"模型交给我们的名字"，而现在模型不再交名字，它直接用
+// `write` / `edit` 操作文件，路径归 dsh 的工具沙箱管。留着就是没有调用者的死代码。
+// `mkdirp700` 留下了：store 的 ensureDir 还要用它。
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-
-/** 名字上限（§3）。 */
-export const NAME_MAX = 60;
-
-/** 合法名字：扁平命名空间，没有子目录 = 路径穿越这一整类 bug 不存在（§2.1）。 */
-const NAME_RE = /^[a-z0-9_-]+$/;
-
-/**
- * 保留名。`MEMORY.md` 是 Claude Code 那条**被废弃的**磁盘索引路径的残留（§1.3），
- * 拒绝它是为了防模型覆盖掉人家的历史文件。比对不区分大小写。
- */
-const RESERVED_NAMES = new Set(["memory"]);
 
 /** 展开前导 `~`。只认前导，`a/~/b` 里的波浪号是普通字符。 */
 export function expandHome(p) {
@@ -94,83 +86,6 @@ export function memoryDirFor({ dir, cwd } = {}) {
 	if (raw === "") return path.join(dshHome(), "memory", slugFor(cwd));
 	if (raw === "claude") return path.join(os.homedir(), ".claude", "projects", slugFor(cwd), "memory");
 	return path.resolve(expandHome(raw));
-}
-
-/**
- * 校验一条记忆的名字。非法就抛——错误信息是给模型看的，要说清怎么改。
- */
-export function validateName(name) {
-	if (typeof name !== "string" || name.length === 0) {
-		throw new Error("A memory name cannot be empty. Use lowercase kebab-case, e.g. `build-uses-xcodegen`.");
-	}
-	if (name.includes("\0")) {
-		throw new Error("A memory name cannot contain a null byte.");
-	}
-	if (name.includes("/") || name.includes("\\")) {
-		throw new Error(`A memory name cannot contain a path separator (got \`${name}\`). Memories are flat; there are no subdirectories.`);
-	}
-	if (name === "." || name === ".." || name.includes("..")) {
-		throw new Error(`A memory name cannot contain \`..\` (got \`${name}\`).`);
-	}
-	if (name.startsWith(".")) {
-		throw new Error(`A memory name cannot start with \`.\` (got \`${name}\`).`);
-	}
-	if (RESERVED_NAMES.has(name.toLowerCase())) {
-		throw new Error(`\`${name}\` is a reserved name and cannot be used.`);
-	}
-	if (name.length > NAME_MAX) {
-		throw new Error(`A memory name is at most ${NAME_MAX} characters (got ${name.length}).`);
-	}
-	if (!NAME_RE.test(name)) {
-		throw new Error(`A memory name may only contain lowercase letters, digits, \`-\` and \`_\` (got \`${name}\`).`);
-	}
-	return name;
-}
-
-/**
- * 把 `p` 逐级 realpath：从最深的**已存在**祖先开始解，把剩下那截不存在的尾巴拼回去。
- * 纯前缀比较挡不住 `<root>/foo -> /etc` 这种符号链接逃逸，必须真的解一次。
- */
-function realpathDeep(p) {
-	let cur = path.resolve(p);
-	const tail = [];
-	for (;;) {
-		try {
-			const real = fs.realpathSync(cur);
-			return tail.length === 0 ? real : path.join(real, ...tail);
-		} catch (err) {
-			if (err && err.code !== "ENOENT" && err.code !== "ENOTDIR") throw err;
-			const parent = path.dirname(cur);
-			if (parent === cur) return tail.length === 0 ? cur : path.join(cur, ...tail);
-			tail.unshift(path.basename(cur));
-			cur = parent;
-		}
-	}
-}
-
-/**
- * 把 `child` 拼到 `root` 底下，并断言它**真的**还在 root 之下（解完符号链接之后）。
- * 两边都走同一套 realpathDeep，所以 `/tmp` 与 `/private/tmp` 这种系统级链接不会误判。
- */
-export function resolveInside(root, child) {
-	if (typeof child !== "string" || child.length === 0 || child.includes("\0")) {
-		throw new Error("Invalid memory path component.");
-	}
-	const rootReal = realpathDeep(root);
-	const targetReal = realpathDeep(path.resolve(root, child));
-	if (targetReal !== rootReal && !targetReal.startsWith(rootReal + path.sep)) {
-		throw new Error(`Path escape: \`${child}\` resolves outside the memory directory.`);
-	}
-	if (targetReal === rootReal) {
-		throw new Error(`\`${child}\` resolves to the memory directory itself.`);
-	}
-	return targetReal;
-}
-
-/** 一条记忆的文件路径（含校验与逃逸检查）。 */
-export function fileFor(root, name) {
-	validateName(name);
-	return resolveInside(root, `${name}.md`);
 }
 
 /**

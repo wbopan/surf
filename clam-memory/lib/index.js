@@ -2,42 +2,50 @@
  * clam-memory —— 给 dsh 加一个跨会话的持久记忆。
  *
  * 一目录 markdown，每条一个文件、带 frontmatter；每步把**索引**（name + description）
- * 注入上下文，正文由模型按需 `memory_read`，写入由模型自己 `memory_write` 发起。
+ * 注入上下文，正文与写入都交给模型手里的普通文件工具（`read` / `write` / `edit` /
+ * `grep`）——记忆就是普通 markdown，本插件不提供任何专用工具（2026-08-30 起，
+ * 见 README「为什么没有专用工具」与计划 §8 执行日志）。
+ *
+ * **注入走 C 通道**（`agent/pre-step` 里自己发一条 durable user 消息），不是
+ * `systemPrompt.context()`。B 通道会把所有贡献者合并成一条署名
+ * `@deepseek-ai/dsh-system-prompt` 的快照，我们在界面上就没有自己的名字；走 C
+ * 才能像 CLAUDE.md 与 skill-catalog 那样独立成一行。实现照抄 `dsh-tool-skill`
+ * 的 skill catalog（计划 §1.2 拆解过它那四条设计）。
  *
  * **纯 node 插件，零 macOS 依赖**（计划 §0 不变量 0）：不 inject `clamBridge`，
  * 没有 `swift/`，不碰壳也不碰 WebView。名字留在 `clam-*` 家族里只是出身，不是耦合
  * ——任何一台装了 dsh 的机器（含 Linux）都该能单独 `dsh plugin add` 它。
  *
- * 本文件只做**接线**：三样东西（注入、两个工具、设置 ns）各自往 dsh 的哪个口子插。
- *   - 面向模型的文案全在 `./prompt.js`；
- *   - 路径决议、frontmatter、索引组装、上限截断、路径加固全在 `./store.js`。
+ * 本文件只做**接线**：两样东西（注入、设置 ns）各自往 dsh 的哪个口子插。
+ *   - 面向模型的文案全在 `./prompt.js`（读者视角的信封 + 作者视角的维护段）；
+ *   - 路径决议、frontmatter、索引组装、上限截断全在 `./store.js`。
  * 这里出现的每一处 dsh API 事实都在下面就地注了源码位置，别再去猜。
  *
- * 权威计划：docs/clam-memory-plan.md（尤其 §1.1 注入通道、§2.4 工具、§2.6 三处决策）。
+ * 权威计划：docs/clam-memory-plan.md（尤其 §1.1 注入通道、§2.6 三处决策、§8 执行日志）。
  */
 
-import z from "@deepseek-ai/schemastery";
-import { defineTool } from "@deepseek-ai/dsh-tools";
+import { createHash } from "node:crypto";
 
-import { MEMORY_TYPES, createMemoryStore } from "./store.js";
-import {
-	MEMORY_READ_DESCRIPTION,
-	MEMORY_READ_PARAM_NAME,
-	MEMORY_WRITE_DESCRIPTION,
-	MEMORY_WRITE_PARAM_CONTENT,
-	MEMORY_WRITE_PARAM_DESCRIPTION,
-	MEMORY_WRITE_PARAM_NAME,
-	MEMORY_WRITE_PARAM_TYPE,
-	renderInjection,
-	renderOversizeWarning,
-} from "./prompt.js";
+import z from "@deepseek-ai/schemastery";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
+
+import { createMemoryStore } from "./store.js";
+import { joinSections, renderSections } from "./prompt.js";
 
 export const name = "clam-memory";
 
 // `settings` **不在**这张表里：它走 apply 内部的运行时嵌套 inject（见下），
 // 缺席时插件照常挂载，只是没有那一格设置界面。静态 inject 的语义是"服务不在就
 // 整个插件不挂载"，而记忆的全部价值与设置界面无关。
-export const inject = ["systemPrompt", "tools"];
+//
+// **`tools` 也不在**：2026-08-30 删掉了 `memory_read` / `memory_write` 两个专用
+// 工具，模型改用 dsh 自带的 `read` / `write` / `edit` / `grep` 直接操作记忆文件
+// （它们本来就是普通 markdown）。理由与代价见 README「为什么没有专用工具」。
+//
+// **`systemPrompt` 也不在了**：注入换成 C 通道（`ctx.on("agent/pre-step")`），
+// 不再经 `systemPrompt.context()`。`agents` 与范本 `dsh-tool-skill` 一致——
+// 没有 agent 子系统就没有会话，也就没有"哪个项目的记忆"这回事。
+export const inject = ["agents"];
 
 export const Config = z.object({
 	// 编排表里给的缺省目的地。语义与设置 ns 的 `dir` 逐字相同（见 SETTINGS_SCHEMA）。
@@ -62,18 +70,24 @@ const SETTINGS_SCHEMA = z.object({
 		),
 });
 
-/** 注入项的名字。同一 layer 内唯一（dsh-system-prompt/lib/index.js:198 `contexts.insert`）。 */
-const CONTEXT_NAME = "clam-memory:index";
+/**
+ * 我们这条消息的 `source.kind`。
+ *
+ * Web UI 的 `contextProvenance` 对不认识的 kind 走 **default 分支，直接拿 kind 当标签**
+ * （dsh-client-runtime/lib/client.js:10443），所以界面上显示成
+ * `Context injection · clam-memory`——和 `CLAUDE.md`、`skill-catalog` 平起平坐。
+ * 源码注释明确说这是留给"更新的或外部的生产者"的向前兼容路径，不认识的值降级成
+ * 朴素展示而**不是丢掉那一行**。
+ */
+const SOURCE_KIND = "clam-memory";
 
 /**
- * 注入项的排序。
- *
- * dsh 现存住户：`sandbox:policy`=110、`approval:policy`=115、**`subagent:delegation`=120**
- * （dsh-subagent/lib/index.js:572，只注册在子代理的 childCtx 上）。计划里写的 120 会在
- * 子代理会话里与它撞成并列——`sort` 稳定，不会报错，但先后就成了注册顺序的副产物。
- * 取 125 让它无歧义地排在最后：记忆是最"软"的那一段，放在策略之后读着也对。
+ * `source.form`。`"snapshot"` 在 UI 的 `KNOWN_FORMS` 白名单里
+ * （dsh-client-runtime/lib/client.js:10452），于是走 `SnapshotBody`：把
+ * `source.sections` 渲染成 `<dl>`，每段一个 `<dt>`（段名）+ `<dd>`（正文），
+ * 顶上还有一句「取代先前的快照」——正是我们的语义（整表替换，不是增量）。
  */
-const CONTEXT_ORDER = 125;
+const SOURCE_FORM = "snapshot";
 
 /**
  * `ctx.logger` 在 `dsh web` 下没有 exporter，消息只进环形缓冲、终端一个字看不见
@@ -100,7 +114,7 @@ function cwdOf(agent) {
 }
 
 /**
- * @param {object} ctx cordis 上下文（已注入 systemPrompt / tools）。
+ * @param {object} ctx cordis 上下文（已注入 agents）。
  * @param {{ dir: string }} config 编排表给的配置。
  */
 export function apply(ctx, config) {
@@ -152,208 +166,75 @@ export function apply(ctx, config) {
 		scope.watch((next) => adopt(next));
 	});
 
-	// ── 注入：走 B（`systemPrompt.context()`）────────────────────────────
+	// ── 注入：走 C（`agent/pre-step` 里自己发一条 durable user 消息）────────
 	//
-	// 计划 §2.6 D1 的裁决。B 落成会话历史里的 durable user 快照，框架白送四件事：
-	// 去重（文本没变返回 undefined）、取代（"supersedes earlier runtime-context
-	// snapshots"）、清空（CLEARED 墓碑）、**resume 后从 session events 恢复基线**。
-	// 所以这里**不要**自己写 digest、也不要去扫 `agent.session.events`——
-	// skill catalog 那套（走 C）之所以要自己写，只因为它的快照源是异步的，我们不是。
+	// 为什么不是 B（`systemPrompt.context()`）：B 把所有贡献者**合并成一条**署名
+	// `@deepseek-ai/dsh-system-prompt` 的快照（`joinContextSections`），界面上我们
+	// 没有自己的名字，只能作为其中一个 `sections` 条目存在。走 C 才能像 CLAUDE.md
+	// （kind=agent-instructions）与 skill-catalog（kind=skill-catalog）那样独立成行。
+	// 代价是 B 白送的四件事要自己写，下面逐一对应：
+	//   去重/取代 → digest 比对 + 替换 existing；清空 → 目录空了照发（内容变成
+	//   "no memories yet"）；**resume 后恢复基线 → `memoryHistory` 倒扫
+	//   `agent.session.events`**，不依赖任何进程内缓存。
 	//
-	// **`text` 是同步的**（dsh-system-prompt/lib/index.js:271,278 —— assemble 里
-	// `typeof entry.text === "function" ? entry.text(context) : entry.text`，没有 await），
-	// 所以这里**绝不能做 IO**：只读 store 的内存缓存。
-	ctx.systemPrompt.context({
-		name: CONTEXT_NAME,
-		order: CONTEXT_ORDER,
-		text: (assembleContext) => {
-			// `context.agent` 可能缺席（诊断装配、裸 `assemble()`）。没有会话就没有
-			// cwd，也就没有"哪个项目的记忆"这回事——整段消失。
-			const agent = assembleContext?.agent;
-			if (agent === undefined) return "";
-			try {
-				const cwd = cwdOf(agent);
-				const index = store.index(cwd);
-				// 返回 "" = 这一段整体消失（renderContextSections 过滤空文本）。
-				// 计划 §0 不变量 3：记忆目录为空时**零注入**，不留空壳标签。
-				return renderInjection({
-					pinned: store.pinned(cwd),
-					entries: index?.entries ?? [],
-					truncated: index?.truncated ?? null,
-				});
-			} catch (error) {
-				// 装配失败会赔掉整个 agent step。记忆是可选的锦上添花，**绝不能**
-				// 因为一个坏掉的 frontmatter 让人连话都说不了：吞掉、报到 stderr、
-				// 这一步当作没有记忆。
-				noteOnce(ctx, error);
-				return "";
-			}
-		},
+	// 四条设计逐条抄自 `dsh-tool-skill`（计划 §1.2）：digest 算在**结构化事实**上
+	// 而不是渲染后的散文、消息带结构化 `source`、基线从 session events 得到、
+	// 整表替换而不是 diff。
+	//
+	// 这里**可以做 IO**（hook 是 async），不像 B 的 `text` 那样被同步性捆住——
+	// 但 store 本来就是同步的，照用不误。
+	ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
+		const decision = await next();
+		if (decision.kind === "reject") return decision;
+		signal.throwIfAborted();
+
+		let sections;
+		let digest;
+		try {
+			const cwd = cwdOf(agent);
+			// 目录必须存在：模型是用普通 `write` 工具往里写的，而注入文本里那句
+			// "The directory already exists; do not create it" 得是真的。
+			const dir = store.ensureDir(cwd);
+			const index = store.index(cwd);
+			const snapshot = {
+				dir,
+				pinned: store.pinned(cwd),
+				entries: index?.entries ?? [],
+				truncated: index?.truncated ?? null,
+			};
+			sections = renderSections(snapshot);
+			digest = digestSnapshot(snapshot);
+		} catch (error) {
+			// 一个坏掉的 frontmatter 绝不能赔掉整个 agent step：吞掉、报到 stderr、
+			// 这一步当作没有记忆（decision 原样放行）。
+			noteOnce(ctx, error);
+			return decision;
+		}
+		// 空数组只发生在没有会话、因而没有 cwd 的时候。**记忆为空不在此列**：
+		// 那时仍有维护段，它是模型知道"有记忆这回事"的唯一信号。
+		if (sections.length === 0) return decision;
+
+		const history = memoryHistory(agent);
+		const existing = existingMessage(decision.messages);
+
+		// 历史里可见的那条已经是这份内容 → 不重发；顺手撤掉本次多出来的那条。
+		if (history.visibleDigest === digest) {
+			return existing === undefined
+				? decision
+				: { kind: "enter", messages: decision.messages.filter((message) => message.id !== existing.message.id) };
+		}
+		// 本次 decision 里已经有一条同内容的 → 什么都不用做。
+		if (existing !== undefined && existing.digest === digest) return decision;
+
+		const message = renderMemoryMessage(sections, digest);
+		return {
+			kind: "enter",
+			messages:
+				existing === undefined
+					? [...decision.messages, message]
+					: decision.messages.map((item) => (item.id === existing.message.id ? message : item)),
+		};
 	});
-
-	// ── 工具 ──────────────────────────────────────────────────────────────
-	//
-	// 参数 schema 是 dsh 自己的 `ParameterSchemaSpec` DSL：每个属性
-	// `{ type, required?, description, enum? }`，显式 object 必须写
-	// `additionalProperties`。**不是** schemastery，**不是**裸 JSON Schema。
-	// `output` 是强制的：`execute` 返回 canonical JSON，registry 校验冻结后
-	// 由 `render` 投成模型真正看到的文本。
-	// description 与 parameters **自动**进 prompt，这里什么都不用做。
-
-	ctx.tools.register(
-		defineTool({
-			name: "memory_read",
-			description: MEMORY_READ_DESCRIPTION,
-			parameters: {
-				name: {
-					type: "string",
-					required: true,
-					description: MEMORY_READ_PARAM_NAME,
-				},
-			},
-			output: {
-				schema: {
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						found: { type: "boolean", required: true },
-						name: { type: "string", required: true },
-						description: { type: "string" },
-						type: { type: "string" },
-						content: { type: "string" },
-					},
-				},
-				render: (_args, value) => [
-					{
-						type: "text",
-						text: value.found
-							? `Memory \`${value.name}\`${value.type ? ` (${value.type})` : ""}\n\n${value.content ?? ""}`
-							: `No memory named \`${value.name}\`. Names must match the memory index exactly.`,
-					},
-				],
-			},
-			execute(args, exec) {
-				const record = store.read(args.name, cwdOf(exec.agent));
-				if (record === undefined) return Promise.resolve({ found: false, name: args.name });
-				return Promise.resolve({
-					found: true,
-					name: record.name,
-					...(record.description === undefined ? {} : { description: record.description }),
-					...(record.type === undefined ? {} : { type: record.type }),
-					content: record.content ?? "",
-				});
-			},
-			presentCall: (args) => ({
-				card: "generic",
-				title: `Read memory ${args.name}`,
-				kind: "read",
-				rawInput: args,
-			}),
-		}),
-	);
-
-	ctx.tools.register(
-		defineTool({
-			name: "memory_write",
-			description: MEMORY_WRITE_DESCRIPTION,
-			parameters: {
-				name: { type: "string", required: true, description: MEMORY_WRITE_PARAM_NAME },
-				description: {
-					type: "string",
-					required: true,
-					description: MEMORY_WRITE_PARAM_DESCRIPTION,
-				},
-				type: {
-					type: "string",
-					required: true,
-					enum: [...MEMORY_TYPES],
-					description: MEMORY_WRITE_PARAM_TYPE,
-				},
-				content: { type: "string", required: true, description: MEMORY_WRITE_PARAM_CONTENT },
-			},
-			// **没有 `pinned` 参数，这是设计**（计划 §2.6 D3）：pinned 决定什么被全文
-			// 常驻注入，那是人的决定，模型写不了。ETH 那条证据（模型生成的常驻上下文
-			// 可能是负收益）说的正是这件事——索引行错了只值一行，pinned 全文错了不止。
-			//
-			// **也没有 `memory_delete`**（计划 §2.4）：删除不可逆，而"这条过时了"是本
-			// 设计里模型判断最没把握的一环。过时就同名 `memory_write` 覆盖；真要删，
-			// 用户那边是一条 `rm`。
-			output: {
-				schema: {
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						name: { type: "string", required: true },
-						bytes: { type: "integer", required: true },
-						created: { type: "boolean", required: true },
-						dir: { type: "string", required: true },
-						// 超过召回显示上限时才有。**写入照样成功**——见 execute。
-						warning: { type: "string" },
-					},
-				},
-				render: (_args, value) => [
-					{
-						type: "text",
-						text:
-							`${value.created ? "Created" : "Replaced"} memory \`${value.name}\` ` +
-							`(${value.bytes} bytes) in ${value.dir}. ` +
-							"It will appear in the memory index of future sessions in this project." +
-							(value.warning ? `\n\n${value.warning}` : ""),
-					},
-				],
-			},
-			execute(args, exec) {
-				// 写入要盖 `originSessionId`，没有会话就没有作者——fails loud，
-				// 和 `todo_write` 对无主调用的处理同款。
-				if (!exec.agent) throw new Error("memory_write requires an owning agent session");
-				const cwd = cwdOf(exec.agent);
-				const existed = store.read(args.name, cwd) !== undefined;
-				// slug / description 非空 / type 枚举的校验全在 store 里；
-				// 违规它自己抛，错误经正常的 tool-error 路径回到模型面前。
-				// `modified` / `originSessionId` / `node_type` 由 store 盖，不由模型写
-				// （计划 §2.2），`pinned` 出现在 rec 里会被它当场拒（D3）。
-				// store.write 自己 invalidate，所以刚写完的那条下一步就在索引里了
-				// ——不然模型会以为写失败、再写一遍。
-				const written = store.write(
-					{
-						name: args.name,
-						description: args.description,
-						type: args.type,
-						content: args.content,
-						sessionId: exec.agent.session?.header?.id ?? exec.agent.id,
-					},
-					cwd,
-				);
-				// **4096 是"召回显示上限"，不是"写入上限"**——实测本机 190 条真实
-				// Claude 记忆里 29 条（15%）超过它，最大 13 KB。硬拒绝会让我们连
-				// Claude Code 自己写下的大记忆都改不动（"claude" 模式是读写同一份）。
-				// 所以超限**写入照样成功**，只在回执后面附一句"你以后看不到后面那段"。
-				const recallLimit = store.limits?.recordBytes ?? 4096;
-				const warning =
-					typeof written.warning === "string"
-						? written.warning
-						: written.bytes > recallLimit
-							? renderOversizeWarning(written.bytes, recallLimit)
-							: undefined;
-				return Promise.resolve({
-					// 报 store 数出来的字节（**整个文件**，含 frontmatter），因为
-					// 召回上限量的就是它——报正文长度会让模型对着一个和上限
-					// 不同量纲的数字做取舍。
-					name: written.name,
-					bytes: written.bytes,
-					created: !existed,
-					dir: store.resolveDir(cwd),
-					...(warning === undefined ? {} : { warning }),
-				});
-			},
-			presentCall: (args) => ({
-				card: "generic",
-				title: `Remember ${args.name}`,
-				kind: "other",
-				rawInput: { name: args.name, description: args.description, type: args.type },
-			}),
-		}),
-	);
 
 	note(ctx, `已挂载（目录：${dir === "" ? "dsh 自持" : JSON.stringify(dir)}）`);
 }
@@ -371,4 +252,83 @@ function noteOnce(ctx, error) {
 	if (message === lastInjectionError) return;
 	lastInjectionError = message;
 	note(ctx, `装配记忆索引失败，本步跳过记忆：${message}`);
+}
+
+/**
+ * 快照的身份，算在**结构化事实**上而不是渲染后的散文。
+ *
+ * 抄 `dsh-tool-skill` 的 `digestCatalogEntries`，它的注释解释了为什么：信封文案是
+ * 写给模型的，改文案不该导致每个在跑的会话都重发一遍记忆。变的是事实——目录、
+ * pinned 的正文、索引条目、截断状态。
+ *
+ * @param {{ dir: string, pinned: Array<object>, entries: Array<object>, truncated: object|null }} snapshot
+ * @returns {string} sha256 hex。
+ */
+function digestSnapshot(snapshot) {
+	const canonical = JSON.stringify([
+		snapshot.dir,
+		snapshot.pinned.map((memory) => [memory.name, memory.content]),
+		snapshot.entries.map((entry) => [entry.name, entry.description]),
+		snapshot.truncated,
+	]);
+	return createHash("sha256").update(canonical).digest("hex");
+}
+
+/**
+ * 从一条消息的 source 里读回 digest。
+ *
+ * **这里存 digest 而不是像 skill-catalog 那样存结构化 entries**：pinned 是**全文**，
+ * 少则几百字节多则几 KB，而 `content` 里已经有一份——再存一遍等于把每条消息撑成
+ * 两倍。sections 仍然在 source 里（UI 要用它分段），所以"真相在 source 里"这条没丢。
+ *
+ * 读不出来就当"不是我们的消息"而不是抛：`agent.session.events` 可能是 resume、
+ * fork 或外部写入的种子，种子校验只保证 source 是个 kind 非空的对象。在 step
+ * 监听器里抛会让那个会话之后每一轮都失败。
+ */
+function readDigest(source) {
+	if (typeof source !== "object" || source === null) return undefined;
+	const digest = source.digest;
+	return typeof digest === "string" && digest !== "" ? digest : undefined;
+}
+
+/**
+ * 从会话事件里恢复基线：**最近一条仍然可见的**本插件消息的 digest。
+ *
+ * 倒扫是为了拿最近的那条；`session.surface.nodes` 是当前可见的 seq 集合——被压缩
+ * 藏起来的旧消息不算数，那时应当重发。跨 resume 幂等，不依赖任何进程内状态。
+ */
+function memoryHistory(agent) {
+	const visible = new Set(agent.session.surface.nodes);
+	const events = agent.session.events;
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		const event = events[index];
+		if (event.type !== "user/message" || event.data?.source?.kind !== SOURCE_KIND) continue;
+		const digest = readDigest(event.data.source);
+		if (digest === undefined) continue;
+		if (visible.has(event.seq)) return { visibleDigest: digest };
+	}
+	return {};
+}
+
+/** 本次 decision 里已有的本插件消息（同一 step 内可能已经加过一条）。 */
+function existingMessage(messages) {
+	for (const message of messages) {
+		if (message.source?.kind !== SOURCE_KIND) continue;
+		const digest = readDigest(message.source);
+		if (digest !== undefined) return { message, digest };
+	}
+	return undefined;
+}
+
+/**
+ * 造那条 durable user 消息。
+ *
+ * `content` 是模型读到的整段；`source.sections` 是同一份内容的分段形态，供 Web UI
+ * 逐段展示（每段一个 `<dt>`/`<dd>`）。两者由 `joinSections` 保证同源。
+ */
+function renderMemoryMessage(sections, digest) {
+	return createUserMessage({
+		content: [{ type: "text", text: joinSections(sections) }],
+		source: { kind: SOURCE_KIND, form: SOURCE_FORM, sections, digest },
+	});
 }

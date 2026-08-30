@@ -1,4 +1,4 @@
-// clam-memory 路径决议与路径加固的单测。零依赖，`node --test`。
+// clam-memory 路径决议的单测。零依赖，`node --test`。
 //
 //   node --test clam-memory/test/*.test.js
 //
@@ -12,18 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import {
-	dshHome,
-	expandHome,
-	fileFor,
-	gitRootFor,
-	memoryDirFor,
-	mkdirp700,
-	NAME_MAX,
-	resolveInside,
-	slugFor,
-	validateName,
-} from "../lib/paths.js";
+import { dshHome, expandHome, gitRootFor, memoryDirFor, mkdirp700, slugFor } from "../lib/paths.js";
 
 function tmpRoot(tag) {
 	return fs.mkdtempSync(path.join(os.tmpdir(), `clam-memory-${tag}-`));
@@ -100,54 +89,6 @@ test("dir 是别的值 → 当绝对路径用，展开前导 ~", () => {
 });
 
 // ── 路径加固 ─────────────────────────────────────────────────────────────────
-
-test("符号链接逃逸被拒（前缀比较挡不住它）", () => {
-	const root = fs.realpathSync(tmpRoot("escape"));
-	const mem = path.join(root, "memory");
-	const outside = path.join(root, "outside");
-	fs.mkdirSync(mem);
-	fs.mkdirSync(outside);
-	fs.writeFileSync(path.join(outside, "secret.md"), "boo\n");
-
-	// 这两个的**字符串前缀**都在 mem 底下，只有解完链接才看得出来它们不在。
-	fs.symlinkSync(path.join(outside, "secret.md"), path.join(mem, "escape.md"));
-	fs.symlinkSync(outside, path.join(mem, "away"));
-
-	assert.throws(() => resolveInside(mem, "escape.md"), /Path escape/);
-	assert.throws(() => resolveInside(mem, "away/secret.md"), /Path escape/);
-	assert.throws(() => resolveInside(mem, "../outside/secret.md"), /Path escape/);
-	assert.throws(() => resolveInside(mem, "."), /resolves to the memory directory itself/);
-
-	// 正常的、还不存在的文件应当解得出来（realpathDeep 要能处理不存在的尾巴）
-	assert.equal(resolveInside(mem, "ok.md"), path.join(mem, "ok.md"));
-});
-
-test("fileFor 拼出 <root>/<name>.md 并带上校验", () => {
-	const root = fs.realpathSync(tmpRoot("filefor"));
-	assert.equal(fileFor(root, "build-notes"), path.join(root, "build-notes.md"));
-	assert.throws(() => fileFor(root, "Bad Name"), /may only contain lowercase/);
-});
-
-test("validateName 的每条拒绝理由", () => {
-	assert.equal(validateName("build-notes_2"), "build-notes_2");
-
-	assert.throws(() => validateName(""), /cannot be empty/);
-	assert.throws(() => validateName(undefined), /cannot be empty/);
-	assert.throws(() => validateName("a\0b"), /null byte/);
-	assert.throws(() => validateName("a/b"), /path separator/);
-	assert.throws(() => validateName("a\\b"), /path separator/);
-	assert.throws(() => validateName(".."), /\.\./);
-	assert.throws(() => validateName("../etc/passwd"), /path separator|\.\./);
-	assert.throws(() => validateName(".hidden"), /cannot start with/);
-	// 保留名：防模型覆盖 Claude 目录里那个被废弃的磁盘索引
-	assert.throws(() => validateName("MEMORY"), /reserved name/);
-	assert.throws(() => validateName("memory"), /reserved name/);
-	assert.throws(() => validateName("x".repeat(NAME_MAX + 1)), /at most 60 characters/);
-	assert.equal(validateName("x".repeat(NAME_MAX)).length, NAME_MAX);
-	assert.throws(() => validateName("UPPER"), /may only contain lowercase/);
-	assert.throws(() => validateName("has space"), /may only contain lowercase/);
-	assert.throws(() => validateName("dot.name"), /may only contain lowercase/);
-});
 
 test("mkdirp700 逐级 0o700（recursive+mode 只管叶子）", () => {
 	const root = fs.realpathSync(tmpRoot("mkdir"));
