@@ -31,8 +31,16 @@ final class BackendManager {
     enum Unavailable: Equatable, Sendable {
         /// login shell 里都找不到 `dsh`。**不代装**，只如实说缺什么。
         case missingRuntime
-        /// 已经有一个后端在管这个 profile（附上它是谁）。
+        /// 已经有一个后端在管这个 profile，而且**探得通**（附上它是谁）。
         case externalBackend(String)
+        /// 有人在管这个 profile，但此刻**连不上**（附上它是谁）。
+        ///
+        /// 和上一态分开，是因为对用户而言这是两件相反的事：上一态说"不用你管了"，
+        /// 这一态说"它在，只是还没就绪"。**混成一句是实打过的坑**：常驻 daemon
+        /// 活着、发现文件却被同 profile 的另一个 dsh 覆盖后带走，壳既发现不了它、
+        /// 又因为"daemon 在跑"拒绝 spawn，而界面上写的是"后端已在运行，无需托管"
+        /// ——用户面前明明是一个都没连上的引导页，那句话把人指向了完全错误的方向。
+        case externalBackendUnreachable(String)
         /// spawn 本身失败（posix_spawn 报错、命令拼不出来）。
         case launchFailed(String)
 
@@ -41,6 +49,7 @@ final class BackendManager {
             switch self {
             case .missingRuntime: return "missingRuntime"
             case .externalBackend: return "externalBackend"
+            case .externalBackendUnreachable: return "externalBackendUnreachable"
             case .launchFailed: return "launchFailed"
             }
         }
@@ -49,6 +58,7 @@ final class BackendManager {
             switch self {
             case .missingRuntime: return "login shell 里找不到 dsh"
             case .externalBackend(let who): return "已由外部管理：\(who)"
+            case .externalBackendUnreachable(let who): return "已由外部管理但探不通：\(who)"
             case .launchFailed(let why): return why
             }
         }
@@ -230,8 +240,8 @@ final class BackendManager {
             guard generation == self.launchToken else { return }
             if let external {
                 self.launching = false
-                Log.write("不 spawn：\(external)", to: ClamPaths.logURL, tag: "backend")
-                self.setState(.unavailable(.externalBackend(external)))
+                Log.write("不 spawn：\(external.detail)", to: ClamPaths.logURL, tag: "backend")
+                self.setState(.unavailable(external))
                 return
             }
             // ② 命令。探不到 dsh 就如实说缺什么，不盲拉。
@@ -394,8 +404,17 @@ final class BackendManager {
             return SpawnPlan(command: "cd \(quote(worktree)) && exec ./dev",
                              describe: "\(worktree)/dev")
         }
-        return SpawnPlan(command: "exec \(quote(dsh)) --profile surfclam --port 0 --no-open",
-                         describe: "\(dsh) --profile surfclam")
+        // **Release 壳必须把形态传给后端**：`CLAM_RELEASE=1` 原先由常驻
+        // LaunchAgent 的 plist 提供，那个 daemon 退役之后就没人设它了。缺了它
+        // clam-app 会按 dev 形态跑——构建 Debug 产物、**再拉起一个
+        // Surfclam Dev**（实测：双击 /Applications 里的 Release，屏幕上却多出
+        // 一个 Dev 窗口，两个壳连着同一个后端）。
+        // 走 `env` 而不是 `VAR=x exec`：exec 是特殊内建，前缀赋值的语义微妙，
+        // 显式一层 env 没有歧义。
+        let cmd = isDevShell
+            ? "exec \(quote(dsh)) --profile surfclam --port 0 --no-open"
+            : "exec /usr/bin/env CLAM_RELEASE=1 \(quote(dsh)) --profile surfclam --port 0 --no-open"
+        return SpawnPlan(command: cmd, describe: "\(dsh) --profile surfclam")
     }
 
     /// `<worktree>/clam-app/host` → `<worktree>`。Release 安装包为 nil。
@@ -434,14 +453,20 @@ final class BackendManager {
     // MARK: - 查重（计划 §1.11：同 profile 的两个 dsh 会互抹发现文件）
 
     /// 已经有人在管这个 profile 吗？返回非 nil = 别 spawn，那句话直接进日志。
-    private static func externalBackend() async -> String? {
+    ///
+    /// **带可达性分类**：两条判据强弱不同，混成一个 `String?` 就没法说人话
+    /// （见 `Unavailable.externalBackendUnreachable`）。
+    private static func externalBackend() async -> Unavailable? {
         // 两条一起跑（都是几十毫秒的外部调用）。**先报端点**：那是"确实有个活的
         // 后端在这个 profile 上"的硬事实，日志里带着地址与 pid，比一个 daemon
-        // 标签好查得多。daemon 那条兜的是"装了但端点还没出现"的时间窗。
+        // 标签好查得多。daemon 那条兜的是"在跑但端点还没出现（或者不见了）"。
         async let endpoint = healthyOwnEndpoint()
         async let daemon = launchAgentRunning()
-        if let endpoint = await endpoint { return endpoint }
-        return await daemon
+        if let endpoint = await endpoint { return .externalBackend(endpoint) }
+        // 走到这儿 = 一个健康的 isOwn 端点都没有。daemon 仍在跑的话，
+        // 它就是"在，但连不上"——绝不能报成"无需托管"。
+        if let daemon = await daemon { return .externalBackendUnreachable(daemon) }
+        return nil
     }
 
     /// release 形态那个常驻 LaunchAgent（`docs/release-install-plan.md`）。

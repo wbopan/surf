@@ -105,8 +105,12 @@ struct L {
 
     // 引导连接页
 
-    var connIdleTitle: String { t("尚未连接后端", "Not Connected") }
+    /// **产品名可以出现**（用户点名要 dsh 这个词）：要藏的是 worktree / profile
+    /// 这类开发流程词汇，不是被连的那个东西自己的名字。
+    var connIdleTitle: String { t("尚未连接 dsh 后端", "No dsh Backend Connected") }
     var connSearching: String { t("正在查找本机的后端…", "Looking for a backend on this Mac…") }
+    /// 发现列表右上角那一行。整屏只剩这一处转圈（M7 起标题区不再有 spinner）。
+    var connSearchingShort: String { t("正在查找…", "Searching…") }
     /// 有明确目标（手敲的地址 / 钉死的 URL）却连不上时替掉转圈那一行。
     func connUnreachable(_ address: String) -> String {
         t("无法连接到 \(address)", "Can't reach \(address)")
@@ -141,6 +145,12 @@ struct L {
     var connManagedExternal: String {
         t("后端已在运行，无需托管。", "A backend is already running — no need to manage one.")
     }
+    /// 有人在管这个 profile，但探不通。**别写成上面那句**：用户面前是一个都没
+    /// 连上的引导页，"无需托管"会把人指向完全错误的方向。如实说它在、还连不上。
+    var connManagedExternalUnreachable: String {
+        t("后端在运行，但还连不上。",
+          "A backend is running but is not reachable yet.")
+    }
     var connManagedFailed: String {
         t("后端启动失败，详见日志。", "The backend failed to start — see the log.")
     }
@@ -158,6 +168,13 @@ struct L {
     /// `moment` 是格式化好的时刻（"30 分钟前" / "昨天 20:14"）。
     func connStartedAt(_ moment: String) -> String { t("\(moment)启动", "started \(moment)") }
     var connConnect: String { t("连接", "Connect") }
+
+    /// 面板底部那枚复选框：**它就是 `clam.connection.mode == auto` 的投影**，
+    /// 不是"这一次要不要自动"。勾上当场接入，取消清回未设置。
+    var connAutoAdopt: String { t("自动接入发现的后端", "Automatically join a discovered backend") }
+    /// 面板下方那枚复选框：管本次动作落不落盘（托管例外，它本就必须落）。
+    var connRememberDefault: String { t("设为默认方式", "Make This the Default") }
+    var connRememberDefaultHint: String { t("下次打开时直接使用", "Used directly next time you open the app") }
 
     var connFooterDiagnostics: String { t("诊断面板 ⌥⌘D", "Diagnostics ⌥⌘D") }
     var connFooterLogs: String { t("打开日志目录", "Open Logs") }

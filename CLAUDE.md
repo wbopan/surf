@@ -28,9 +28,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 dev                一行启动本 worktree 的整套 surfclam（薄封装，逻辑在 surfclam/bin/surfclam.js）
+release            把本机装成常驻正式形态（同一个 js 的 --release 路径；只在主 worktree 可用）
 surfclam/          伞 bundle `@wenbo/surfclam`：**本仓库唯一的编排表**，不含运行时代码
   cordis.patch.yml 装哪些插件、什么顺序、什么配置——改编排只改这里
-  bin/surfclam.js  安装器 + 开发启动器（registry / link 两种模式自动判别）
+  bin/surfclam.js  安装器 + 开发启动器 + 本机安装器（registry / link / release 三条路径）
 clam-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
   lib/index.js     node 半边（inject webServer）
   host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/
@@ -73,9 +74,13 @@ clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通�
                    经 apiProxy.respond 回去，先到先得）；Swift 只管发通知、判"要不要
                    打扰"、报"人在看哪个会话"。它同时是**「有什么在等着你」的唯一真相**
                    ——经 `clamPending` 服务供给 clam-sidebar 那枚「待处理」胶囊
-clam-settings/     原生设置窗口：不占槽、自己一扇窗；四栏编排照抄 dsh Web 设置对话框。
+clam-settings/     原生设置窗口：不占槽、自己一扇窗；前四栏编排照抄 dsh Web 设置对话框。
                    数据面在 dsh 进程里直接消费 ctx.settings / llm / credentials /
-                   agentPresets / pluginInventory（权威计划 docs/clam-settings-plan.md）
+                   agentPresets / pluginInventory（权威计划 docs/clam-settings-plan.md）。
+                   **第五栏「连接」不来自 Web**：它管的是壳去连谁（UserDefaults
+                   `clam.connection.*` + 粘性主题 `clam.connection.state`），
+                   dsh 不知道有这回事；只写盘不当场切，改完给一颗「立即重启」
+                   （emit `clam.app.relaunch`，壳自我重启）
 clam-nativeify/    让 dsh Web UI 摸起来像原生 App。**三半边**：client 半边是主力
                    （禁橡皮筋、禁选中、原生字体度量、按钮玻璃表面——四态：浅/深 ×
                    窗口激活/失活；HEADER 段把 web header 调成 macOS 27 工具栏形态
@@ -120,6 +125,51 @@ profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。clam-a
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
 `dsh --profile surfclam --no-open` 仍然可以直接用——`./dev` 只是替你把安装那步做了。
+
+### `./release`：装成本机常驻的正式形态
+
+`./dev` 是"开着终端才有"的开发形态。想让这台机器上**随时双击就能用**，在主
+worktree 跑（权威计划 `docs/release-install-plan.md`）：
+
+```sh
+./release              # Release 壳进 /Applications + 常驻 dsh（LaunchAgent），装完 open 一次
+./release --status     # daemon / plist / endpoint / App 各在什么状态
+./release --stop       # 停掉常驻 dsh（plist 留着）
+./release --start      # 再起回来
+./release --uninstall  # 停掉 + 删 plist + 删 /Applications/Surfclam.app（~/.dsh 数据不动）
+```
+
+它复用 `./dev` 的全部安装函数，只是装完之后**把 dsh 交给 launchd 而不是终端**：
+LaunchAgent `io.wenbo.surfclam.dsh` 跑 `dsh --profile surfclam --port 0 --no-open`，
+`RunAtLoad` + `KeepAlive`，日志在
+`<AppSupport>/io.wenbo.surfclam/logs/dsh-daemon.log`。
+
+**不设第二个 profile**：`surfclam` 就是本机安装的身份（会话与设置本来就是全局的，
+不随 profile 分片）。两种形态的差别由 plist 里的环境变量 `CLAM_RELEASE=1` 表达，
+clam-app 读到它就切成"配置用 Release、构建完装进 `/Applications`、从不自动拉起"
+——**编排表一字不改**。
+
+装好之后的开发循环，三行都不一样：
+
+| 改什么 | 常驻形态下怎么生效 |
+|---|---|
+| 插件的 `swift/` | 存盘即热替换，什么都不用做（桥盯 `swift/` 与这条路无关） |
+| **壳源码 `clam-app/host/`** | **daemon 自己重建**：Release 配置、编译仍在 worktree 的 `build/` 里，成功后装进 `/Applications/Surfclam.app`，正跑的窗口右上角挂「壳有新版本 · 重启」。**它不 quit 你的 App**——先拷到暂存名再换名就位，点不点归你 |
+| node 半边 / 编排表 | `launchctl kickstart -k gui/$(id -u)/io.wenbo.surfclam.dsh`，或者 `./release --stop` 回到 `./dev` |
+
+**改坏 node 半边时 `KeepAlive` 会进 10s
+一轮的重启循环**——症状全在 `dsh-daemon.log` 里，属预期行为，所以改 node 半边
+优先用侧 worktree 的 `./dev` 验。**加插件也算改编排表**：只往
+`cordis.patch.yml` 里添一行而没把包 link 进 profile，下一次 kickstart 就是
+`Cannot find package '@wenbo/clam-…'` 的重启循环（实测踩过）。
+
+`./release` 那条路本身不再多编一次：`build.sh` 收尾会顺手写下 `clam-app` 认的那份
+源码 hash marker（算法的唯一真相是 `clam-app/lib/source-hash.js`，bash 只负责把
+它吐出来的 hash 写进它吐出来的路径），所以装完再 kickstart 是**零次 xcodebuild**。
+
+**已知缺口**：那条提示条是壳的内存状态，**断连重连之后就没了**（桥不给后来者补发
+`app-build`，这条铁律见下）。所以"daemon 重启过一轮"之后，正跑的窗口有可能比
+`/Applications` 里的产物旧而界面上什么都不说——拿不准就 ⌘Q 再打开一次。
 
 ## 两个截然不同的开发循环
 
@@ -185,8 +235,15 @@ Debug 与 Release 是两个不同 App，可并存运行：
 `Sources/Resources/BuildTimestamp.txt`（**不入库**，随 bundle 打包）。
 Swift 里名字统一走 `AppInfo.displayName`（读 Info.plist，随 PRODUCT_NAME 变化）。
 
-**壳的 Debug/Release 差异用 `#if DEBUG`；插件里不行**——插件由壳在运行时用命令行 swiftc
-编译，没有 `-DDEBUG`，要判 Dev 就看 `Bundle.main.bundleIdentifier` 的 `.dev` 后缀。
+**判 Dev 一律看 `Bundle.main.bundleIdentifier` 的 `.dev` 后缀**——`#if DEBUG`
+在这个仓库里**两边都不成立**：插件由壳在运行时用命令行 swiftc 编译，没有 `-DDEBUG`；
+而壳自己的 project.yml **从来没设过 `SWIFT_ACTIVE_COMPILATION_CONDITIONS`**，
+所以连 Debug 产物里 `#if DEBUG` 整块也不存在（2026-08-29 实测：块内的字符串
+`strings <二进制>` 一条都查不到）。**现存三处因此是死代码**：WebView 的
+`isInspectable`（→ Safari 开发菜单里从来看不到本机页面）、连接页的 Dev 斜纹水印、
+`BackendManager` 的实测 flag（已改用 `.dev` 后缀判据）。要复活就在 project.yml 的
+`configs.Debug` 里补 `SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG`——**那会同时
+点亮上面三处**（斜纹会真的画出来），是个有视觉后果的决定，别顺手加。
 
 ## 看界面 / 驱动界面
 
@@ -367,13 +424,21 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-**`<AppSupport>/io.wenbo.surfclam/` 下的三样东西都已经按实例分片**，别再假设"日志只有一份"：
+**常驻的那套（`./release`）与主 worktree 的 `./dev` 互斥**，两边都会 fails loud：
+它们抢同一个 profile `surfclam`，也就抢同一份 endpoint 发现文件（一个 profile 一份、
+覆盖写），先起的那个会被后起的抹掉、再也接不到手动双击的壳。daemon 在跑时
+`./dev` 拦你并给两条出路（`./release --stop`，或直接用它 + `launchctl kickstart -k`）；
+前台 dsh 在跑时 `./release` 拦你。**侧 worktree 不受影响**——profile 名不同，天然并存，
+所以"常驻着用、侧 worktree 开发"是推荐的组合。
+
+**`<AppSupport>/io.wenbo.surfclam/` 下的四样东西都已经按实例分片**，别再假设"日志只有一份"：
 
 | 文件 | 分片键 | 不分片会怎样 |
 |---|---|---|
 | `endpoints/<profile>.json` | profile | 后启动的抹掉先启动的，被抹的那套再也接不到手动双击的壳 |
 | `logs/surfclam.<worktree>.log`（壳自己写） | **产物所在 worktree 目录名**（`ClamPaths.instanceTag` 从 bundle 路径里抠） | 两个 App 实例 bundle id 相同、追加写同一文件，**邻居 worktree 的插件编译错误混进你的日志**，长得和自己的一模一样 |
 | `logs/clam-app-build.<profile>.<配置>.log`（node 侧写） | profile | 这份是**覆盖写**：邻居一构建就把你整份换掉，终端指给你的路径里躺着别人的错误 |
+| `logs/managed-dsh.<worktree>.log`（托管的后端自己吐的） | 同壳日志（产物所在 worktree） | 两个实例托管的后端把 stdout 搅在一起，排"我这个后端为什么起不来"时读到的是别人家的栈 |
 
 壳的日志跟着**产物**分片而不是跟着连上的 dsh：断连重连可以换 dsh，跑的代码始终是自己那份。
 装到 `/Applications` 的 Release 全机只有一份，仍是无后缀的 `surfclam.log`。
@@ -419,27 +484,69 @@ npx @wenbo/surfclam
 ## 架构速览
 
 Swift/AppKit 壳 + WKWebView。**启动方向是反的**：`dsh web` 先起，其中的 clam-app 插件
-构建并拉起 App；App 是 dsh 的客户端外设。App 三级定位 dsh：`--clam-endpoint` flag
-（插件拉起时传入）→ endpoint 发现文件（`<AppSupport>/io.wenbo.surfclam/endpoints/<profile>.json`，
-插件写、退出删；**一个 profile 一份**，壳这边是扫目录取候选而不是读单文件）→
-都没有 = 引导页。2s 轮询兼管断连发现与自动重连。
+构建并拉起 App；App 是 dsh 的客户端外设。**"我此刻连着谁"的唯一真相是
+`clam-app/host/Sources/Native/ConnectionController.swift`**（显式状态机，六幕 +
+失败分类；权威计划 `docs/clam-connection-plan.md`），`MainWindowController` 只是
+它的消费者。定位顺序：**用户当场点的一次性目标**（连接页上的"连接"/敲地址，不落盘）
+→ `--clam-endpoint` flag（插件拉起时传入）→ **连接偏好** `clam.connection.mode`
+（**没设过这个键 = `managed`**，2026-08-30 起——后端的生命周期归壳管，不该要
+用户先在引导页上点一下。`unset` 这一档仍在（手动写坏值也退 managed，见
+`ConnectionController.fallbackMode`）：它的语义是发现照跑、列表照显但**绝不自动
+接入**；`auto` 是"扫描并择优接入"，`fixed` 钉死 `clam.connection.fixedURL`，
+`managed` 托管。改它的地方有两处：引导页的两枚勾选框、
+设置窗口第五栏「连接」（后者只写盘、要重启才生效）。见 `docs/clam-contracts.md` §10.2）
+→ endpoint 发现文件
+（`<AppSupport>/io.wenbo.surfclam/endpoints/<profile>.json`，插件写、退出删；
+**一个 profile 一份**，壳这边是扫目录取候选而不是读单文件）→ 都没有 = 连接页。
+2s 轮询兼管断连发现与自动重连，**一轮把全部候选并行探完**（单个超时 1.5s，
+轮与轮不叠罗汉）。
 
-flag 永远最优先：它由拉起本进程的那个 dsh 亲手递来，多 worktree 并存时也只指向
-"我这一套"。发现文件是给手动双击起来的壳兜底的——**别删它**：用户 ⌘Q 之后 dsh
+没连上时铺满窗口的是**连接页**（`ConnectionViewController.swift`，SwiftUI 覆盖层，
+两页：引导连接 / 连接中断）。它**面向最终用户**——界面上一个 worktree / profile /
+pid / hash 都没有，一律称"后端"；那些开发者细节的去处是 ⌥⌘D 与日志。
+
+flag 压过偏好：它由拉起本进程的那个 dsh 亲手递来，多 worktree 并存时也只指向
+"我这一套"。（压不过用户当场点的那一下——那不是偏好，是一条指令。）
+发现文件是给手动双击起来的壳兜底的——**别删它**：用户 ⌘Q 之后 dsh
 不会再拉起 App（`launch` 只在 activate 时跑一次），双击是唯一的回来路径，而双击
 没有 flag。
 
 **没有 flag 时，候选先按"是不是我这一套"排，再按 `startedAt` 倒序。**
-判据是硬事实而不是名字推断：clam-app 把自己的 `clam-app/host` 绝对路径写进发现文件
-（`hostDir`），壳从自己的 bundle 路径算出同一个值比对（`ClamPaths.ownHostDir` ↔
-`ClamEndpoint.isOwn`）。只按 `startedAt` 排会**安静地连错**：双击起来的壳挑中邻居
+判据是硬事实而不是名字推断，两条任一成立即算（`ClamEndpoint.isOwn`，字段表见
+`docs/clam-contracts.md` §10.1）：发现文件里的 **`appPath`**（那个 dsh 期望伺候的
+App bundle）等于 `Bundle.main.bundlePath`，或 **`hostDir`**（那个 dsh 的
+`clam-app/host`）等于壳从自己 bundle 路径反推的 `ClamPaths.ownHostDir`。
+后者**对装到 `/Applications` 的 Release 壳必然失败**——那份 bundle 不在任何
+worktree 的 `build/Build/Products/` 之下，反推不出来；`appPath` 就是为它加的
+（`./release` 装出来的常驻形态全靠它）。只按 `startedAt` 排会**安静地连错**：双击起来的壳挑中邻居
 worktree 最近启动的那个 dsh，于是去编译**邻居的**插件源码——编译失败时那条错误
 原样落进自己的日志，读日志的人完全看不出它属于别人家（实测过，日志里冒出本
-worktree 根本没有的插件名）。自己那套没在跑时仍然会退到邻居（总比引导页有用），
+worktree 根本没有的插件名）。自己那套没在跑时仍然会退到邻居（总比连接页有用），
 但接入那行日志与 ⌥⌘D 都会标出「⚠️ 不是本 worktree 那一套」。
 
-**壳的职责一句话**：定位 dsh、连桥、编译装载插件、给 root 槽兜底、
-替网页把下载与外链落地。
+**托管形态**（偏好 `clam.connection.mode = managed`）：壳自己 spawn 一个后端并盯着它
+——`Native/BackendManager.swift` + `Native/ManagedProcess.swift`，语义照 Docker
+Desktop（打开即有、⌘Q 即退）。Dev 壳跑**本 worktree 的 `./dev`**、Release 壳跑
+`env CLAM_RELEASE=1 dsh --profile surfclam --port 0 --no-open`，都经 `zsh -lc`
+（GUI App 的 PATH 里没有 node）。**那个 `CLAM_RELEASE=1` 不能省**：它原先由常驻
+LaunchAgent 的 plist 提供，daemon 退役后没人设了，缺了它 clam-app 会按 dev 形态跑
+——构建 Debug 产物、**再拉起一个 Surfclam Dev**，于是双击 /Applications 里的
+Release 却多出一个 Dev 窗口（实测踩过），而且发现文件里的 `appPath` 指向 Dev 产物，
+壳认不出那是自己的后端（日志里那句「⚠️ 不是本 worktree 那一套」）。
+**spawn 之前一定先查重**：发现文件里 isOwn 的端点探得通、或
+`io.wenbo.surfclam.dsh` 那个常驻 LaunchAgent 在跑，就不 spawn——同一个 profile
+的两个 dsh 会互抹 endpoint 发现文件。子进程自成进程组，⌘Q 时 SIGTERM 整组、
+限时等 2s（`.terminateLater`）；意外退出退避重启 1s/4s/15s，连败就停下摊日志
+（`logs/managed-dsh.<worktree>.log`）。**连接归位不靠新机制**，还是那 2s 轮询。
+
+**"打开即有"不能只保证打开那一瞬**：`MainWindowController.start()` 里那句
+`backend.start()` 只在 App 启动时跑一次，后端事后消失（被 kill、机器睡醒）就再没
+人去拉它，壳只会永远停在断连页。补在 `ensureManagedBackend()`：幕一变成"要盖连接
+页"就喊一次托管（15s 节流，因为幕会在 connecting ↔ disconnected 之间来回跳）。
+BackendManager 自己那套退避管不了这一段——它只监护自己亲手 spawn 的子进程。
+
+**壳的职责一句话**：定位 dsh（`managed` 时还负责把它拉起来）、连桥、
+编译装载插件、给 root 槽兜底、替网页把下载与外链落地。
 
 - `clam-app/lib/index.js`：宿主插件。源码内容 hash 决定是否重建，marker 落
   `host/build/.clam-app-source-hash.<配置>`。
@@ -470,7 +577,9 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   这类事情用（`handle(hook:owner:version:_:)` 登记，壳侧 `dispatch` 派发，没人应答
   就走系统默认）。表里没有任何具体业务的词汇——第一个用户是通知，但 URL scheme、
   Dock 拖放、Services、NSUserActivity 都是同一个形状，**再来一个不需要改 SDK**。
-- `clam-app/host/Sources/Native/`：BridgeClient（WS）、CompilerService（内容寻址编译）、
+- `clam-app/host/Sources/Native/`：ConnectionController（连接状态机，见「架构速览」
+  开头）、BackendManager（托管后端；**眼下只有公共面，spawn 内核归 M4**，
+  `start()` 一律进 `.unavailable`）、BridgeClient（WS）、CompilerService（内容寻址编译）、
   NativePluginHost（dlopen + activate + 世代账）、GenerationLedger、ShellRootView（root 槽 +
   全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下条）、
   SystemDelegateRelay（占住系统 delegate，经 `ClamHooks` 转交插件，见下条）。
@@ -486,8 +595,12 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
   会话导出 ZIP 走 `<a download>`，正文 Markdown 外链 / 搜索来源 / trajectory 的
   "打开图片"都是 `target="_blank"`。归壳不归插件：逃生舱模式（layout 缺席）也得能下载。
   隔离验证台在 `docs/spikes/webpolicy/`（可复跑）。
-- `clam-app/host/Sources/MainWindowController.swift`：窗口、菜单、连接状态机、
+- `clam-app/host/Sources/MainWindowController.swift`：窗口、菜单、
   页内桥消息转 EventBus、壳自身构建的提示条。**没有业务 UI。**
+  **连接状态不住在这里**：它是 `ConnectionController` 的消费者，只接三个回调
+  （`onAttach` 装页面+连桥 / `onDetach` 停桥+停加载 / `onPhaseChange` 盖或撤连接页）。
+  连接页那一层挂在 `WindowDragRegionView` **之下**——覆盖层排在拖动条上面的话
+  标题栏就拖不动了（`isMovableByWindowBackground` 对 NSHostingView 不成立）。
   **壳里没有任何一条业务命令的名字**（曾经有整整一张会话菜单硬编码在四处）。
   业务菜单项由插件的 node 半边声明——`createSwiftPlugin({ commands: [...] })`，
   **形状的权威是 `clam-bridge/lib/plugin.js` 的 `CommandDeclaration` typedef**
@@ -529,6 +642,28 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
    隔离是同一个事实的两面。
 
 ## 踩坑记录
+
+- **launchd 的默认 PATH 只有 `/usr/bin:/bin`**，而 `dsh` 的 shebang 是
+  `#!/usr/bin/env node`——LaunchAgent 的 plist 里不显式给 `PATH`，daemon 就秒退，
+  `KeepAlive` 每 10s 重试一次，日志里只有一句 `env: node: No such file or directory`
+  （看上去像 dsh 坏了，其实它一次都没被执行到）。`./release` 写 plist 时把
+  **跑它的那个 node 的目录**（`dirname(process.execPath)`，必然可用）排在最前，
+  再补 `/opt/homebrew/bin` 与系统三条。另外 launchd 的 `Program*` **不走 PATH 查找**，
+  所以 dsh 自己的绝对路径是 `which dsh` 现场解析后写死进 plist 的。
+  同一族的第二个坑：**`bootout` 之后立刻 `bootstrap` 会撞竞态**
+  （"Bootstrap failed: 5: Input/output error"、"Service is in the process of exiting"），
+  旧进程还在收摊、label 还占着。小退避重试几次即可，别误判成 plist 写错了。
+- **换了 App 图标却还是旧图标，八成不是图标做错了，是 bundle 的 mtime 没变**：
+  两条安装路径（`build.sh` 与 clam-app 的 `installBuiltProduct`）都用 `ditto`，
+  而 `ditto` 连同源目录的 mtime 一起拷；`build/` 里那个 bundle 目录的 mtime 停在
+  它第一次被创建的那一刻（后续增量构建只改内部文件），于是 `/Applications` 里
+  这份的 mtime 也是旧的。**LaunchServices 按 bundle 目录的 mtime 判断"要不要
+  重读图标"**，看到没变就继续画缓存里那张。症状彻底静默：bundle 内容、
+  `Info.plist`、`Assets.car` 全是新的，`NSWorkspace.icon(forFile:)` 查出来也是
+  新的，只有 Dock / Finder 顽固地画旧的。两处安装都已在收尾 `touch` 目标 bundle
+  再 `lsregister -f`；手上遇到就是 `touch <bundle> && lsregister -f <bundle> &&
+  killall Dock`。**验的时候注意 `killall Dock` 之后要等它重绘完再截图**——
+  紧跟着截到的是陈旧帧，会让人误判成"清了缓存也没用"。
 
 - **`.gitignore` 里给构建产物写规则必须带路径锚点**：`tools/`（无斜杠前缀）匹配的是
   **任意层级**的同名目录。那条规则本意只挡 `clam-app/host/tools/` 的 xcodegen 二进制，
@@ -724,6 +859,17 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
 - macOS WKWebView 内部没有 NSScrollView（滚动在 Web 进程），别试图从 AppKit 层
   控制页面滚动；SPI `_setRubberBandingEnabled:` 会引发滚动闪动，已弃用——
   页面滚动全靠插件注入的 CSS。
+- **`Foundation.Process` 托管不了长期子进程**：它 posix_spawn 时不设
+  `POSIX_SPAWN_SETPGROUP`，子进程继承的是**壳自己**的进程组，于是两条路都是死的
+  ——`killpg` 会把壳一起杀，只 `kill` 子进程又漏掉孙子进程。托管后端跑的 `./dev`
+  正是 `node → spawnSync(dsh)` 两层：实测只 TERM 外层，内层立刻被 init 收养
+  （`PPID 1`）继续跑、继续占端口，**壳这边毫无异样**，下次启动的查重反而会
+  因为"已经有个健康端点"而不 spawn（症状："托管好像没生效"，原因在上一次退出）。
+  正路是自己调 posix_spawn + `posix_spawnattr_setpgroup(&attr, 0)` 让子进程自成组，
+  再 `killpg`（`clam-app/host/Sources/Native/ManagedProcess.swift`；六条断言的
+  隔离验证台在 `docs/spikes/backend-spawn/`，可复跑）。macOS **没有 `setsid(1)`**。
+  顺带：`zsh -lc` 读 `.zshenv`/`.zprofile`/`.zlogin` 而**不读 `.zshrc`**——
+  GUI App 的 PATH 只能靠它补，把 node 只配在 `.zshrc` 里的机器会解不出来。
 - **绝不往 session 日志写自定义 event type**：0.1.1-rc.2 会导致
   `SessionFormatUnsupportedError`、会话无法重新读取。桥的流量走自己那条 WS。
 - **`ctx.logger` 在 `dsh web` 下没有 exporter**：消息只进环形缓冲，终端一个字看不见。

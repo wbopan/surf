@@ -516,3 +516,50 @@ clam-settings 热替换后 ⌘, 出现第五栏，截图与画板并排比对（
   **留给用户的衔接点**（§11.1 已预告）：`io.wenbo.surfclam`（Release 域）现在没有
   mode 键，装上新壳后**双击首开会停在引导页**——两下点回来（连接 + 设为默认），
   或按 §11.1 在 `./release` 的安装步骤里补一句 `defaults write`。
+
+### 2026-08-30 —— 常驻 daemon 退役，默认档改 `managed`；连接死锁三处修复
+
+**起因是一份用户报告**：双击 `/Applications` 里的 App 显示没有后端，点「开启托管」
+底下小字闪一下就没了。查下来是**两个 bug 咬成一个死锁**，而当时机器上那个常驻
+daemon 正健康地跑着（`127.0.0.1:54400`、HTTP 200、已跑 16 小时）。
+
+1. **后端活着却隐身**。发现文件按 profile 名分片、**覆盖写**，而
+   `removeEndpointFile` 只校验"文件里的 pid 是不是我"。时间线：daemon 写下自己那份
+   → 同 profile 的第二个 dsh 启动，**覆盖**了它 → 那个 dsh 退出，pid 校验通过
+   （文件里确实是它自己的），删除——**把还活着的 daemon 一起带走**。daemon 只在
+   fiber 挂载时写一次，从此永久隐身。那道 pid 校验防的是"先退的删后来者"，
+   防不住反向。修法：`clam-app/lib/index.js` 常驻一条 5s 守护，**只补缺失的**
+   （文件在但写着别人的 pid 就不动——那是另一个活跃实例，抢回来只会两边对着写）。
+2. **点了"什么也没发生"**。`externalBackend()` 先探健康端点（探不到，文件没了），
+   再看 LaunchAgent（`state = running`，命中），直接报 `.externalBackend` →
+   界面小字闪成 **"后端已在运行，无需托管。"** 而用户面前正是一个都没连上的引导页。
+   修法：查重返回带可达性分类的 `Unavailable`，新增 `externalBackendUnreachable`
+   一态，文案改成 **"后端在运行，但还连不上。"**——两件相反的事不能共用一句话。
+3. **"打开即有"只保证了打开那一瞬**。`MainWindowController.start()` 里那句
+   `backend.start()` 只在 App 启动时跑一次；后端事后消失就再没有人去拉它，壳永远
+   停在断连页（清掉 daemon 之后当场复现）。修法：`ensureManagedBackend()`——幕一变成
+   "要盖连接页"就喊一次托管，15s 节流。BackendManager 自己那套退避管不了这一段，
+   它只监护自己亲手 spawn 的子进程。
+
+**随后是一条用户裁决**："清除常驻 daemon，设置默认是自管理后端，这样我们才能更好
+在以后管理生命周期。"于是：
+
+- `ConnectionController.fallbackMode = .managed`——没设过 `clam.connection.mode`
+  就走托管，**坏值也退 managed**（认不出来的偏好退到"起一个自己的"，不是"随便接
+  一个"，与 M7 §11.1 那条"别乱 attach"的裁决不冲突）。这也了结了上一条执行日志
+  末尾预告的那个衔接点：首开不再停在引导页，不需要 `defaults write`。
+- **本机那个 `io.wenbo.surfclam.dsh` 已 bootout + 删 plist**。
+- **配套必修**：Release 壳 spawn 后端时要带 `CLAM_RELEASE=1`——它原先由 plist 提供，
+  daemon 一退役就没人设了。缺了它 clam-app 按 dev 形态跑：构建 Debug 产物、
+  **再拉起一个 Surfclam Dev**（实测：双击 Release 却多出一个 Dev 窗口，两个壳连着
+  同一个后端），而且发现文件里的 `appPath` 指向 Dev 产物，壳认不出那是自己的后端
+  （日志里那句「⚠️ 不是本 worktree 那一套」）。
+
+**实测**（全程无 daemon）：删掉发现文件 → 3s 内自愈并留日志；清空 mode 键 + 杀光
+dsh + 清空 endpoints 模拟首次运行 → 双击 Release，壳自己 spawn（`running pid 59504`）、
+2s 后接入 `58518`、五个插件全部装载、157 条会话投影；托管日志头一行是
+`exec /usr/bin/env CLAM_RELEASE=1 …`，后端自报 release 形态，**再没有拉起过 Dev**，
+接入那行也不再带「不是本 worktree 那一套」。
+
+**未了**：`./release` 的 LaunchAgent 那一层还在（安装、`--start/--stop/--status`），
+与默认 `managed` 语义上已经重复，且两者抢同一个 profile。是否拆掉待定。

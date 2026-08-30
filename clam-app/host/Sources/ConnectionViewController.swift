@@ -77,9 +77,12 @@ final class ConnectionViewController: NSViewController {
 /// 连接页能发起的动作。**全部是闭包**：这一层不认得 WebView、不认得桥，
 /// 也不该认得——它只管画，动手归 `MainWindowController`。
 struct ConnectionActions {
-    var connect: (ClamEndpoint) -> Void = { _ in }
-    /// 返回 false = 地址不成立，页面就地标红（不弹窗）。
-    var submitAddress: (String) -> Bool = { _ in false }
+    /// 第二个参数 = 「设为默认方式」勾着没有：勾着就把这个地址落成 `fixed` 偏好。
+    var connect: (ClamEndpoint, Bool) -> Void = { _, _ in }
+    /// 返回 false = 地址不成立，页面就地标红（不弹窗）。第二个参数同上。
+    var submitAddress: (String, Bool) -> Bool = { _, _ in false }
+    /// 面板底部那枚「自动接入发现的后端」：true = `auto`，false = 清回未设置。
+    var setAutoAdopt: (Bool) -> Void = { _ in }
     var startManaged: () -> Void = {}
     var stopManaged: () -> Void = {}
     var chooseOther: () -> Void = {}
@@ -168,6 +171,12 @@ struct ConnectionScreen: View {
 
 // MARK: - 引导连接页
 
+/// 上下布局（M7 §11.3，画板 `Onboarding.dc.html`）：
+/// 上 = 托管横条卡，下 = 「连接到已有的后端」一整个面板。
+///
+/// **为什么合并成一个面板**：地址输入与发现列表本来就是同一种方式（接入一个
+/// 已经在跑的后端），拆成两张并排的卡片时用户得先在两张卡之间选一次，
+/// 而那个选择没有意义。
 private struct OnboardingPage: View {
     let strings: L
     let connection: ConnectionController
@@ -176,6 +185,10 @@ private struct OnboardingPage: View {
 
     @State private var address = ""
     @State private var addressInvalid = false
+
+    /// 「设为默认方式」。**默认勾上**：unset 语义下不落盘就意味着下次打开又停在
+    /// 这一屏，而用户刚刚已经明确挑过一个后端了。定稿画板里它也是勾着的。
+    @State private var remember = true
 
     /// 只显示活着的候选：死的那些是排错信息，归 ⌥⌘D。
     /// 已判定"不含 Surfclam 组件"的也滤掉——它 HTTP 上是绿的，挂着「连接」
@@ -187,14 +200,15 @@ private struct OnboardingPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 26) {
+        VStack(spacing: 20) {
             header
-            cards
-            if !healthy.isEmpty { discovered }
+            managedCard
+            joinPanel
+            rememberBox
             ConnFooter(strings: strings, actions: actions)
         }
         .frame(maxWidth: 560)
-        .padding(.top, 96)
+        .padding(.top, 68)
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, alignment: .center)
     }
@@ -206,107 +220,144 @@ private struct OnboardingPage: View {
             Text(strings.connIdleTitle)
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(.primary)
-            statusLine
+            // 扫描那一行搬进了面板里的发现小节（整屏只留一处转圈）；这里只剩
+            // "有明确目标却连不上"那句事实——它说的是别的事，没地方可去。
+            if case .unreachable(let failure) = connection.phase { unreachableLine(failure) }
         }
     }
 
-    /// 转圈那一行；有明确目标又连不上时换成一句事实。
-    @ViewBuilder
-    private var statusLine: some View {
-        if case .unreachable(let failure) = connection.phase {
-            VStack(spacing: 5) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color(nsColor: .systemOrange))
-                        .frame(width: 8, height: 8)
-                    Text(ConnFormat.unreachable(connection: connection, failure: failure,
-                                                strings: strings))
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-                // 缺组件时把正确的启动命令递到眼前——这是用户唯一能自救的动作。
-                if case .bridgeRejected = failure {
-                    (Text(strings.connProfileHintPrefix)
-                        + Text(strings.connProfileCommand)
-                            .font(.system(size: 12, design: .monospaced))
-                        + Text(strings.connProfileHintSuffix))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } else {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(strings.connSearching)
+    private func unreachableLine(_ failure: ConnectFailure) -> some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color(nsColor: .systemOrange))
+                    .frame(width: 8, height: 8)
+                Text(ConnFormat.unreachable(connection: connection, failure: failure,
+                                            strings: strings))
                     .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            // 缺组件时把正确的启动命令递到眼前——这是用户唯一能自救的动作。
+            if case .bridgeRejected = failure {
+                (Text(strings.connProfileHintPrefix)
+                    + Text(strings.connProfileCommand)
+                        .font(.system(size: 12, design: .monospaced))
+                    + Text(strings.connProfileHintSuffix))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var cards: some View {
-        HStack(alignment: .top, spacing: 16) {
-            ConnCard(symbol: ConnSymbol.managed, symbolTint: Color.accentColor,
-                     title: strings.connManagedCardTitle,
-                     detail: strings.connManagedCardDetail) {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let note = ConnFormat.managedNote(backend.state, strings: strings) {
-                        Text(note)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    if backend.state.isActive {
-                        Button(strings.connManagedStop) { actions.stopManaged() }
-                    } else {
-                        Button(strings.connManagedStart) { actions.startManaged() }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .disabled(!backend.state.canStart)
-                    }
+    // MARK: 上：托管
+
+    private var managedCard: some View {
+        ConnPanel {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: ConnSymbol.managed)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(strings.connManagedCardTitle)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    // 说明与状态**同一格**：没起来时说它是干什么的，起来之后说它在
+                    // 干什么。两行都常驻的话这张横条会比下面整个面板还高。
+                    Text(ConnFormat.managedNote(backend.state, strings: strings)
+                         ?? strings.connManagedCardDetail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if backend.state.isActive {
+                    Button(strings.connManagedStop) { actions.stopManaged() }
+                } else {
+                    Button(strings.connManagedStart) { actions.startManaged() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(!backend.state.canStart)
                 }
             }
-            ConnCard(symbol: ConnSymbol.manual, symbolTint: Color.secondary,
-                     title: strings.connManualCardTitle,
-                     detail: strings.connManualCardDetail) {
+        }
+    }
+
+    // MARK: 下：连接到已有的后端
+
+    private var joinPanel: some View {
+        ConnPanel {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 12) {
+                    Image(systemName: ConnSymbol.manual)
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(.secondary)
+                    Text(strings.connManualCardTitle)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
                 VStack(alignment: .leading, spacing: 4) {
-                    TextField("", text: $address,
-                              prompt: Text(strings.connManualPlaceholder))
-                        .textFieldStyle(.roundedBorder)
-                        .controlSize(.large)
-                        .onSubmit { submit() }
-                        .onChange(of: address) { addressInvalid = false }
+                    HStack(spacing: 8) {
+                        TextField("", text: $address,
+                                  prompt: Text(strings.connManualPlaceholder))
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.large)
+                            .onSubmit { submit() }
+                            .onChange(of: address) { addressInvalid = false }
+                        Button(strings.connConnect) { submit() }
+                            .controlSize(.large)
+                            .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                     if addressInvalid {
                         Text(strings.connManualInvalid)
                             .font(.system(size: 11))
                             .foregroundStyle(Color(nsColor: .systemRed))
                     }
                 }
+                discovered
+                // 这枚勾是 `mode == auto` 的**直接投影**，不是本地状态：
+                // 勾上当场落偏好并接入，取消清回未设置（§11.3）。
+                Toggle(strings.connAutoAdopt, isOn: Binding(
+                    get: { connection.mode == .auto },
+                    set: { actions.setAutoAdopt($0) }))
+                    .toggleStyle(.checkbox)
+                    .padding(.horizontal, 4)
             }
         }
-        // **两张卡等高、又不许贪心**：卡片自己用 `maxHeight: .infinity` 撑到
-        // 行高，这一句把行高钉在"两者理想高度的较大者"上。不加的话
-        // `maxHeight: .infinity` 会把整列剩余空间全吃掉（卡片竖着拉满一屏）。
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func submit() {
         let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        addressInvalid = !actions.submitAddress(text)
+        addressInvalid = !actions.submitAddress(text, remember)
     }
 
     private var discovered: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(strings.connDiscoveredHeader)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 6)
-            ConnRows {
-                ForEach(Array(healthy.enumerated()), id: \.offset) { index, status in
-                    if index > 0 { Divider() }
-                    row(for: status.endpoint)
+            HStack(spacing: 8) {
+                Text(strings.connDiscoveredHeader)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                // 轮询是常驻的，所以这一行也常驻——它说的是"还在找"，
+                // 不是某一次动作的进度。
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                    .frame(width: 12, height: 12)
+                Text(strings.connSearchingShort)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 6)
+            // 空列表不画那个圆角框：一个空盒子看上去像"坏了"，而这一刻的事实
+            // 只是"还没找到"——上面那行已经把它说清楚了。
+            if !healthy.isEmpty {
+                ConnRows {
+                    ForEach(Array(healthy.enumerated()), id: \.offset) { index, status in
+                        if index > 0 { Divider() }
+                        row(for: status.endpoint)
+                    }
                 }
             }
         }
@@ -328,11 +379,26 @@ private struct OnboardingPage: View {
                 }
             }
             Spacer(minLength: 8)
-            Button(strings.connConnect) { actions.connect(endpoint) }
+            Button(strings.connConnect) { actions.connect(endpoint, remember) }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(minHeight: 40)
+    }
+
+    // MARK: 面板下方：设为默认方式
+
+    /// **托管卡不受这枚勾影响**：开启托管本就必须落偏好，不然"打开即有后端"
+    /// 只兑现一次（M4 接线注记）。所以这里说的是"这一次的连接动作"。
+    private var rememberBox: some View {
+        HStack(spacing: 7) {
+            Toggle(strings.connRememberDefault, isOn: $remember)
+                .toggleStyle(.checkbox)
+            Text(strings.connRememberDefaultHint)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
@@ -466,37 +532,21 @@ private struct ConnBadge: View {
     }
 }
 
-/// 两张等宽卡片中的一张：图标 / 标题 / 说明 / 底部控件。
-private struct ConnCard<Control: View>: View {
-    let symbol: String
-    let symbolTint: Color
-    let title: String
-    let detail: String
-    @ViewBuilder let control: () -> Control
+/// 一块内嵌面板：淡底 + 细边 + 内边距。引导页的托管横条与「连接到已有的后端」
+/// 用的是同一块（`ConnRows` 是它的无内边距、带行分隔线的兄弟）。
+private struct ConnPanel<Content: View>: View {
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(symbolTint)
-                .frame(height: 22)
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-            Text(detail)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            control()
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.quinary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6))
-        )
+        content()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6))
+            )
     }
 }
 
@@ -650,6 +700,7 @@ private enum ConnFormat {
         case .gaveUp: return strings.connManagedGaveUp
         case .unavailable(.missingRuntime): return strings.connManagedNoRuntime
         case .unavailable(.externalBackend): return strings.connManagedExternal
+        case .unavailable(.externalBackendUnreachable): return strings.connManagedExternalUnreachable
         case .unavailable(.launchFailed): return strings.connManagedFailed
         }
     }

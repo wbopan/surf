@@ -134,6 +134,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     /// 页面查询参数的订阅句柄。同上，不接住就等于没订。
     private var webQuerySubscription: ClamDisposable?
+    private var relaunchSubscription: ClamDisposable?
 
     /// 壳有新版时右上角那条浮动提示（clam-app v1 播报，§7.5）。
     /// 用户点"稍后"就收起，直到下一次播报——不缠人。
@@ -270,6 +271,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         observeMenuTracking()
         observeKeymap()
         observeWebQuery()
+        observeRelaunch()
         // WKWebView 归壳所有（终极逃生舱要用同一个实例），插件只从保管箱借用：
         // 换代后 makeNSView 返回同一实例 → 页面不重载、JS 状态存活（M2 断言 9）。
         nativeHost.objects.setObject(ClamObjects.Key.webView, webView)
@@ -401,8 +403,13 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         connection.start()
         // 托管模式 = "打开即有后端"（Docker Desktop 语义）。`start()` 自己会先
         // 查重，已经有人在管这个 profile 时不会 spawn（计划 §5）。
+        // 之后的每一次"后端没了"由 `ensureManagedBackend()` 接手。
         if connection.mode == .managed { backend.start() }
     }
+
+    /// `ensureManagedBackend()` 的节流账。
+    private var lastManagedNudge: Date?
+    private static let managedNudgeInterval: TimeInterval = 15
 
     /// 状态机选中了一个端点：装页面 + 连桥。
     private func attach(_ endpoint: ClamEndpoint) {
@@ -485,6 +492,54 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 上次载入页面时真正用上的那份。与 `webQuery` 不符就重载一次。
     private var queryInUse = MainWindowController.rememberedWebQuery
 
+    // MARK: - 壳自我重启（`clam.app.relaunch`）
+
+    /// 谁都可以喊一嗓子"把壳重启一下"。**眼下唯一的喊话方是 clam-settings 的
+    /// 「连接」栏**：那一页只写 UserDefaults、不当场切后端，改完得重启才生效。
+    ///
+    /// **不复用 `app-restart` 那条桥路径**：那条是"clam-app 编出了新产物、
+    /// 你退出我来拉你"，全程要 dsh 在场，而且壳侧那道"一个进程只自请重启一次"
+    /// 的保险丝是为构建环设的。这里没有 dsh 参与（改完偏好多半正断着连），
+    /// 所以自己 spawn 一个等本进程死透再 `open` 自己的小助手。
+    private func observeRelaunch() {
+        relaunchSubscription = nativeHost.events.subscribe(Self.relaunchTopic) { [weak self] _ in
+            MainActor.assumeIsolated { self?.relaunchSelf() }
+        }
+    }
+
+    /// 主题名。**壳这边是权威**（订阅方定义），登记在 docs/clam-contracts.md §4。
+    static let relaunchTopic = "clam.app.relaunch"
+
+    /// 已经安排过一次重启。**按钮点两下不该起两个助手**——第二个会在第一个
+    /// 已经把 App 拉回来之后再 `open` 一次，看上去像窗口自己抖了一下。
+    private var relaunchScheduled = false
+
+    private func relaunchSelf() {
+        guard !relaunchScheduled else { return }
+        relaunchScheduled = true
+        let bundlePath = Bundle.main.bundlePath
+        let pid = ProcessInfo.processInfo.processIdentifier
+        // 助手必须**自成进程组**：它得比壳活得久，而壳退出时那一发信号是按组走的
+        // （`ManagedProcess` 存在的全部理由，见它的顶注）。`kill -0` 轮询到本进程
+        // 消失为止再 open——立刻 open 会撞上 LaunchServices 认为"它还在运行"，
+        // 于是只是把将死的窗口带到前台，然后什么都没发生。
+        let escaped = bundlePath.replacingOccurrences(of: "'", with: "'\\''")
+        let command = "while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done; /usr/bin/open '\(escaped)'"
+        do {
+            _ = try ManagedProcess.spawn(command: command, onOutput: { _ in }, onExit: { _ in })
+            Log.write("按请求重启壳：助手已就位（pid \(pid) 退出后 open）",
+                      to: ClamPaths.logURL, tag: "app")
+        } catch {
+            relaunchScheduled = false
+            Log.write("重启壳失败，助手起不来：\(error)", to: ClamPaths.logURL, tag: "app")
+            return
+        }
+        // 给日志一拍落盘，也给点击那一下一个可见的收尾。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            NSApp.terminate(nil)
+        }
+    }
+
     /// 订插件的参数要求。变了就记住并重载页面（网页侧边栏随之回归或让位）。
     private func observeWebQuery() {
         webQuerySubscription = nativeHost.events.subscribe(Self.webQueryTopic) { [weak self] payload in
@@ -531,9 +586,32 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     private func applyPhase(_ phase: ConnectionPhase) {
         if phase.showsOverlay {
             mountConnectionScreen()
+            // 连接页在场 = 此刻没有后端。托管模式下这就是"该把它拉起来"的信号
+            // ——`start()` 里的查重会挡住"其实有人在管"的情形。
+            ensureManagedBackend()
         } else {
             hideConnectionScreen()
         }
+    }
+
+    /// 托管模式下保证有一个后端在跑。**"打开即有"不能只保证打开那一瞬**：
+    /// `start()` 里那句 `backend.start()` 只在 App 启动时跑一次，后端事后消失
+    /// （被 kill、daemon 被清掉、机器睡醒）就再没有人去拉它，壳只会永远停在
+    /// 断连页——实测踩过。幕一变成"要盖连接页"就补一次，才算真的托管。
+    ///
+    /// **BackendManager 自己的退避管不了这一段**：那套只监护它亲手 spawn 的
+    /// 子进程；后端是外部的（或还没有）时它停在 `.unavailable`，没有子进程可监护。
+    private func ensureManagedBackend() {
+        guard connection.mode == .managed, backend.state.canStart else { return }
+        // 节流：幕会在 connecting ↔ disconnected 之间来回跳（后端起了又死时尤其
+        // 频繁），每跳一次都重跑一遍查重就是在刷屏。间隔取 BackendManager 最长
+        // 退避那一档，两套节奏对得上。
+        let now = Date()
+        if let last = lastManagedNudge, now.timeIntervalSince(last) < Self.managedNudgeInterval {
+            return
+        }
+        lastManagedNudge = now
+        backend.start()
     }
 
     /// 连接页盖在 contentView 之上、铺满窗口。
@@ -572,8 +650,23 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
     /// 托管归 BackendManager、面板与日志是壳本地动作。
     private func connectionActions() -> ConnectionActions {
         ConnectionActions(
-            connect: { [weak self] endpoint in self?.connection.connect(to: endpoint) },
-            submitAddress: { [weak self] text in self?.connection.connect(toURLString: text) ?? false },
+            connect: { [weak self] endpoint, remember in
+                guard let self else { return }
+                // 顺序不能反：先把偏好落下去，再发起这一次连接。反过来的话
+                // `setMode` 会清掉刚记下的一次性目标语义、白探一轮。
+                if remember { self.connection.rememberFixed(endpoint.httpBase) }
+                self.connection.connect(to: endpoint)
+            },
+            submitAddress: { [weak self] text, remember in
+                guard let self else { return false }
+                // 落盘要的是**规范化之后**那个地址（裸端口号补全过的），
+                // 不是用户敲进框里的原文——否则下次启动会拿一个连不了的串去连。
+                if remember, let url = ConnectionController.normalizedURL(from: text) {
+                    self.connection.rememberFixed(url)
+                }
+                return self.connection.connect(toURLString: text)
+            },
+            setAutoAdopt: { [weak self] on in self?.connection.setMode(on ? .auto : nil) },
             startManaged: { [weak self] in self?.startManaged() },
             stopManaged: { [weak self] in self?.stopManaged() },
             chooseOther: { [weak self] in self?.connection.abandonTarget() },
@@ -588,11 +681,14 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         backend.start()
     }
 
-    /// "停止托管"：杀进程 + 切回 auto（计划 §5）。留在 managed 模式的话，
-    /// 下次启动又会自己拉起来——那不是用户按这颗按钮的意思。
+    /// "停止托管"：杀进程 + 清回未设置（计划 §5，§11.1 修订）。留在 managed
+    /// 模式的话下次启动又会自己拉起来——那不是用户按这颗按钮的意思。
+    ///
+    /// **清回 unset 而不是 auto**：切成 auto 等于替用户选了"随便接本机发现的一个"，
+    /// 而他刚刚表达的是"别自动起后端"。停掉之后停在引导页，接不接他自己点。
     private func stopManaged() {
         backend.stop()
-        connection.setMode(.auto)
+        connection.setMode(nil)
     }
 
     // MARK: - 壳自身的构建（clam-app v1）
@@ -1239,7 +1335,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         // **开发者细节全在这儿**：worktree、profile、pid、isOwn、候选健康态
         // 一个都不上主界面（计划 §3 口径 1），它们的去处就是这一屏与日志。
         lines.append(s.diagPhase(connection.phase.key))
-        lines.append(s.diagMode(connection.mode.rawValue, target: connection.targetAddress))
+        lines.append(s.diagMode(connection.mode?.rawValue ?? "unset", target: connection.targetAddress))
         if let endpoint = connection.activeEndpoint {
             // "不是本 worktree 那一套"是警告，得跟着端点这一行走（见 ClamEndpoint.summary）。
             lines.append(s.diagEndpoint(endpoint.summary + (endpoint.isOwn ? "" : s.diagEndpointNotOwn)))

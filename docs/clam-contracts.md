@@ -196,6 +196,8 @@ host.events.emit(LayoutToolbar.updateTopic,
 | `clam.locale` | `Topic.locale` | ✅ | 壳 | layout / sidebar / settings / header | `locale`（`zh`\|`en`） |
 | `clam.web.query` | 两侧各有一份 internal 常量：壳的 `MainWindowController.webQueryTopic`、layout 的 `LayoutPlugin.webQueryTopic` | ✅ | 占 `root` 的插件 | 壳 | `[参数名: 值]`。壳不设白名单也不解释，只拼进 URL；变了就重载页面 |
 | `clam.endpointChanged` | `Topic.endpointChanged` | 否 | 壳 | **当前无人** | `httpBase` |
+| `clam.connection.state` | `ConnectionController.stateTopic` | ✅ | 壳（连接状态机） | clam-settings「连接」栏 | `phase`（`searching`\|`connecting`\|`connected`\|`disconnected`\|`unreachable`\|`idle`）/ `mode`（`unset`\|`auto`\|`fixed`\|`managed`，**此刻生效中的那份**）/ `managed`（Bool）/ `attempts` / `bridgeConnected` / `pageReady` /（可选）`url`（= `endpoint`，给只认字符串的消费方）·`fixedURL`·`endpoint`·`endpointSource`·`isOwn`·`reason`·`failure`·`statusCode` / `candidates[]`（`url`·`healthy`·`port`·`startedAt`·`source`·`failure`）|
+| `clam.app.relaunch` | `MainWindowController.relaunchTopic` | 否 | clam-settings「连接」栏 | 壳 | —。壳 spawn 一个"等本进程死透再 `open` 自己"的助手然后退出。**不是 `app-restart`**：那条走桥、要 clam-app 在场、且受"一个进程只自请重启一次"的保险丝约束 |
 | `clam.page.<type>` | `Topic.pagePrefix + type` | 视消息 | 壳（页内桥转发） | 各插件 | 见 §5 |
 | `clam.toolbar.update` | `LayoutToolbar.updateTopic` | 否 | 贡献方 | clam-layout | 见 §2.2 |
 | `clam.toolbar.activate` / `.menuSelect` / `.menuOpen` | `LayoutToolbar.*` | 否 | clam-layout | 贡献方 | 见 §2.3 |
@@ -331,7 +333,96 @@ host.bridge.send(action: "archive", payload: [...]) // 触发 expose
 
 ---
 
-## 10. 一句话速查
+## 10. dsh ↔ 壳：endpoint 发现文件与环境开关
+
+前面九节讲的都是"壳跑起来之后"的词汇。这一节讲**壳还没连上任何东西时**的那一层
+契约：一份 JSON 文件加一个环境变量，两个进程隔着磁盘对暗号。
+
+### 10.1 endpoint 发现文件
+
+**权威**：写在 `clam-app/lib/index.js` 的 `writeEndpointFile`，读在
+`clam-app/host/Sources/ClamEndpoint.swift` 的 `decodeEndpoint`。
+
+落点 `~/Library/Application Support/io.wenbo.surfclam/endpoints/<profile>.json`，
+**一个 profile 一份**（同时跑好几个 dsh 是常态：一个 worktree 一套）。clam-app 在
+dsh 启动时写、fiber 卸载时删（pid 校验，只删自己那份）。壳是"扫目录取候选"而不是
+"读一个文件"——它是三级定位的第二级，给**手动双击**起来的壳兜底（第一级是
+`--clam-endpoint` flag，由拉起壳的那个 dsh 亲手递来，永远最优先）。
+
+| 字段 | 类型 | 谁用 | 含义 |
+|---|---|---|---|
+| `httpBase` | string | 壳 | `http://127.0.0.1:<port>`。**没有它这份文件就作废**（decode 返回 nil） |
+| `bridgePath` | string | 壳 | WS 桥的路径，真相在 clam-bridge 的 `config.path`；缺省 `/clam/bridge` |
+| `pid` | number | 壳（诊断）/ `./release` 的互斥检查 | 写这份文件的 dsh |
+| `startedAt` | ISO string | 壳 | 候选排序的第二判据（倒序） |
+| `profile` | string | 壳（诊断） | 与文件名同源 |
+| `hostDir` | string | 壳 | 那个 dsh 的 `clam-app/host` 绝对路径 |
+| `appPath` | string | 壳 | **那个 dsh 期望伺候的 App bundle 绝对路径** |
+
+后两个字段都只为一件事：`ClamEndpoint.isOwn`——"这套 dsh 是不是我这一套"。
+**排序先按 `isOwn`、再按 `startedAt`**，因为连错 dsh 不是个安静的错误：壳会去编译
+邻居 worktree 的插件源码，失败时那条错误原样落进自己的日志。
+
+两条判据任一成立即算自己那套：
+
+- `appPath` == `Bundle.main.bundlePath`（解符号链接后比）。开发期与安装期都成立；
+- `hostDir` == `ClamPaths.ownHostDir`。**对装到 `/Applications` 的 Release 壳必然
+  失败**——那份 bundle 不在任何 worktree 的 `build/Build/Products/` 之下，
+  `ownHostDir` 推不出来。所以才有了 `appPath`。
+
+老版本 clam-app 写的文件没有 `appPath`（也可能没有 `hostDir`），缺字段 = 那条判据
+不成立，其余照旧：**两边都是向后兼容的**，加字段不需要同时升级另一半。
+
+### 10.2 壳的连接偏好（UserDefaults，`io.wenbo.surfclam[.dev]` 域）
+
+**壳自己的键，不是跨插件契约**——列在这儿是因为它决定壳去连谁，读日志/排错时要认得。
+权威在 `clam-app/host/Sources/Native/ConnectionController.swift`，计划见
+[`clam-connection-plan.md`](clam-connection-plan.md) §4。**坏值一律退到缺省。**
+
+| 键 | 值 | 语义 |
+|---|---|---|
+| `clam.connection.mode` | **键不存在 = `managed`（2026-08-30 起）** \| `unset` \| `auto` \| `fixed` \| `managed` | 默认档是 `managed`：后端的生命周期归壳管，不该要用户先在引导页上点一下（`ConnectionController.fallbackMode`）。`unset` 这一档仍在，语义是发现轮询照跑、列表照显但**绝不 adopt**，壳停在引导页等用户点（M7 §11.1）。`auto` = 扫发现文件并行探测择优接入；`fixed` = 只认 `fixedURL` 那一个，连不上如实报错**不回退**；`managed` = auto 的发现逻辑 + `BackendManager` 保证有一个自己的后端在跑（见 §10.4）。**坏值退 `managed`**（不是 unset）——认不出来的偏好退到"起一个自己的"，不是"随便接一个"，与那条裁决不冲突 |
+| `clam.connection.fixedURL` | 完整 URL 字符串 | `fixed` 模式的目标；bridgePath 用默认 `/clam/bridge` |
+
+优先级：**用户当场点的一次性目标 > `--clam-endpoint` flag > 上面这两个键**。
+flag 压过偏好（它由拉起本进程的那个后端亲手递来）；压不过用户此刻手点的那一下
+——那不是偏好，是一条当场的指令，否则界面上的"连接"按钮会看上去没反应。
+一次性目标**不落盘**。
+
+### 10.3 环境开关
+
+| 变量 | 谁读 | 谁设 | 作用 |
+|---|---|---|---|
+| `CLAM_RELEASE` | `clam-app/lib/index.js` 的 `applyReleaseForm` | `./release` 写的 LaunchAgent plist | 非空且非 `0` = **release 形态**：`configuration: "Release"`、`launch: false`、`restartOnRebuild: false`；`build`/`watch` 照开（壳源码在的话），构建成功后**安装**到 `/Applications/Surfclam.app`（先拷暂存名再换名，不 quit 正在跑的实例）。**同一张编排表服务两种形态**，差别只在每次运行的环境 |
+
+配套的 `appPath` 也跟着形态走：release 形态写 `/Applications/Surfclam.app`，
+dev 形态写本 worktree 的构建产物。计划与验收步骤见
+[`release-install-plan.md`](release-install-plan.md)。
+
+### 10.4 托管后端（`BackendManager`）
+
+`clam.connection.mode = managed` 时壳自己 spawn 一个后端并盯着它。权威在
+`clam-app/host/Sources/Native/BackendManager.swift` 与同目录的 `ManagedProcess.swift`，
+计划见 [`clam-connection-plan.md`](clam-connection-plan.md) §5。
+
+| 名字 | 是什么 |
+|---|---|
+| `logs/managed-dsh.<instanceTag>.log` | 托管后端的输出（stdout/stderr 合流）。**跟着产物分片**，与壳日志同一个键；超过 4MB 下次启动时从头来过 |
+| `io.wenbo.surfclam.dsh` | release 形态那个常驻 LaunchAgent 的 label。托管**查重**要问它一句（`launchctl print gui/$UID/<label>`，`state = running` 即让路） |
+| `--clam-backend-command '<shell 命令>'` | **只有 Dev 壳认**（判据是 bundle id 的 `.dev` 后缀）：拿假进程替掉真 spawn，用来实测状态迁移/退避/信号 |
+| `--clam-backend-skip-dedup` | 同上，只给实测用：跳过查重 |
+
+spawn 什么：Dev 壳（bundle 路径推得出 worktree）跑 `<worktree>/dev`，Release 壳跑
+`dsh --profile surfclam --port 0 --no-open`；两者都经 `/bin/zsh -lc` 拉起
+（GUI App 的 PATH 里没有 node，也没有 homebrew）。
+
+**spawn 之前必须查重**：同一个 profile 的两个 dsh 会互抹 §10.1 那份发现文件。
+两条判据任一成立就不 spawn（进「后端已在运行」态）：发现文件里 `isOwn` 的端点
+探得通；或上面那个 LaunchAgent 在跑。
+
+---
+
+## 11. 一句话速查
 
 | 我想…… | 用什么 | 在哪一节 |
 |---|---|---|
@@ -344,3 +435,4 @@ host.bridge.send(action: "archive", payload: [...]) // 触发 expose
 | 让状态活过热替换 | `host.objects`（只放系统类型）或 `host.store` | §6 §9 |
 | 接一个系统 delegate | `ClamHooks` + 壳的 `SystemDelegateRelay` 多两行 | §7 |
 | node 半边给 Swift 半边送数据 | `subscribe`/`push` 与 `expose`/`send` | §8 |
+| 让壳找得到（并认得出）某个 dsh | endpoint 发现文件的 `appPath` / `hostDir` | §10.1 |

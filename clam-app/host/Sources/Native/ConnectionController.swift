@@ -64,9 +64,20 @@ enum ConnectionPhase: Equatable, Sendable {
     }
 }
 
-/// 连接偏好（`docs/clam-connection-plan.md` §4）。缺省 `auto` = 历史行为。
+/// 连接偏好（`docs/clam-connection-plan.md` §4，M7 §11.1 修订）。
+///
+/// **没有"缺省"这一档**：偏好用 `ConnectionMode?` 表达，`nil` = 未设置（unset）。
+/// 早先把 unset 读成 `auto`，于是壳一开机就去扫本机所有端口并接入最近启动的那个
+/// ——用户裁决："也许这个机器上会有多个端口，但我们并不应该乱 attach"。
+/// unset 的语义因此是**照常发现、照常探活、但绝不 adopt**：列表要显示，
+/// 接不接由用户在引导页上点一下说了算。
+///
+/// **但 unset 不再是首次运行的默认**（2026-08-30 用户裁决："设置默认是自管理
+/// 后端，这样我们才能更好在以后管理生命周期"）：没设过这个键时读成 `managed`。
+/// 这不违背上面那条裁决——它否的是"隐式去接别人的后端"，而 managed 是
+/// **壳自己起一个、自己监护、⌘Q 自己收走**，接入的是它亲手拉起来的那一个。
 enum ConnectionMode: String, Sendable, CaseIterable {
-    case auto      // 扫发现文件、并行 probe、择优
+    case auto      // 扫发现文件、并行 probe、择优接入
     case fixed     // 钉死一个 URL，连不上如实报错，不回退 auto
     case managed   // auto 的发现逻辑 + BackendManager 保证有一个自己的后端在跑
 }
@@ -101,7 +112,8 @@ final class ConnectionController {
     private(set) var lastEndpoint: ClamEndpoint?
     /// 最近一轮并行探测的全部候选（含死的；页面只显示活的）。
     private(set) var candidates: [CandidateStatus] = []
-    private(set) var mode: ConnectionMode
+    /// nil = 未设置。见 `ConnectionMode` 的注释：unset ≠ auto。
+    private(set) var mode: ConnectionMode?
     private(set) var fixedURL: URL?
 
     /// 桥握手状态（由 `MainWindowController` 喂进来）。
@@ -164,11 +176,18 @@ final class ConnectionController {
     static let modeDefaultsKey = "clam.connection.mode"
     static let fixedURLDefaultsKey = "clam.connection.fixedURL"
 
+    /// 没设过 `clam.connection.mode` 时用哪一档。**managed 而不是 unset**：
+    /// 后端的生命周期该归壳管（起、监护、⌘Q 收走），不该要用户先在引导页上
+    /// 点一下、更不该靠 launchd 那类壳够不着的外部常驻服务（见 `ConnectionMode`）。
+    static let fallbackMode: ConnectionMode = .managed
+
     init(events: ClamEventBus) {
         self.events = events
-        // **坏值一律退到缺省**：这两个键用户手改得到，也可能是旧版本留下的。
+        // **认不出来的值退到默认档**：这两个键用户手改得到，也可能是旧版本留下的。
+        // 退 managed 不违背"别乱 attach"那条裁决——managed 接的是壳自己拉起来的
+        // 那一个，不是本机随便一个端口（详见 `ConnectionMode` 的注释）。
         let rawMode = UserDefaults.standard.string(forKey: Self.modeDefaultsKey) ?? ""
-        self.mode = ConnectionMode(rawValue: rawMode) ?? .auto
+        self.mode = ConnectionMode(rawValue: rawMode) ?? Self.fallbackMode
         self.fixedURL = Self.normalizedURL(from:
             UserDefaults.standard.string(forKey: Self.fixedURLDefaultsKey) ?? "")
     }
@@ -256,14 +275,26 @@ final class ConnectionController {
         probeNow()
     }
 
-    func setMode(_ next: ConnectionMode) {
+    /// 切换连接偏好。传 nil = 清回未设置（引导页那枚"自动接入"取消勾选走这条）。
+    func setMode(_ next: ConnectionMode?) {
         guard next != mode else { return }
         mode = next
-        UserDefaults.standard.set(next.rawValue, forKey: Self.modeDefaultsKey)
+        if let next {
+            UserDefaults.standard.set(next.rawValue, forKey: Self.modeDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.modeDefaultsKey)
+        }
         abandoned.removeAll()
         incompatibleBase = nil
-        Log.write("连接模式切到 \(next.rawValue)", to: ClamPaths.logURL, tag: "connection")
+        Log.write("连接模式切到 \(next?.rawValue ?? "unset")", to: ClamPaths.logURL, tag: "connection")
         probeNow()
+    }
+
+    /// "记住这个地址"：一次落两个键。引导页勾着「设为默认方式」再点连接走这条
+    /// ——两个键得一起改，只改 mode 会钉向上一次的地址。
+    func rememberFixed(_ url: URL) {
+        setFixedURL(url.absoluteString)
+        setMode(.fixed)
     }
 
     /// `fixed` 模式的目标。传 nil / 坏值 = 清掉。
@@ -355,7 +386,16 @@ final class ConnectionController {
         }
         let statuses = await EndpointLocator.probeAll(list)
         // 只在"目标"那一段里选；发现列表在 fixed / 手动模式下只是展示。
-        let selectable = targets.isEmpty ? statuses : Array(statuses.prefix(targets.count))
+        // **unset 时发现列表也只是展示**（§11.1）：探活照做、列表照显，
+        // 但一个都不接——那一下由用户在引导页上点。
+        let selectable: [CandidateStatus]
+        if !targets.isEmpty {
+            selectable = Array(statuses.prefix(targets.count))
+        } else if adoptsDiscovered {
+            selectable = statuses
+        } else {
+            selectable = []
+        }
         let best = selectable.first {
             $0.isHealthy && !abandoned.contains($0.endpoint.httpBase)
         }?.endpoint
@@ -375,6 +415,16 @@ final class ConnectionController {
             return [EndpointLocator.manualEndpoint(fixedURL, source: .fixed)]
         }
         return []
+    }
+
+    /// 发现列表里的候选能不能被自动接入。
+    ///
+    /// **flag 在这儿也算数**：`--clam-endpoint` 由拉起本进程的那个后端亲手递来，
+    /// 它不是"本机随便一个端口"，语义上等同于一条当场的指令——`./dev` 的开发
+    /// 循环因此完全不受 unset 影响（dev 壳总是带 flag 被拉起）。
+    private var adoptsDiscovered: Bool {
+        if mode == .auto || mode == .managed { return true }
+        return EndpointLocator.flagEndpoint() != nil
     }
 
     /// 明确目标的地址（连接页那句"无法连接到 …"用它）。nil = 没有明确目标。
@@ -484,12 +534,20 @@ final class ConnectionController {
     private func projectState() {
         var payload: [String: Any] = [
             "phase": phase.key,
-            "mode": mode.rawValue,
+            // **未设置也要有个值**：订阅者拿字符串比对，缺键与 "unset" 是两件事。
+            "mode": mode?.rawValue ?? "unset",
+            // `managed` 与 `url` 是给 clam-settings 那一栏的"当前连接"行用的
+            // ——它 import 不了壳里的类型，只能读字符串与布尔。
+            "managed": mode == .managed,
             "attempts": attempts,
             "bridgeConnected": bridgeConnected,
             "pageReady": pageReady,
         ]
+        // 此刻**生效中**的偏好（不是 UserDefaults 里那份）：设置页拿它跟盘上的值
+        // 比对，不一致就是"改了还没重启"，那颗 [立即重启] 按钮据此出现。
+        if let fixedURL { payload["fixedURL"] = fixedURL.absoluteString }
         if let activeEndpoint {
+            payload["url"] = activeEndpoint.httpBase.absoluteString
             payload["endpoint"] = activeEndpoint.httpBase.absoluteString
             payload["endpointSource"] = activeEndpoint.source.rawValue
             payload["isOwn"] = activeEndpoint.isOwn

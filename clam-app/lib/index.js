@@ -93,6 +93,12 @@ const APP_SUPPORT = join(homedir(), "Library", "Application Support", "io.wenbo.
 const ENDPOINTS_DIR = join(APP_SUPPORT, "endpoints");
 
 /**
+ * 发现文件守护的间隔。比壳源码轮询松得多——这是自愈，不是热路径：文件只可能
+ * 被"同 profile 的另一个 dsh 覆盖后退出"这一种情况带走，补晚几秒无伤。
+ */
+const ENDPOINT_GUARD_INTERVAL_MS = 5000;
+
+/**
  * 桥路径的兜底值。**真相在 clam-bridge 的 config.path**——它才是挂 WS 的那一方，
  * 而且那是个用户可覆写的配置项。本插件经 `clamBridge.path` 取当前值（见 `apply`），
  * 只在桥缺席时用这个默认；写死一份自己的会让"改了桥的 path 壳就静默连不上"。
@@ -364,9 +370,29 @@ export function apply(ctx, rawConfig) {
 
 	// 发现文件先于构建落地：一个手动启动的 app 立刻就能接入，
 	// 不必等分钟级的首次构建。桥若带来不同的 path，下面的 inject 回调会重写它。
+	//
+	// **写完还要守着**：文件名按 profile 分片、覆盖写，而 `removeEndpointFile`
+	// 只认"文件里的 pid 是不是我"。于是同一个 profile 上短暂起过第二个 dsh 时，
+	// 它会先覆盖掉我们这份、退出时再按 pid 校验删掉（那时 pid 确实是它自己的），
+	// **把还活着的我们一起带走**——本进程只在挂载时写过一次，从此永久隐身：
+	// 壳发现不了它，用户双击只看得到连接页，而托管的查重又因为"daemon 在跑"
+	// 拒绝 spawn，两头堵死（实测：daemon 活着监听 54400、HTTP 200，
+	// endpoints/ 目录却是空的）。所以这里常驻一条守护，缺了就补回来。
 	ctx.effect(() => {
 		writeEndpointFile({ httpBase, bridgePath: bridge.path, appPath, logger });
-		return () => removeEndpointFile(logger);
+		const guard = setInterval(() => {
+			// **只补缺失的**：文件在、但写着别人的 pid，说明这个 profile 上另有
+			// 一个活跃实例。抢回来只会变成两边对着写，那是更糟的数据损坏——
+			// 让它去，等它退出时把文件删掉，下一轮我们自然补上。
+			if (readTextOrUndefined(endpointFilePath()) !== undefined) return;
+			logger.info("endpoint 发现文件不见了（多半被同 profile 的另一个 dsh 覆盖后带走），补写回来。");
+			writeEndpointFile({ httpBase, bridgePath: bridge.path, appPath, logger });
+		}, ENDPOINT_GUARD_INTERVAL_MS);
+		guard.unref?.();
+		return () => {
+			clearInterval(guard);
+			removeEndpointFile(logger);
+		};
 	}, "clam-app endpoint 发现文件");
 
 	// 与桥的全部往来收在这一处：路径、播报、重启请求。
