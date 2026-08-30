@@ -1,7 +1,7 @@
 /**
  * clam-app 的**构建那半边**：算源码 hash、xcodegen + xcodebuild、盯源码后台重建。
  *
- * **这个目录整个不随包分发**（`docs/distribution-plan.md` §3.3）——
+ * **这个目录整个不随包分发**（`docs/archive/distribution-plan.md` §3.3）——
  * `clam-app/package.json` 的 `files` 白名单只收 `lib/`，App 的 `ClamNode/` 载荷
  * 也只拷 `lib/` 与 `swift/`。判据因此不是"运行时探一下路径"，而是
  * **"这个模块在不在"**：`lib/index.js` 用 `await import(…).catch(…)` 拿它，
@@ -228,7 +228,7 @@ export function watchSources({ ctx, config, logger, bridge, isDisposed, configur
  *  - 源码在场时（`./dev`、worktree），本地 `build/` 里没有产物就该**优雅缺席**。
  *    退到装好的那个正式壳等于让 `surfclam-dev` 的后端去拉起属于 profile
  *    `surfclam` 的 App——两套 profile 的内容本来就不同（一个 link 仓库源码、
- *    一个 link 自举镜像，`docs/distribution-plan.md` §3.6），凑到一起正是分片要
+ *    一个 link 自举镜像，`docs/archive/distribution-plan.md` §3.6），凑到一起正是分片要
  *    消掉的那种混线。
  *
  * @param preferred 期望的产物路径（见 {@link expectedAppPath}）；省略则只看本地 `build/`。

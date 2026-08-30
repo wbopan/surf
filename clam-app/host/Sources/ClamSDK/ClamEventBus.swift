@@ -79,7 +79,7 @@ public final class ClamEventBus {
         /// 下一次切语言才知道现在是哪一种，而那个状态可能一直不变。
         ///
         /// 真相是 dsh 的 `locale` 设置：页面侧解析出 active 之后经页内桥推给壳，
-        /// 壳缓存 + 转成这条主题（决议链见 `docs/clam-i18n-plan.md` §3）。
+        /// 壳缓存 + 转成这条主题（决议链见 `docs/archive/clam-i18n-plan.md` §3）。
         /// 消费方一般不直接订它，用 `ClamLocaleStore` 就行。
         public static let locale = "clam.locale"
     }

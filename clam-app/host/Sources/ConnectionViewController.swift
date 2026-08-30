@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 没连上后端时铺满窗口的那一层：**两页**（`docs/clam-connection-plan.md` §3）。
+/// 没连上后端时铺满窗口的那一层：**两页**（`docs/archive/clam-connection-plan.md` §3）。
 ///
 /// - **引导连接页**（searching / idle / unreachable / connecting）：托管卡 +
 ///   手动地址卡 + 发现的后端列表。

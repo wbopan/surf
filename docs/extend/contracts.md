@@ -375,7 +375,7 @@ dsh 启动时写、fiber 卸载时删（pid 校验，只删自己那份）。壳
 
 **壳自己的键，不是跨插件契约**——列在这儿是因为它决定壳去连谁，读日志/排错时要认得。
 权威在 `clam-app/host/Sources/Native/ConnectionController.swift`，计划见
-[`clam-connection-plan.md`](clam-connection-plan.md) §4。**坏值一律退到缺省。**
+[`clam-connection-plan.md`](../archive/clam-connection-plan.md) §4。**坏值一律退到缺省。**
 
 | 键 | 值 | 语义 |
 |---|---|---|
@@ -391,7 +391,7 @@ flag 压过偏好（它由拉起本进程的那个后端亲手递来）；压不
 
 **一个都没有了。** 曾经有一个 `CLAM_RELEASE`（`./release` 写的 LaunchAgent plist
 里设它，clam-app 读它切形态），2026-08-30 随
-[`distribution-plan.md`](distribution-plan.md) 的 M4 删掉：形态判据改成
+[`distribution-plan.md`](../archive/distribution-plan.md) 的 M4 删掉：形态判据改成
 **「`clam-app/host-build/` 这个模块 import 得到吗」**——构建那一整套代码住在
 那个目录里，而随 App 分发的那份 clam-app 只有 `lib/`（`files` 白名单与 `ClamNode/`
 载荷都只收它）。构建不了所以不构建，不是"被一个旋钮关掉了"。
@@ -405,7 +405,7 @@ flag 压过偏好（它由拉起本进程的那个后端亲手递来）；压不
 
 `clam.connection.mode = managed` 时壳自己 spawn 一个后端并盯着它。权威在
 `clam-app/host/Sources/Native/BackendManager.swift` 与同目录的 `ManagedProcess.swift`，
-计划见 [`clam-connection-plan.md`](clam-connection-plan.md) §5。
+计划见 [`clam-connection-plan.md`](../archive/clam-connection-plan.md) §5。
 
 | 名字 | 是什么 |
 |---|---|
@@ -424,7 +424,7 @@ spawn 什么：Dev 壳（bundle 路径推得出 worktree）跑 `<worktree>/dev`�
 
 ### 10.5 分发载荷的约定（App bundle ↔ 镜像 ↔ 桥）
 
-M3（[`distribution-plan.md`](distribution-plan.md) §3.2/§3.2a）落下的几个跨包字符串。
+M3（[`distribution-plan.md`](../archive/distribution-plan.md) §3.2/§3.2a）落下的几个跨包字符串。
 **权威在代码里**：打包侧 `clam-app/host/scripts/pack-payload.mjs` 与
 `prebuild-plugins.mjs`，消费侧 `clam-bridge/lib/swift-payload.js` 与
 `clam-app/host/Sources/Native/CompilerService.swift`。

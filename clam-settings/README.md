@@ -4,7 +4,7 @@
 数据面由跑在 dsh 进程里的 node 半边直接消费 host 服务（`ctx.settings` / `ctx.llm` /
 credentials / `ctx.agentPresets` / `ctx.pluginInventory`），桥上只走 JSON 快照与动作。
 
-权威计划在 [`docs/clam-settings-plan.md`](../docs/clam-settings-plan.md)——
+权威计划在 [`docs/archive/clam-settings-plan.md`](../docs/archive/clam-settings-plan.md)——
 动手前先读它，尤其 §1（三条走不通的路，别重走）、§4（编辑器语义）、§5（三条红线）。
 
 **当前进度：M0～M7 全部完成**，四栏与 Web 逐条对齐。全链路实测过：在原生窗口点一下
@@ -200,7 +200,7 @@ does not add plugin mutation controls"。那个「已启用/已停用」是编�
 
 ## 文案是双语的，语言跟着 dsh 走
 
-两张表，分工是「现算 vs 数据」（权威计划 [`docs/clam-i18n-plan.md`](../docs/clam-i18n-plan.md)）：
+两张表，分工是「现算 vs 数据」（权威计划 [`docs/archive/clam-i18n-plan.md`](../docs/archive/clam-i18n-plan.md)）：
 
 | | 收什么 | 形态 |
 |---|---|---|

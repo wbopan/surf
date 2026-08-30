@@ -679,7 +679,7 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 
 ### 真材质路线：把无色玻璃交给系统渲染
 
-计划 `docs/native-feel-upgrade-plan.md` P3。上面整节讲的手绘四态**一个字都没改**，
+计划 `docs/archive/native-feel-upgrade-plan.md` P3。上面整节讲的手绘四态**一个字都没改**，
 它现在的身份是**降级路径**；在壳里、且几个条件都成立时，`neutral` 那组（白名单去掉
 实色的 `_primary`，眼下 5 条选择器）的表面改由 WebKit 的私有材质
 `-apple-visual-effect: -apple-system-glass-material-media-controls` 画。
@@ -808,7 +808,7 @@ WebView，那会给 clam-nativeify 添一条跨插件契约。收不到事件的
 
 ## 原生侧跟随 dsh 主题
 
-计划 `docs/native-feel-upgrade-plan.md` P4。缺口是**两套主题源互不知情**：
+计划 `docs/archive/native-feel-upgrade-plan.md` P4。缺口是**两套主题源互不知情**：
 
 - dsh 设浅色而系统是深色时，原生侧边栏、工具栏、设置窗口是深的，网页正文是浅的
   ——一眼穿帮，而且没有任何办法在 dsh 里把它掰过来。

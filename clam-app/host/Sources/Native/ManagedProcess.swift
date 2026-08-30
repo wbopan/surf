@@ -1,7 +1,7 @@
 import Foundation
 
 /// 壳自己 spawn 出来的一个受监护子进程：**自成进程组**、输出合流成一条管道、
-/// 退出可被感知。`BackendManager` 用它托管后端（`docs/clam-connection-plan.md` §5）。
+/// 退出可被感知。`BackendManager` 用它托管后端（`docs/archive/clam-connection-plan.md` §5）。
 ///
 /// **为什么不用 `Foundation.Process`**：`Process` 没有任何办法让子进程自成进程组
 /// ——它内部 posix_spawn 时不设 `POSIX_SPAWN_SETPGROUP`，子进程于是继承**壳自己**

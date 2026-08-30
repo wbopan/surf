@@ -1,5 +1,5 @@
 #!/bin/bash
-# postBuild：把分发载荷打进 app bundle（分发计划 M1，docs/distribution-plan.md §2.1）。
+# postBuild：把分发载荷打进 app bundle（分发计划 M1，docs/archive/distribution-plan.md §2.1）。
 #
 #   Contents/Resources/ClamNode/                 各插件的 node 半边
 #   Contents/Resources/ClamPlugins/<M>/sources/  各插件的 swift/ 源码

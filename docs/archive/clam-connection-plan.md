@@ -162,7 +162,7 @@ searching / reconnecting 两幕并进各自页面的 spinner 行，不再单独�
 
 ## §4 M3：连接偏好模型
 
-壳侧 UserDefaults 三键（登记进 `docs/clam-contracts.md` 保管箱/键位一节）：
+壳侧 UserDefaults 三键（登记进 `docs/extend/contracts.md` 保管箱/键位一节）：
 
 | 键 | 值 | 语义 |
 |---|---|---|
@@ -218,7 +218,7 @@ searching / reconnecting 两幕并进各自页面的 spinner 行，不再单独�
 **2026-08-29 用户裁决：「设置我们先不管」。本节整体缓议，设计保留备后续启用；
 以下内容在启用前不实现、不派工。**
 
-**契约**（权威落在 `clam-settings/swift/`，汇总登记 `docs/clam-contracts.md` §2）：
+**契约**（权威落在 `clam-settings/swift/`，汇总登记 `docs/extend/contracts.md` §2）：
 
 - 槽名 `"settings.pane"`，走 `ClamContributions`。metadata 键（消费方定义）：
   `label`（中文）、`labelEn`、`symbol`（SF Symbol 名）、`height`（Double，可选，
@@ -249,7 +249,7 @@ searching / reconnecting 两幕并进各自页面的 spinner 行，不再单独�
 | `clam-app/host/Sources/Strings.swift` | 新文案双语 |
 | `clam-app/host/Sources/AppDelegate.swift` | 持有 BackendManager；⌘Q 收尾；删「不 spawn dsh」旧注释 |
 | `clam-settings/swift/SettingsWindowController.swift` `SettingsTabs.swift` | §6 消费贡献（**缓议**） |
-| `docs/clam-contracts.md` | `settings.pane` metadata 键表；`clam.connection.*` UserDefaults 键；`clam.connection.state` 粘性主题 |
+| `docs/extend/contracts.md` | `settings.pane` metadata 键表；`clam.connection.*` UserDefaults 键；`clam.connection.state` 粘性主题 |
 | `CLAUDE.md` | 架构速览改「三级定位」为「偏好模型」；踩坑视实现补 |
 | `docs/release-install-plan.md` | 顶部加一行：「壳不 spawn dsh」非目标已被本计划推翻，互斥语义见本计划 §5 |
 
@@ -344,7 +344,7 @@ M5（settings.pane 贡献槽）继续缓议——它想解决的「设置里管�
     `emitSticky("clam.connection.state", …)`（载荷：`phase` 字符串、`url`、
     `managed` Bool；粘性——设置窗口晚开也拿得到当前值）。
   - 重启：设置页 `emit("clam.app.relaunch")`（瞬间消息），壳侧订阅执行。
-  - 两个主题 + 三个 UserDefaults 键登记进 `docs/clam-contracts.md`
+  - 两个主题 + 三个 UserDefaults 键登记进 `docs/extend/contracts.md`
     （该文件工作区混着 release 线未提交改动——**只追加自己的行，别动别人的段落**）。
 
 ### §11.3 引导连接页重做（上下布局）
@@ -379,7 +379,7 @@ M5（settings.pane 贡献槽）继续缓议——它想解决的「设置里管�
 | `clam-app/host/Sources/Native/ConnectionController.swift` | unset 态 + `emitSticky` 状态投影 + relaunch 订阅（订阅也可落 AppDelegate） |
 | `clam-app/host/Sources/ConnectionViewController.swift` | 引导页重做（上下布局 + 两枚勾选框） |
 | `clam-app/host/Sources/Strings.swift` | 新文案双语（标题带 dsh、面板标题、两枚勾选框、查找中） |
-| `docs/clam-contracts.md` | `clam.connection.state` / `clam.app.relaunch` 主题 + mode 值域更新（只追加） |
+| `docs/extend/contracts.md` | `clam.connection.state` / `clam.app.relaunch` 主题 + mode 值域更新（只追加） |
 | `CLAUDE.md` | 架构速览连接偏好一句更新（unset 不自动接入；同样只动该处） |
 
 验收：壳 `xcodebuild -derivedDataPath build -scheme surfclam` 通过；

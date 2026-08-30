@@ -1,5 +1,5 @@
 /**
- * node 侧语言决议的**共用零件**（计划 `docs/clam-i18n-plan.md` §3 末段、§7）。
+ * node 侧语言决议的**共用零件**（计划 `docs/archive/clam-i18n-plan.md` §3 末段、§7）。
  *
  * 全仓面向用户的文案绝大多数在 Swift 里，语言经 `clam.locale` 粘性总线送到；
  * 但有两类东西长在 node 进程里、够不着那条总线：

@@ -6,71 +6,68 @@
 存盘一两秒后就在运行中的窗口里换掉，不重启任何进程。
 
 ```
-┌─ 终端 ───────────────────────────────────────────────┐
-│ $ dsh web --no-open                                  │
-│   dsh 起来 → 加载插件树 → clam-app 构建并拉起 App    │
-└──────────────────────────────────────────────────────┘
-                        ↓ 它是 dsh 的客户端外设，不是宿主
 ┌─ Surfclam.app ───────────────────────────────────────┐
 │  窗口 + 一个 root 槽 + swiftc 编译机                 │
 │    root  ← clam-layout（分栏、工具栏、WebView 排版） │
 │      sidebar ← clam-sidebar（原生会话列表）          │
 │      主区    ← WKWebView（dsh 自己的 Web UI）        │
 └──────────────────────────────────────────────────────┘
+        ↑ 壳是 dsh 的客户端外设，不是宿主
+┌─ dsh 后端 ───────────────────────────────────────────┐
+│  加载插件树 → clam-app 写下 endpoint、供壳发现       │
+│  正式形态：App 打开时自己把它拉起来（打开即有）      │
+│  开发形态：终端先跑起 dsh，由它构建并拉起 App        │
+└──────────────────────────────────────────────────────┘
 ```
 
-启动方向是反的，这是整件事的支点：dsh 先于 App 存在，于是它就是壳天然的
-bootstrapper——壳的源码、构建、拉起全都收进一个插件（`clam-app`），
+支点是这个方向：**壳的源码、构建、拉起全都收进一个普通插件（`clam-app`）**，
 仓库里没有"特权目录"这种东西。
 
-## 跑起来
+## 装
 
-前置：macOS 27+（部署目标钉在 `27.0`，见 `clam-app/host/project.yml`）、
-完整 Xcode（`xcodebuild` 需要它，Command Line Tools 不够）、
-Node `^22.19.0 || >=24.0.0`。
+三步，没有第四步。用户机器上**不需要 Xcode、不需要 pnpm、不需要懂 cordis**。
 
 ```bash
-npm i -g @deepseek-ai/dsh@0.1.1-rc.2
+npm i -g @deepseek-ai/dsh@0.1.1-rc.2     # 这一步我们不接管
 ```
 
-用：
+然后下载 `Surfclam-<版本>.dmg`，拖进「应用程序」，双击。App 自己托管后端，
+打开即有、⌘Q 即退。
+
+详见 [`docs/use/install.md`](docs/use/install.md)——连接偏好、诊断、日志、卸载都在那儿。
+
+## 改
+
+前置：macOS 27+（部署目标钉在 `27.0`）、完整 Xcode（`xcodebuild` 需要它，
+Command Line Tools 不够）、Node `^22.19.0 || >=24.0.0`。
+
+**仓库放在哪里都行**，克隆下来跑一行：
 
 ```bash
-npx @wenbo/surfclam
+./dev              # 装好 profile 并前台起 dsh，端口交给 OS 挑
 ```
 
-改：**仓库放在哪里都行**，克隆下来跑一行——
+`./dev` 幂等，随便重复跑：它把各插件与伞包 link 进 profile、校正 `bundles`、
+补上让 `@deepseek-ai/*` 解析得到的那条符号链接，然后前台跑 dsh。首次会构建壳
+（分钟级），之后源码没变就秒起。窗口没弹出来就看终端——`clam-app:` 开头那几行
+会说清卡在哪。
 
-```bash
-./dev              # 装好 profile（名叫 surfclam）并前台起 dsh，端口交给 OS 挑
-```
-
-`./dev` 幂等，随便重复跑：它把本仓库的各插件 + 伞包 link 进 profile、校正 `bundles`、
-补上让 `@deepseek-ai/*` 解析得到的那条符号链接，然后前台跑 dsh（总是带 `--no-open`，
-免得 dsh 另开一个重复的浏览器标签页）。
-
-首次会构建壳（分钟级），之后源码没变就秒起。窗口没弹出来就看终端——`clam-app:`
-开头的那几行会说清卡在哪。
-
-**装：**想让这台机器上随时双击就能用（不必开着终端），在主 worktree 跑——
+想让这台机器上随时双击就能用：
 
 ```bash
 ./release             # Release 壳进 /Applications，装完打开一次
-./release --status    # endpoint / App 各在什么状态
+./release --status    # 后端与 App 各在什么状态
 ./release --uninstall # 删掉 App（会话与设置不动）
 ```
-
-它与 `./dev` 共用全部安装步骤，但**只装 App，不装任何常驻服务**：后端由 App
-自己托管，打开即有、⌘Q 即退。细节见
-[`docs/release-install-plan.md`](docs/release-install-plan.md)。
 
 ## 三个开发循环，快慢差两个数量级
 
 | 改什么 | 怎么生效 | 耗时 |
 |---|---|---|
 | 插件的 `swift/` | 存盘即可。桥轮询发现 → 壳重编 → 世代热替换 | **1~3s，不重启任何东西** |
+| 插件的 `lib/client.js` | 浏览器侧有 HMR，自动重载 | 秒级 |
+| 插件的 `lib/*.js`、`package.json`、编排表 | 必须重启 dsh（官方在 web bundle 下关了 node 侧 HMR） | 秒级 |
 | 壳源码 `clam-app/host/` | clam-app 盯着它，改了后台重建，窗口右上角提示「重启生效」 | 重建 2s + 重启 |
-| 插件的 `lib/*.js`、`package.json`、增删插件 | 必须重启 dsh（官方在 web bundle 下关了 node 侧 HMR） | 秒级 |
 
 第一行是这个项目存在的理由。改 `clam-sidebar/swift/SidebarView.swift` 存盘，
 一两秒后侧边栏就变了，**选中态和列表内容都还在**——因为数据面存在跨世代的保管箱里，
@@ -80,34 +77,40 @@ npx @wenbo/surfclam
 
 ```
 surfclam/          伞 bundle @wenbo/surfclam：**本仓库唯一的编排表**（cordis.patch.yml
-                   决定装哪些插件、什么顺序、什么配置），外加安装器/启动器 bin/surfclam.js
-clam-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App + 盯壳源码
-  host/            Xcode 工程（project.yml / Sources/ / scripts/ / tools/）
+                   决定装哪些插件、什么顺序、什么配置），外加启动器 bin/surfclam.js
+clam-app/          壳源码为载荷的插件：构建 + 写 endpoint 发现文件 + 拉起 App
+  host/            Xcode 工程（project.yml / Sources/ / scripts/）
+  host-build/      构建能力，**不随包分发**——正式形态的 App 因此天然不构建自己
 clam-bridge/       唯一的特权插件：Swift 载荷登记表 + /clam/bridge WS + 盯 swift/ 目录
-clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、开放的 toolbar 贡献槽；
-                   client 半边装 window.__clam 动作桥 + 收起 web 侧边栏
-clam-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边
-                   （订 dsh 的内部 API，投影经桥推给 Swift；Swift 只管画）
+clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、开放的 toolbar 贡献槽
+clam-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边，Swift 只管画
 clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。同时是「有什么在等着你」
-                   的唯一真相，经 clamPending 服务供给侧边栏那枚「待处理」胶囊
-clam-settings/     原生设置窗口：不占槽、自己一扇窗，编排照抄 dsh 的 Web 设置对话框
-clam-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS（有 HMR），
+                   的唯一真相，供给侧边栏那枚「待处理」胶囊
+clam-settings/     原生设置窗口：不占槽、自己一扇窗，前四栏编排照抄 dsh 的 Web 设置对话框
+clam-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS，
                    另有一个薄 Swift 载荷让原生侧跟随 dsh 的 ui-theme
-tools/             跨包的开发工具（shot.sh 截图）。只服务一个插件的工具归那个插件
-docs/              计划、ABI 实测结论、可复跑的 spike，以及下面这两份契约文档
+clam-memory/       跨会话持久记忆：一目录 markdown，索引每步注入、正文按需读。
+                   **纯 node、零 macOS 依赖**，装到任何一台有 dsh 的机器上都跑得动
+tools/             跨包的开发工具。只服务一个插件的工具归那个插件
+docs/              文档，按受众分四层，见下
 ```
 
-写插件从这两份开始（外部作者不必读本仓库源码）：
+## 文档
 
-- [`docs/plugin-author-guide.md`](docs/plugin-author-guide.md) —— 三种最小骨架、
-  package.json 字段、命名规则、接进编排、外部热循环、五条硬规矩、失败症状表。
-- [`docs/clam-contracts.md`](docs/clam-contracts.md) —— 契约总表：命令声明、
-  toolbar 的 `ToolbarSpec` 与活通道、事件主题、保管箱键、hook 名、页内桥。
+| 你是谁 | 从哪读起 |
+|---|---|
+| 想用它 | [`docs/use/install.md`](docs/use/install.md) |
+| 想给它写插件 | [`docs/extend/plugin-author-guide.md`](docs/extend/plugin-author-guide.md) → [`docs/extend/contracts.md`](docs/extend/contracts.md) |
+| 想改这个仓库 | [`docs/internals/`](docs/internals/) |
 
-一个"带 Swift 载荷的插件"长这样——node 半边通常只有几行：
+完整索引与每篇一句话说明在 [`docs/README.md`](docs/README.md)。
+
+## 写一个插件
+
+外部作者不必读本仓库源码。一个"带 Swift 载荷的插件"长这样——node 半边通常只有几行：
 
 ```js
-import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
+import { createSwiftPlugin } from "@wenbo/clam-bridge/plugin";
 export default createSwiftPlugin({
   name: "clam-sidebar",
   provide: "clam-sidebar",
@@ -116,10 +119,6 @@ export default createSwiftPlugin({
   swiftDeps: ["clam-layout"],   // 桥：上游换代时我自动跟着重编
 });
 ```
-
-（真正的 `clam-sidebar` 比这多一截：它的 node 半边还拿着整个数据面，
-经 `subscribe`/`expose` 与 Swift 半身对话。数据放在这一侧是有意的——
-壳随 app bundle 冻结，node 半边随 npm 可更新。）
 
 Swift 半边导出一个 C 入口，拿到 `host` 就往槽里塞视图：
 
@@ -138,6 +137,8 @@ final class SidebarPlugin: ClamPlugin {
 }
 ```
 
+数据面放在 node 半边是有意的——壳随 app bundle 冻结，node 半边随包可更新。
+
 ## 热替换是怎么成立的
 
 桥把每个插件的 `swift/` 目录扫成一份内容 hash，壳按这个 hash 做内容寻址编译：
@@ -145,7 +146,7 @@ final class SidebarPlugin: ClamPlugin {
 是同一个事实的两面。装载走 `dlopen` + `dlsym` 拿到入口，`activate` 里的新注册
 覆盖旧槽，然后壳松开旧 handle，旧的那一代自行退场。
 
-三条硬事实，都是实测出来的（`docs/native-abi.md`）：
+三条硬事实，都是实测出来的（[`docs/extend/native-abi.md`](docs/extend/native-abi.md)）：
 
 1. **旧 dylib 永不 `dlclose`**——对 Swift 不安全（类型元数据还被引用着）。
    代码页泄漏式退休，实例由 ARC 正常回收。
@@ -157,35 +158,12 @@ final class SidebarPlugin: ClamPlugin {
 坏插件不许拖垮系统：编译失败保持上一代在役；没有任何插件占 `root` 槽时，
 壳退化成整窗 WebView——功能不缺，只是没有原生外壳。
 
-## 诊断
-
-`⌥⌘D` 打开诊断面板：连着哪个 dsh、桥通不通、每个插件是第几代跑的哪个 module、
-退休了多少 image、壳自己最近有没有重建过。可拷贝。
-
-日志在 `~/Library/Application Support/io.wenbo.surfclam/logs/`。
-
-## Debug 与 Release
-
-两个不同的 App，可并存运行：
-
-| | Debug（日常开发） | Release（正式） |
-|---|---|---|
-| App 名 | Surfclam Dev | Surfclam |
-| Bundle ID | io.wenbo.surfclam.dev | io.wenbo.surfclam |
-| 标记 | 橙色 DEV 徽章（App 图标） | 无 |
-| 位置 | `clam-app/host/build/Build/Products/Debug/` | `/Applications/` |
-
-日常使用者应在自己 profile 的 `cordis.patch.yml` 里把 `clam-app` 的
-`configuration` 覆写成 `Release`。手动构建走
-`clam-app/host/scripts/dev.sh` 与 `build.sh`（`dsh web` 做的是同一套步骤）。
-
-## 状态
-
-阶段二迁移进行中，**M0～M8 已完成**。
-唯一权威计划是 [`docs/phase2-clam-plugin-migration-plan.md`](docs/phase2-clam-plugin-migration-plan.md)
-——它是**历史档案**，正文里的 `dash` / `dash-*` / `Dash*` 都是更名前的写法，
-读之前先看 [`CLAUDE.md`](CLAUDE.md) 开头那张新旧名字映射。
-给 agent 的工作须知也在 `CLAUDE.md`。
+## 兼容性
 
 `dsh` 处于 developer preview，明示会有 breaking change：帧解析一律防御式
-（未知帧忽略、异常不崩），CSS 选择器用语义后缀模糊匹配。验证于 `0.1.1-rc.2`。
+（未知帧忽略、异常不崩），CSS 选择器优先锚 `[data-slot]` 这类一等契约、
+退而用语义后缀模糊匹配。验证于 `0.1.1-rc.2`。
+
+已知缺口——dsh 缺、而我们**决定不替它补**的那些——记在
+[`docs/internals/dsh-upstream-gaps.md`](docs/internals/dsh-upstream-gaps.md)。
+立场是：我们只是它的壳，遇到上游缺失如实报告，不绕过公开 API 替它补实现。

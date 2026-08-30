@@ -188,7 +188,7 @@ final class SettingsModel: ObservableObject {
     private let log: (String) -> Void
 
     /// 界面语言。**真相在 dsh 的 `locale` 设置**，壳把它当粘性事件广播；
-    /// 这里只是持有者，视图读它就建立了观察依赖（`docs/clam-i18n-plan.md` §3/§5）。
+    /// 这里只是持有者，视图读它就建立了观察依赖（`docs/archive/clam-i18n-plan.md` §3/§5）。
     private let localeStore: ClamLocaleStore
 
     /// 「连接」栏的数据面。**不经桥、不经 dsh**——它是壳自己的偏好与状态

@@ -2,7 +2,7 @@
 
 给"要把界面做得像原生"的人（和 agent）用的：Apple 官方设计套件里每个控件的
 **精确几何、字体、颜色、材质参数**，命令行可查。web header 贴原生那次改造
-（`docs/web-header-native-match-plan.md`）的所有目标数值都出自这里，可当成用法范例。
+（`docs/archive/web-header-native-match-plan.md`）的所有目标数值都出自这里，可当成用法范例。
 
 ```sh
 tools/apple-kit/fetch.sh                                  # 首次：匿名下载 110MB + 建索引；之后秒过

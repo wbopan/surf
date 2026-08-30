@@ -6,7 +6,7 @@
 （`name` + 一行 `description`）注入上下文，**正文不注入**——模型觉得某条相关，
 再用手里的普通 `read` 工具把它打开。写入也由模型自己发起，用普通的 `write` / `edit`。
 
-权威计划：`docs/clam-memory-plan.md`。
+权威计划：`docs/archive/clam-memory-plan.md`。
 
 ## 它是什么形状
 

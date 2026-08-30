@@ -1,5 +1,5 @@
 /**
- * 通知文案表（计划 `docs/clam-i18n-plan.md` §5 的 node 侧那一半）。
+ * 通知文案表（计划 `docs/archive/clam-i18n-plan.md` §5 的 node 侧那一半）。
  *
  * **全仓唯一写在 JS 里的用户文案**：通知的标题 / 正文 / 按钮由 node 组好，
  * Swift 那半边收到什么画什么（`swift/NotifyModel.swift` 顶注那条纪律）。

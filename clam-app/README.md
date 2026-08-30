@@ -14,7 +14,7 @@ Surfclam macOS 壳的宿主插件。**在仓库里**它的载荷是 `host/` 里�
 于是本插件有两副面孔，**判据是 `host-build/` 这个模块 import 得不得到**
 （`lib/index.js` 顶层一次 `await import(…)`），不是环境变量、也不是探路径：
 拿得到就做下面三件事，拿不到只做第 1 和第 3 件。
-壳不再自己构建自己的理由见 `docs/distribution-plan.md` §3.3——发布的 App 是签名
+壳不再自己构建自己的理由见 `docs/archive/distribution-plan.md` §3.3——发布的 App 是签名
 公证过的，自己 xcodebuild 重建自己会把签名降级成 ad-hoc，所有热插件随之装载失败。
 
 ## 它做三件事
@@ -23,7 +23,7 @@ Surfclam macOS 壳的宿主插件。**在仓库里**它的载荷是 `host/` 里�
 
 1. **写 endpoint 发现文件** `~/Library/Application Support/io.wenbo.surfclam/endpoints/<profile>.json`
    （`{httpBase, bridgePath, pid, startedAt, profile, hostDir, appPath}`，原子写；
-   字段表在 `docs/clam-contracts.md` §10.1）。先于构建落地，
+   字段表在 `docs/extend/contracts.md` §10.1）。先于构建落地，
    一个已经开着的 app 立刻就能接入，不必等分钟级的首次构建。fiber 卸载时按 pid
    匹配删除——两个 dsh 并存时，先退的那个不会把后来者的文件删掉。
    `hostDir` 是本插件所在的 `clam-app/host` 绝对路径、`appPath` 是本进程期望伺候的
@@ -43,7 +43,7 @@ Surfclam macOS 壳的宿主插件。**在仓库里**它的载荷是 `host/` 里�
 
 界面已经全在插件里，壳只保留"让插件能跑起来"的那部分。
 **通知本身没有丢弃**——计划 §7.3 那条早期决定后来以 `clam-notify` 插件的形态落地了
-（权威计划 `docs/clam-notify-plan.md`）；壳这边只剩一个不认识通知语义的中转站，见下表
+（权威计划 `docs/archive/clam-notify-plan.md`）；壳这边只剩一个不认识通知语义的中转站，见下表
 的 `SystemDelegateRelay`。
 
 | 目录 | 职责 |
@@ -64,11 +64,11 @@ Surfclam macOS 壳的宿主插件。**在仓库里**它的载荷是 `host/` 里�
   **必须在启动完成前装好**的系统 delegate（眼下只有 `UNUserNotificationCenter`），
   把回调拍平成字典经 `ClamHooks` 问一遍插件。运行时装载的插件永远不可能自己占这些
   位子，这里是唯一的转交点。壳侧只有转发，没有业务判断（hook 名与载荷见
-  `docs/clam-contracts.md` §7）。
+  `docs/extend/contracts.md` §7）。
 
 **壳里没有任何一条业务命令的名字。** 菜单项、默认键位、⌘/ 面板、`clam-shortcuts`
 设置页四样东西共用插件 node 半边的一份 `commands` 声明（形状见
-`clam-bridge/lib/plugin.js` 的 `CommandDeclaration`，汇总见 `docs/clam-contracts.md` §1）。
+`clam-bridge/lib/plugin.js` 的 `CommandDeclaration`，汇总见 `docs/extend/contracts.md` §1）。
 页面 URL 带什么查询参数也一样：壳只订粘性主题 `clam.web.query`，参数名的定义权在
 占 `root` 槽的插件那里。
 
@@ -114,8 +114,8 @@ profile `surfclam` 的 App，那正是 profile 分片要消掉的混线。
 
 **`host-build/` 不在时，`build` / `watch` / `restartOnRebuild` 被整体关掉**，
 并打一行日志。这是本插件唯一的形态判据——从前那个环境变量 `CLAM_RELEASE`
-2026-08-30 随分发重构 M4 删了（`docs/distribution-plan.md` §3.3，
-`docs/clam-contracts.md` §10.3）。同一次里 `hostDir` 也不再无条件写进发现文件：
+2026-08-30 随分发重构 M4 删了（`docs/archive/distribution-plan.md` §3.3，
+`docs/extend/contracts.md` §10.3）。同一次里 `hostDir` 也不再无条件写进发现文件：
 没有 `host/` 就没有那个目录，写一个不存在的路径只会误导读日志的人。
 
 `launch` **不关**：正式形态下 App 早就在跑（后端正是它 spawn 的），

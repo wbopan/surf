@@ -21,7 +21,7 @@
  *   - 路径决议、frontmatter、索引组装、上限截断全在 `./store.js`。
  * 这里出现的每一处 dsh API 事实都在下面就地注了源码位置，别再去猜。
  *
- * 权威计划：docs/clam-memory-plan.md（尤其 §1.1 注入通道、§2.6 三处决策、§8 执行日志）。
+ * 权威计划：docs/archive/clam-memory-plan.md（尤其 §1.1 注入通道、§2.6 三处决策、§8 执行日志）。
  */
 
 import { createHash } from "node:crypto";

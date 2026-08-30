@@ -1,6 +1,6 @@
 #!/bin/bash
 # 分发流水线：Developer ID 签名 + Hardened Runtime 构建 → dmg → 签 dmg →（公证）。
-# 权威计划 docs/distribution-plan.md §4 与 §5。
+# 权威计划 docs/archive/distribution-plan.md §4 与 §5。
 #
 # 用法：
 #   scripts/release-dmg.sh [--identity <名字>] [--skip-notarize]

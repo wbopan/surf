@@ -8,7 +8,7 @@ import Foundation
 /// 现算，所以两种语言都存下来、取用时再挑一份。
 ///
 /// 构造器**必须给两个参数**，漏写 en 编译不过——这就是那两张表的完备性检查
-/// （`docs/clam-i18n-plan.md` §5「typed struct 就是完备性检查」）。
+/// （`docs/archive/clam-i18n-plan.md` §5「typed struct 就是完备性检查」）。
 /// 两种语言写法真的相同时用 `.same(_:)` 显式声明，而不是把同一个串抄两遍。
 struct LocalizedText {
     let zh: String
@@ -28,7 +28,7 @@ struct LocalizedText {
 
 /// clam-settings 的全部**用户可见**文案，zh 与 en 并排写在同一行（审校时一眼对照）。
 ///
-/// ## 纪律（`docs/clam-i18n-plan.md` §4/§5/§8，与壳、clam-sidebar 同一套）
+/// ## 纪律（`docs/archive/clam-i18n-plan.md` §4/§5/§8，与壳、clam-sidebar 同一套）
 ///
 /// - **只收用户看得见的字**。`host.log(...)` 与 node 半边的日志一律留在原地、
 ///   保持中文：日志的读者是蹲在终端前的开发者与 agent，跟着界面语言变只会让

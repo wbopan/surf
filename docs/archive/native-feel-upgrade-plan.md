@@ -1,6 +1,6 @@
 # 原生感升级计划（对照 webview-native-feel-playbook）
 
-> 权威计划。输入是 `docs/webview-native-feel-playbook.md`（Raycast 2.1.0 逆向手册，
+> 权威计划。输入是 `docs/extend/webview-native-feel.md`（Raycast 2.1.0 逆向手册，
 > 2026-08-28 从桌面拷入归档）。每完成一个里程碑在 §7 追加执行日志；
 > 发现本文与源码冲突，以源码为准并就地更新本文。
 

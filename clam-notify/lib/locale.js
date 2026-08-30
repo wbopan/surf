@@ -1,5 +1,5 @@
 /**
- * clam-notify 的 node 侧语言决议（计划 `docs/clam-i18n-plan.md` §3 末段）。
+ * clam-notify 的 node 侧语言决议（计划 `docs/archive/clam-i18n-plan.md` §3 末段）。
  *
  * **为什么 clam-notify 要自己算一遍**：全仓其余面向用户的文案都在 Swift 里，
  * 语言经 `clam.locale` 粘性总线送到；只有通知的标题/正文/按钮是 node 组好的

@@ -1,6 +1,6 @@
 /**
  * 构建期把各插件的 Swift 半边**真的编一遍**，产物随 bundle 分发
- * （分发计划 M3，docs/distribution-plan.md §3.2）。
+ * （分发计划 M3，docs/archive/distribution-plan.md §3.2）。
  *
  *   Contents/Resources/ClamPlugins/<Module>/prebuilt/<hash12>/lib<Module>_h<hash12>.dylib
  *   Contents/Resources/ClamPrebuilt.json                      清单（给人看的）

@@ -15,7 +15,7 @@
  *
  * ## 为什么主题的真相在 dsh 而不是系统
  *
- * 计划 `docs/native-feel-upgrade-plan.md` §0.1：**自然延伸 dsh，不另建主真相来源。**
+ * 计划 `docs/archive/native-feel-upgrade-plan.md` §0.1：**自然延伸 dsh，不另建主真相来源。**
  * dsh 设浅色而系统是深色时，原生侧边栏/工具栏深、网页正文浅，一眼穿帮；窗口
  * `backgroundColor` 跟系统而非 dsh 主题，首帧与 resize 会露底闪错色。所以这里只做
  * 投影，不做第二偏好源——用户改主题的地方仍然只有 dsh 那一处。

@@ -3,7 +3,7 @@ import Foundation
 
 /// 壳的全部**用户可见**文案，zh 与 en 并排写在同一行（审校时一眼对照）。
 ///
-/// ## 纪律（`docs/clam-i18n-plan.md` §4/§5/§8）
+/// ## 纪律（`docs/archive/clam-i18n-plan.md` §4/§5/§8）
 ///
 /// - **只收用户看得见的字**。`Log.write` / stderr 的日志一律留在原地、保持中文：
 ///   日志的读者是蹲在终端前的开发者与 agent，跟着界面语言变只会让排错时对不上账。
@@ -96,7 +96,7 @@ struct L {
 
     // MARK: - 连接页（没连上后端时铺满窗口的那一屏）
 
-    // **三条口径**（`docs/clam-connection-plan.md` §3，用户裁决，全部强制）：
+    // **三条口径**（`docs/archive/clam-connection-plan.md` §3，用户裁决，全部强制）：
     //  1. 面向最终用户：这一节里不出现 ./dev、worktree、profile、pid、hash
     //     ——那些是开发者概念，只活在 ⌥⌘D 诊断面板与日志里。一律称"后端"。
     //  2. 贴系统 App 的密度：短句、事实性，不写"无需操作""发现即自动接入"

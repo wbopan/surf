@@ -2,7 +2,7 @@ import Foundation
 
 /// **profile 自举**：让"双击 `/Applications/Surfclam.app`"这一下就足以跑起一整套
 /// surfclam，用户机器上不需要仓库、不需要 pnpm、不需要知道 profile 是什么。
-/// 权威计划 `docs/distribution-plan.md` §2.2 / §3.5 / §7.1。
+/// 权威计划 `docs/archive/distribution-plan.md` §2.2 / §3.5 / §7.1。
 ///
 /// 做四件事，全部**增量确保**，不是覆盖重写：
 ///

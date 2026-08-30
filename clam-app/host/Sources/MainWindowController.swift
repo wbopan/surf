@@ -509,7 +509,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         }
     }
 
-    /// 主题名。**壳这边是权威**（订阅方定义），登记在 docs/clam-contracts.md §4。
+    /// 主题名。**壳这边是权威**（订阅方定义），登记在 docs/extend/contracts.md §4。
     static let relaunchTopic = "clam.app.relaunch"
 
     /// 已经安排过一次重启。**按钮点两下不该起两个助手**——第二个会在第一个

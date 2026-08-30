@@ -6,7 +6,7 @@
  * UI 文本不可选中（输入框与会话消息流除外）、实体按钮的按压手感、
  * 字体收到 macOS 原生度量（两个旋钮：CONTROL 管控件、BODY 管对话阅读列，
  * 见下面「原生字体度量」的实测表）、主内容区 header 贴合 macOS 27 工具栏
- * （HEADER 段，权威计划 docs/web-header-native-match-plan.md）。
+ * （HEADER 段，权威计划 docs/archive/web-header-native-match-plan.md）。
  *
  * **唯一一条对外契约**是 header 那一段带来的：`watchDragPassthrough()` 把 header
  * 里可点元素的矩形经页内桥报给壳，换它对顶部拖动条放行。不报的话 header 上的
@@ -475,7 +475,7 @@ window.__ModuleLoader__.load({
 		/**
 		 * ===== 主内容区 header：一行 52pt，贴合 macOS 27 Unified Toolbar =====
 		 *
-		 * 权威计划 `docs/web-header-native-match-plan.md`，数值出自 Apple 官方
+		 * 权威计划 `docs/archive/web-header-native-match-plan.md`，数值出自 Apple 官方
 		 * macOS 27 UI Kit（Sketch）的 `Unified Toolbar + Title + Sidebar`。
 		 *
 		 * **为什么是 CSS 而不是原生重画**：原生那条路（试过，2026-08 弃了）要自己

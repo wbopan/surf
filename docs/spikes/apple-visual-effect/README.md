@@ -1,7 +1,7 @@
 # spike：`-apple-visual-effect` 在**不透明窗口**里成不成立
 
-P2 的实测台。权威计划 `docs/native-feel-upgrade-plan.md` §3 P2 列了三个问题，
-这份 README 就是答案；手册背景见 `docs/webview-native-feel-playbook.md` §1.1、附录 A。
+P2 的实测台。权威计划 `docs/archive/native-feel-upgrade-plan.md` §3 P2 列了三个问题，
+这份 README 就是答案；手册背景见 `docs/extend/webview-native-feel.md` §1.1、附录 A。
 
 **和手册附录 A 的唯一实质差异：窗口 `isOpaque = true`。** Raycast 那套是透明窗口 +
 桌面采样（计划 §4 已明确不采纳），surfclam 是文档型 App，窗口不打算透明——

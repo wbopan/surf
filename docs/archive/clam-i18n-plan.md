@@ -1,7 +1,7 @@
 # clam-i18n —— 原生侧语言跟随 dsh（权威计划）
 
 > 状态：**已实现（i0–i6），待用户审校文案**。改这一带的代码前先读 §1（上游机制
-> 事实）与 §8（坑）；文案本身的审校表在 `docs/clam-i18n-copy-review.md`。
+> 事实）与 §8（坑）；文案本身的审校表在 `docs/archive/clam-i18n-copy-review.md`。
 > 上游事实对着 dsh 0.1.1-rc.2 源码核过（2026-08-28，两个调研子代理逐文件确认）。
 
 ## 0. 一句话
@@ -497,7 +497,7 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   `UserQuestionError("the user cancelled ask_user_question", "ASK_CANCELLED")`，
   进会话日志、进网页、进模型上下文的是**那一句英文**；我们这句连日志都不写。
   dsh 自己的网页取消按钮同样塞了一句装饰文字。已就地加注，免得下次再查一遍。
-  **② 审校表** `docs/clam-i18n-copy-review.md`：i1–i5 的 44 条 `// 原：` 标记
+  **② 审校表** `docs/archive/clam-i18n-copy-review.md`：i1–i5 的 44 条 `// 原：` 标记
   （壳 12 / sidebar 9 / header 3 / settings 18 / notify 2）+ i6 自己补的两块，
   三栏对照 + 一句话理由，按插件分节；语气拿不准的 9 条标了 ⚠️ 并在文末单列
   「需要裁决的条目」（8 条），另有「未改动但值得一提」记刻意不翻的几处。

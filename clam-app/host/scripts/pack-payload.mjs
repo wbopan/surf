@@ -1,5 +1,5 @@
 /**
- * 把分发所需的**载荷**打进 app bundle（分发计划 M1，docs/distribution-plan.md §2.1）。
+ * 把分发所需的**载荷**打进 app bundle（分发计划 M1，docs/archive/distribution-plan.md §2.1）。
  *
  *   Contents/Resources/ClamNode/<pkg>/          各插件的 node 半边（package.json + lib/ + swift/）
  *   Contents/Resources/ClamPayload.json         这一次打包的清单 + 跳过判据

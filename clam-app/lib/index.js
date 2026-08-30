@@ -17,7 +17,7 @@
  * 运行中的 app bundle 被覆盖在 macOS 上是安全的（旧进程继续跑旧映像）。
  *
  * **构建那一整套代码不在这个文件里，也不随包分发**：它住在
- * `clam-app/host-build/`（`docs/distribution-plan.md` §3.3），而本包的 `files`
+ * `clam-app/host-build/`（`docs/archive/distribution-plan.md` §3.3），而本包的 `files`
  * 白名单只收 `lib/`、App 的 `ClamNode/` 载荷也只拷 `lib/` 与 `swift/`。
  * 判据因此**不是"探一下 host/ 在不在"，而是"那个模块 import 得到吗"**
  * （见下面那个模块级常量 `hostBuild`）——更诚实，也省掉一次文件系统探路。
@@ -25,7 +25,7 @@
  * 一律关掉，只剩第 1 和第 3 件事。
  *
  * 曾经的 `CLAM_RELEASE` 旋钮 2026-08-30 随 M4 一起删了
- * （`docs/distribution-plan.md` §3.3）：发布的 App 是 Developer ID 签名 + 公证过的，
+ * （`docs/archive/distribution-plan.md` §3.3）：发布的 App 是 Developer ID 签名 + 公证过的，
  * 它自己 xcodebuild 重建自己产出的是 ad-hoc 签名，**当场把自己降级成"来路不明"**，
  * 所有热插件随之装载失败——所以正式形态根本不该有"要不要构建"这个开关，
  * 而不是有一个默认关掉的。
@@ -132,7 +132,7 @@ const INSTALLED_APP = "/Applications/Surfclam.app";
  * 没有构建能力**。
  *
  * 判据不是"探一下 `host/project.yml` 在不在"，而是**模块本身 import 得到吗**
- * （`docs/distribution-plan.md` §3.3）。理由是它更诚实：随 App 分发的镜像与 npm
+ * （`docs/archive/distribution-plan.md` §3.3）。理由是它更诚实：随 App 分发的镜像与 npm
  * 包里，`host-build/` 连同 `host/` 一起**根本没被打进来**，构建这件事不是"被一个
  * 旋钮关掉了"，是压根不存在。省掉的那次文件系统探路是顺带的。
  *
@@ -167,7 +167,7 @@ async function importHostBuild() {
  * 没有构建能力时的配置覆写：**只关"要工具链才做得到的事"**，其余照 config。
  *
  * 关掉的两项都是同一个理由——`host-build/` 不在，xcodegen / xcodebuild 无从谈起，
- * 盯一棵不存在的源码树只会白读文件（`docs/distribution-plan.md` §7.10：
+ * 盯一棵不存在的源码树只会白读文件（`docs/archive/distribution-plan.md` §7.10：
  * 桥那条 500ms 轮询在正式形态下是纯浪费，这条是同一个道理的 node 版）。
  * `restartOnRebuild` 跟着关，是因为它描述的是"重建成功之后"，而重建不会发生。
  *
@@ -211,7 +211,7 @@ function locateProduct(config) {
 }
 
 /**
- * 壳快捷键的设置命名空间（计划：docs/clam-shortcuts-settings-plan.md）。
+ * 壳快捷键的设置命名空间（计划：docs/archive/clam-shortcuts-settings-plan.md）。
  *
  * 名字里没有 `clam-app`，因为它描述的是**壳的菜单**而不是本插件的构建行为；
  * 登记权在这儿只是因为 clam-app 就是壳的 node 半身。ns 名进了 wire——

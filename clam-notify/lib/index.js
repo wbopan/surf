@@ -1,5 +1,5 @@
 /**
- * clam-notify —— 可交互桌面通知（计划 `docs/clam-notify-plan.md`）。
+ * clam-notify —— 可交互桌面通知（计划 `docs/archive/clam-notify-plan.md`）。
  *
  * 把 dsh 里「需要人」的四件事变成 macOS 原生通知：点一下跳到那个会话，
  * 通知上的按钮**直接把它办了**，人在 app 里看到之后通知自己消失。

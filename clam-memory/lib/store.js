@@ -1,4 +1,4 @@
-// clam-memory 的存储层（docs/clam-memory-plan.md §2.7 / §3）。
+// clam-memory 的存储层（docs/archive/clam-memory-plan.md §2.7 / §3）。
 //
 // 三条硬约束：
 //  1. **零依赖**——只用 node 内置模块。这个包要能装到 Linux 机器上跑（§0.0）。

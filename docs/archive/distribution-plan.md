@@ -127,7 +127,7 @@ client 半边的 `join(dirname(pkgPath), "./lib/client.js")` 推导正确。
    `host.describe()` 返回硬编码的 `"0.0.1"`——**从 wire 上探测不出 dsh 版本**。
    上游自己的注释写着 *"introduce protocolVersion only when an independently
    released client appears"*。**surfclam 正是那个 client**；这条已记进
-   `docs/dsh-upstream-gaps.md`。钉版本 `@deepseek-ai/dsh@0.1.1-rc.2` 不是双保险，
+   `docs/internals/dsh-upstream-gaps.md`。钉版本 `@deepseek-ai/dsh@0.1.1-rc.2` 不是双保险，
    **它就是全部机制**。
 
 ### 1.4 「壳自构建」与「插件热编译」是两件事，必须分开处理
@@ -1341,9 +1341,9 @@ M5 才涉及外部成本。
   - 文档：`CLAUDE.md` 的「怎么把它跑起来」「`./release`」「两个开发循环」
     「构建与运行」「多 worktree」「分发形态」六处按 M2+M4 的既成事实改了
     （profile 改名、壳不再自构建、registry 模式没了、`surfclam` 与 `surfclam-dev`
-    可并存）；`docs/clam-contracts.md` §10.3 从"一张环境开关表"改成"一个都没有了"；
+    可并存）；`docs/extend/contracts.md` §10.3 从"一张环境开关表"改成"一个都没有了"；
     `clam-app/README.md` 同步。`docs/release-install-plan.md` 与
-    `docs/clam-connection-plan.md` 里的 `CLAM_RELEASE` **原样留着**——那两份是历史
+    `docs/archive/clam-connection-plan.md` 里的 `CLAM_RELEASE` **原样留着**——那两份是历史
     档案，正文不追新。
   - 五项验收全部实跑：
     ① `./dev` → profile `surfclam-dev`、Debug 壳构建（3.2s）并拉起、五个插件全部

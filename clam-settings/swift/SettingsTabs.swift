@@ -30,7 +30,7 @@ import Foundation
 ///    剩下的进「更多设置」折叠。**结构照抄，但不跟着丢字段**——计划 §2.2 的
 ///    零遗漏不变量比一致性优先级高：看不见的字段等于不存在。
 /// **第五栏「连接」不来自 Web**：dsh 的设置对话框里没有这一栏，它管的是"壳去连谁"
-/// ——那是壳自己的偏好，dsh 根本不知道有这回事（`docs/clam-connection-plan.md` §11.2）。
+/// ——那是壳自己的偏好，dsh 根本不知道有这回事（`docs/archive/clam-connection-plan.md` §11.2）。
 /// 编排照抄的纪律管的是"同一个设置别在两个地方长得不一样"，不是"不许有我们自己的设置"。
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general, models, plugins, presets, connection

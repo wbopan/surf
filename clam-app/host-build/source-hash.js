@@ -2,7 +2,7 @@
  * 壳源码的内容 hash 与「上次构建到哪个 hash」的账本路径。
  *
  * **住在 `host-build/` 而不是 `lib/`**：`lib/` 是随包分发的那一半，而算源码 hash
- * 只在"壳源码在场"时有意义（`docs/distribution-plan.md` §3.3）。整个目录不进
+ * 只在"壳源码在场"时有意义（`docs/archive/distribution-plan.md` §3.3）。整个目录不进
  * `files` 白名单、也不进 App 的 `ClamNode/` 载荷。
  *
  * **单独成模块，只为一件事：`host/scripts/build.sh` 也要写这份账。**

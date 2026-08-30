@@ -6,7 +6,7 @@
     { "file": "Spec.dc.html", "x": 1200, "y": 340, "w": 1000, "h": 360, "title": "尺寸标注（Apple macOS 27 UI Kit）" }
   ],
   "annotations": [
-    { "id": "how-to-read", "x": 1200, "y": 0, "w": 420, "text": "对比判据：左半是原生侧边栏（52pt 标题栏、36pt 胶囊、中线 y=26）。\n方案让右半的标题簇与三枚胶囊共用同一条中线；现状的标签行把 header 撑到 76pt，标题也偏上。\n所有数值来自 Apple macOS 27 UI Kit（Sketch）与 dsh 0.1.1-rc.2 的 CSS 源码，见 docs/web-header-native-match-plan.md。" }
+    { "id": "how-to-read", "x": 1200, "y": 0, "w": 420, "text": "对比判据：左半是原生侧边栏（52pt 标题栏、36pt 胶囊、中线 y=26）。\n方案让右半的标题簇与三枚胶囊共用同一条中线；现状的标签行把 header 撑到 76pt，标题也偏上。\n所有数值来自 Apple macOS 27 UI Kit（Sketch）与 dsh 0.1.1-rc.2 的 CSS 源码，见 docs/archive/web-header-native-match-plan.md。" }
   ],
   "launch": { "view": "canvas" }
 }

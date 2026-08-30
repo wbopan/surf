@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// - **偏好**：`UserDefaults` 直接读写（键名字面量，权威在
 ///   `clam-app/host/Sources/Native/ConnectionController.swift`，登记在
-///   `docs/clam-contracts.md` §10.2）；
+///   `docs/extend/contracts.md` §10.2）；
 /// - **状态**：订粘性主题 `clam.connection.state`（§4），只读。
 ///
 /// 写偏好**不会当场切后端**（§11.2 裁决③）：这一栏说的是"打开 App 时"，

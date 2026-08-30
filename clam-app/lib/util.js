@@ -4,7 +4,7 @@
  * **这份是随包分发的**（`files` 白名单里的 `lib/`），所以只放"两边都要用"的东西
  * ——`run` / `errorText` / `readTextOrUndefined` / `delay`。只有构建那半边用得上的
  * （`tail`、hash、xcodebuild 那一套）一律住在 `clam-app/host-build/`，
- * 那个目录**不进包**（`docs/distribution-plan.md` §3.3）。
+ * 那个目录**不进包**（`docs/archive/distribution-plan.md` §3.3）。
  *
  * 单独成模块只为一个理由：`lib/index.js` 与 `host-build/index.js` 之间不能有静态
  * 循环依赖——前者 `await import()` 后者，后者要是反过来 `import` 前者就成了环。

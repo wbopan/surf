@@ -1,5 +1,5 @@
 /**
- * clam-settings —— 原生设置窗口（计划 docs/clam-settings-plan.md）。
+ * clam-settings —— 原生设置窗口（计划 docs/archive/clam-settings-plan.md）。
  *
  * node 半边登记 Swift 载荷，并在 dsh 进程里**直接消费 host 服务**：
  * `ctx.settings.describe()` 出快照往下推，`mutate` 的单字段 op 往上收。

@@ -2,7 +2,7 @@ import ClamSDK
 import Foundation
 import Observation
 
-/// 一次连接尝试的失败原因（`docs/clam-connection-plan.md` §2）。
+/// 一次连接尝试的失败原因（`docs/archive/clam-connection-plan.md` §2）。
 ///
 /// **分类不是为了好看**：连接页那一行"原因"、诊断面板每个候选后面的标注、
 /// 以及"要不要继续退避重试"三处都读它。认不出来的错误一律归 `.refused`
@@ -64,7 +64,7 @@ enum ConnectionPhase: Equatable, Sendable {
     }
 }
 
-/// 连接偏好（`docs/clam-connection-plan.md` §4，M7 §11.1 修订）。
+/// 连接偏好（`docs/archive/clam-connection-plan.md` §4，M7 §11.1 修订）。
 ///
 /// **没有"缺省"这一档**：偏好用 `ConnectionMode?` 表达，`nil` = 未设置（unset）。
 /// 早先把 unset 读成 `auto`，于是壳一开机就去扫本机所有端口并接入最近启动的那个

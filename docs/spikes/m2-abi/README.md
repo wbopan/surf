@@ -1,6 +1,6 @@
 # M2 ABI spike
 
-计划 §6.5 断言清单的可执行证据。结论见 `docs/native-abi.md`。
+计划 §6.5 断言清单的可执行证据。结论见 `docs/extend/native-abi.md`。
 
 ```bash
 ./build.sh            # SDK + 两代 alpha + beta + 宿主（顺带打印编译耗时基线）

@@ -56,6 +56,6 @@
     # **纯 node，零 macOS 依赖**——不占槽、不贡献界面、不碰桥，装到任何一台有 dsh
     # 的机器上都跑得动，排在这里只是因为它属于这套编排。缺席即无记忆：dsh 的行为
     # 与今天完全一致。记忆目录留空 = dsh 自持；想和 Claude Code 共享同一份记忆，
-    # 在设置里把 clam-memory 的 dir 填 "claude"（权威计划 docs/clam-memory-plan.md）。
+    # 在设置里把 clam-memory 的 dir 填 "claude"（权威计划 docs/archive/clam-memory-plan.md）。
     - id: clam-memory
       name: "@wenbo/clam-memory"

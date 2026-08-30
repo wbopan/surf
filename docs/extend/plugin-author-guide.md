@@ -3,7 +3,7 @@
 这份文档写给**不在本仓库里**的插件作者：你有自己的 npm 包、自己的 git 仓库，
 想给 surfclam 加一格工具栏按钮、一条快捷键、一扇窗口，或者干脆换掉侧边栏。
 
-契约的字段表在 [`clam-contracts.md`](clam-contracts.md)，这里讲怎么把东西跑起来。
+契约的字段表在 [`contracts.md`](contracts.md)，这里讲怎么把东西跑起来。
 
 ## 先知道三件事
 
@@ -17,8 +17,13 @@
    Tools 就够，ClamSDK 的 `.swiftinterface` 随 app bundle 分发），
    但你需要一台已经跑起来过 surfclam 的机器。
 
-启动方向是反的：`dsh web` 先起，其中的 `clam-app` 插件构建并拉起 App。
-App 是 dsh 的客户端外设，不是宿主。
+**App 是 dsh 的客户端外设，不是宿主**，但两种形态下谁先起是反过来的：
+
+- **装好的正式形态**（用户的机器）：双击 `Surfclam.app`，它自己 spawn 一个 dsh
+  并盯着它（连接偏好默认 `managed`，打开即有、⌘Q 即退）。
+- **仓库开发形态**：终端先跑起 dsh，其中的 `clam-app` 插件按需构建并拉起 App。
+
+对你没有区别——两种形态下你的插件都跑在 dsh 进程里，Swift 半边都由壳在运行时编译装载。
 
 ---
 
@@ -103,7 +108,7 @@ export default createSwiftPlugin({
   inject: ["clam-layout"],
   swiftDeps: ["clam-layout"],
 
-  // 想让壳给你装菜单项 / 快捷键就声明在这里（形状见 clam-contracts.md §1）。
+  // 想让壳给你装菜单项 / 快捷键就声明在这里（形状见 contracts.md §1）。
   commands: [{
     id: "sayHello", menu: "view", order: 50, key: "cmd+alt+h",
     label: { zh: "打个招呼", en: "Say Hello" },
@@ -386,7 +391,7 @@ Objective-C runtime 按名字注册类，两代同名类会打架。
 
 声明在 node 半边的 `commands`（§3 的骨架里有），Swift 半边订
 `ClamEventBus.Topic.menuCommand` 应答。壳不认得你的 id，你的插件缺席时那条菜单项
-干脆不出现。字段表见 [`clam-contracts.md` §1](clam-contracts.md)。
+干脆不出现。字段表见 [`contracts.md` §1](contracts.md)。
 
 ### 10.2 往工具栏加一格
 
@@ -412,7 +417,7 @@ host.events.subscribe(LayoutToolbar.activateTopic) { payload in
 
 `id` 只需在**你自己名下**唯一——`(owner, id)` 才是身份，不会撞上别人。
 徽标、选中态、菜单内容这类会变的东西**别放 metadata**，走
-`LayoutToolbar.updateTopic` 活通道（[`clam-contracts.md` §2.2](clam-contracts.md)）。
+`LayoutToolbar.updateTopic` 活通道（[`contracts.md` §2.2](contracts.md)）。
 
 **能用 `button`/`group`/`menu` 就别用 `view`**：自定义视图路线里 AppKit 只看见一块
 不透明矩形，显示模式、玻璃分组、徽标、溢出退让全部失效，而且算错是静默的。
@@ -479,7 +484,8 @@ clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `cl
 | 徽标一热替换就没了 | 徽标写进了 metadata（拓扑）而不是活通道（流量） |
 | node 半边一切正常，浏览器里整棵 client 树没加载 | `__ModuleLoader__.load({id})` 与包名对不上（§4） |
 | `dsh plugin add` 与 `--dump-config` 都过，真 `import` 时炸 `ERR_MODULE_NOT_FOUND` | `@deepseek-ai/*` 没写 peerDependencies，或 profile 里没装上 |
-| dsh 起来了但没有窗口 | 壳没构建出来（没装 Xcode / 缺 xcodegen）。看 `<AppSupport>/io.wenbo.surfclam/logs/clam-app-build.<profile>.<配置>.log` |
+| App 打开了，却一直连不上后端 | 登录 shell 的 PATH 上找不到 `dsh`。GUI App 走 `zsh -lc`，它读 `.zshenv`/`.zprofile`/`.zlogin` 而**不读 `.zshrc`**——node 装在 nvm / fnm 下的机器最常撞，那两个的安装脚本默认就写进 `.zshrc` |
+| 你的 Swift 载荷一个都没装上，报 `mapping process and mapped file (non-platform) have different Team IDs` | 去查 App 的 entitlements，不是查签名身份——见 §12 第一条 |
 
 **别往 session 日志写自定义 event type**：0.1.1-rc.2 会导致
 `SessionFormatUnsupportedError`、会话无法重新读取。你的流量走桥自己那条 WS。
@@ -488,9 +494,17 @@ clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `cl
 
 ## 12. 已知边界（发布前还没解决的）
 
-- **`clam-app` 的模型是"从源码 xcodebuild 构建壳"**，而 `npx @wenbo/surfclam` 的用户
-  多半没有完整 Xcode。没有 App 就没有任何 Swift 插件的运行环境。
-  长期方案是 ship 预编译产物。
+- **预编译只覆盖仓库内置的插件，你的不在其中。** 分发的 `Surfclam.app` 是
+  Developer ID 签名 + 公证的实体，内置插件的 dylib 已经预编译进 bundle，用户机器上
+  零次 swiftc。但**第三方插件的 `swift/` 仍然是运行时现场编译的**，所以你的用户
+  需要 Command Line Tools（不需要完整 Xcode）。
+
+  这些现场编出来的 dylib 之所以能被一个签名过的 App 装载，靠的是 bundle 带着
+  `com.apple.security.cs.disable-library-validation`——App 开了 Hardened Runtime，
+  而现场产物是 ad-hoc、`TeamIdentifier=not set`。跑过对照组：去掉那条 entitlement
+  后全部装载失败，报错是 `mapping process and mapped file (non-platform) have
+  different Team IDs`，**字面上一个字都没提 library validation**。
+  撞见这句话要去查 entitlements，不是查签名身份。
 - **ABI 版本号是空承诺**：`clamABIVersion` 眼下没有装载期比对，
   SDK 语义变更对老插件是静默漂移。
 - **部署目标钉死 `arm64-apple-macos27.0`**，SDK 较旧的机器编不过。
@@ -500,4 +514,4 @@ clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `cl
 - **侧边栏没有贡献槽**：想给会话行加一列装饰/筛选，眼下必须改 clam-sidebar 本身
   （`clamPending` 是唯一现成的扩展点，但只喂 `status` 一个字段）。
 
-这几条的路线图在 [`architecture-coupling-audit.md` §6](architecture-coupling-audit.md)。
+这几条的路线图在 [`architecture-coupling-audit.md` §6](../archive/architecture-coupling-audit.md)。

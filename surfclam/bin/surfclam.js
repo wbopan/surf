@@ -9,7 +9,7 @@
  *   不必发布任何东西。
  *
  * **`npx @wenbo/surfclam` 那条 registry 路径 2026-08-30 随 M4 删了**
- * （`docs/distribution-plan.md` §0 与 §3.3）。它从来就走不通：那条路要求用户机器上
+ * （`docs/archive/distribution-plan.md` §0 与 §3.3）。它从来就走不通：那条路要求用户机器上
  * 有完整 Xcode（十几 GB）加一个不入库的 `xcodegen` 二进制，缺一样就**优雅缺席**
  * ——dsh 起、HTTP 200、壳一声不响地不存在。正式形态改由 `Surfclam.dmg` 分发
  * （签名公证过的 App 是唯一分发实体，三半边全随它走），npm 那条路只留给开发者。
@@ -28,20 +28,20 @@
  * 一套插件、一个 dsh、一个 App 实例（App 产物路径本就随 worktree 不同），
  * 互不打扰。
  *
- * **`surfclam` 这个名字不属于任何 worktree**（`docs/distribution-plan.md` §3.6）：
+ * **`surfclam` 这个名字不属于任何 worktree**（`docs/archive/distribution-plan.md` §3.6）：
  * 它是**安装形态专属**的身份，由 `/Applications/Surfclam.app` 自己自举
  * （`Native/ProfileBootstrap.swift`：拷 bundle 里的 node 载荷进
  * `<profile>/.surfclam/`、手写 `link:` 依赖与符号链接）。开发形态一律带后缀，
  * 于是"常驻着用 + 主 worktree 开发"天然并存——它们不再抢同一个 profile。
  *
- * **第三条路径 `--release`**（仓库根的 `./release`，计划见
- * `docs/release-install-plan.md`）：把这台机器装成正式形态——**只装 App**，
+ * **第三条路径 `--release`**（仓库根的 `./release`，说明见
+ * `docs/internals/distribution.md`）：把这台机器装成正式形态——**只装 App**，
  * Release 壳进 `/Applications`，之后双击就能用，不必开着终端。它与上面两种
  * 模式共用全部安装函数，只是**不前台跑 dsh**，也**不再装任何常驻服务**：
  * 后端归壳自己托管（连接偏好默认 `managed`，打开即有、⌘Q 即退）。
  * **它不再备 profile**：`surfclam` 那个 profile 由 App 自己自举（见上），
  * 这条路径只负责构建并安装壳。两种形态的差别不靠任何环境变量——clam-app 自己看
- * **壳源码在不在包里**（`docs/distribution-plan.md` §3.3）。
+ * **壳源码在不在包里**（`docs/archive/distribution-plan.md` §3.3）。
  *
  * 2026-08-30 之前这条路径还会装一个 LaunchAgent 常驻跑 dsh，那一层整个退役了
  * ——多一层 launchd 常驻就多一整类互斥死锁（它与托管抢同一个 profile、互抹
@@ -147,7 +147,7 @@ function dirOf(packageName) {
  * `surfclam-<目录名>`——于是"一个 worktree 一行命令起一套自己的东西"不需要
  * 任何额外记忆。
  *
- * **`surfclam`（无后缀）不发给任何 worktree**（`docs/distribution-plan.md` §3.6）：
+ * **`surfclam`（无后缀）不发给任何 worktree**（`docs/archive/distribution-plan.md` §3.6）：
  * 那是安装形态的身份，内容由 App 自举出来的镜像撑着，与 link 仓库源码的开发
  * 形态**内容不同**。两者共用一个名字时，App 一自举就会把开发者的仓库从运行链上
  * 摘掉（症状是"我明明在改代码，怎么一点反应都没有"）。
@@ -370,7 +370,7 @@ function start(profile, opts) {
 
 /**
  * 安装形态的 profile 名——**它专属于装在 `/Applications` 的那个 App**，
- * 不发给任何 worktree（`docs/distribution-plan.md` §3.6）。
+ * 不发给任何 worktree（`docs/archive/distribution-plan.md` §3.6）。
  *
  * 内容也不由本文件备：App 启动时自己自举（`Native/ProfileBootstrap.swift`
  * 把 bundle 里的 node 载荷拷进 `<profile>/.surfclam/`）。这里留着这个常量
@@ -419,7 +419,7 @@ function release(opts, repoRoot) {
  * 把这台机器装成正式形态：**只装 App，不装后端**。
  *
  * 后端的生命周期归壳自己管（连接偏好默认 `managed`，见
- * `docs/clam-connection-plan.md` 的 2026-08-30 执行日志）——双击 App，它自己
+ * `docs/archive/clam-connection-plan.md` 的 2026-08-30 执行日志）——双击 App，它自己
  * 就会 spawn 一个 dsh、监护它、⌘Q 时收走。**所以这里不再写 LaunchAgent**：
  * 多一层 launchd 常驻，就多一整类互斥死锁（那个 daemon 与托管抢同一个 profile，
  * 会互抹 endpoint 发现文件），而壳对它只有观测权没有控制权。
@@ -486,7 +486,7 @@ function buildRelease(repoRoot) {
 /**
  * 装好的 App 里有没有那份 node 载荷（`Contents/Resources/ClamNode/`）。
  *
- * **只警告，不拦**：这一条是分发重构（`docs/distribution-plan.md` M1）的产物，
+ * **只警告，不拦**：这一条是分发重构（`docs/archive/distribution-plan.md` M1）的产物，
  * 载荷进 bundle 那一步与本文件是两条独立的路。缺了它 App 自举不出插件——
  * 症状是"起来了，但界面上什么原生东西都没有"，值得当场说一句。
  */
@@ -659,7 +659,7 @@ function usage() {
                                   link 本 worktree 的源码进 profile 并启动
 
   **只在本仓库里跑。** 日常使用请下载 Surfclam.dmg 拖进「应用程序」——
-  正式形态不经 npm（docs/distribution-plan.md §0）。
+  正式形态不经 npm（docs/archive/distribution-plan.md §0）。
 
 选项
   --profile <name>   覆盖 profile 名（默认：主 worktree 用 surfclam-dev，

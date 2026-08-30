@@ -12,7 +12,7 @@ DERIVED_DATA="build"
 PRODUCT_PATH="build/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 
 # 源码 hash 与 marker 路径都问 node 要（算法的唯一真相在 host-build/source-hash.js
-# ——那半边不随包分发，见 docs/distribution-plan.md §3.3）。
+# ——那半边不随包分发，见 docs/archive/distribution-plan.md §3.3）。
 # **在动任何东西之前问**：时间戳文件是排除项、xcodegen 只写 .xcodeproj，两者都不进
 # hash，但先取一次总归更接近"这一份源码"。node 不在（或模块缺席）就整个跳过写 marker
 # ——那时常驻 dsh 会白编一次，不影响正确性。
@@ -83,7 +83,7 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Framewo
 # 记一笔"这个 hash 已经构建过了"。**这份账是 clam-app 的**（node 半边按它决定要不要
 # 重建），但手跑本脚本 / `./release` 也是一次真实的构建——不记的话，常驻 dsh 一起来
 # 就发现 marker 与源码对不上，把刚装好的这份原样再编一遍，还会朝用户的窗口挂一条
-# "壳有新版本"。见 docs/release-install-plan.md §2.5。
+# "壳有新版本"。见 docs/internals/distribution.md。
 if [[ -n "${SOURCE_HASH}" && -n "${HASH_MARKER}" ]]; then
   mkdir -p "$(dirname "${HASH_MARKER}")"
   printf '%s' "${SOURCE_HASH}" > "${HASH_MARKER}"

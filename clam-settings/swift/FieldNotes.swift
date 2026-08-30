@@ -18,7 +18,7 @@ import Foundation
 ///
 /// 加一条的判据：**Web 里有这条文案**，或者**机械美化出来的名字会让人看不懂**。
 ///
-/// ## 双语（`docs/clam-i18n-plan.md` i4）
+/// ## 双语（`docs/archive/clam-i18n-plan.md` i4）
 ///
 /// 每条文案是一个 `LocalizedText`（zh / en 并排写在同一行，审校时一眼对照），
 /// 取用时按当前 locale 挑一份。**这张表和 `L` 的分工是"数据 vs 现算"**：

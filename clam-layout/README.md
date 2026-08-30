@@ -63,7 +63,7 @@ host.contribute(to: LayoutToolbar.slot, id: "filter", order: -100,
 `ToolbarSpec` 给的是**生产端**的类型安全，不是新的传输格式。
 
 键的清单与四条渲染路线（`button` / `group` / `menu` / `view`）见 `ToolbarSpec` 的文档
-注释，汇总表在 `docs/clam-contracts.md` §2。
+注释，汇总表在 `docs/extend/contracts.md` §2。
 
 `menu` 的类型必须是 `@convention(block) (NSMenu) -> Void`：它要装在 `[String: Any]` 里
 穿过 dylib 边界，ObjC block 是个货真价实的对象，装箱取箱都稳；裸 Swift 闭包的函数类型

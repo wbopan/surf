@@ -11,5 +11,5 @@
 # ⌘Q 再打开一次即可。
 #
 # 真正的逻辑都在伞包的 bin/surfclam.js 里（--release 那条路径）——这里只是省掉敲路径。
-# 计划文档：docs/release-install-plan.md
+# 说明文档：docs/internals/distribution.md
 exec node "$(dirname "$0")/surfclam/bin/surfclam.js" --release "$@"

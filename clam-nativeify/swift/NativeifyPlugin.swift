@@ -10,7 +10,7 @@ public func clam_plugin_entry() -> UnsafeMutableRawPointer {
 }
 
 /// clam-nativeify 的 Swift 半身：**让原生那半边跟着 dsh 的主题走**
-/// （计划 `docs/native-feel-upgrade-plan.md` P4）。
+/// （计划 `docs/archive/native-feel-upgrade-plan.md` P4）。
 ///
 /// 本包九成的实现在 `lib/client.js` 那段 CSS 里；这半边只补最后一条缝：
 /// 系统 `NSAppearance` 与 dsh 的 `ui-theme` 此前互不知情，于是

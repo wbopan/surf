@@ -16,7 +16,7 @@ M2 实测过一个危险形态：上游插件换代、下游没重编时，下�
 
 这里的解法是把上游的 `contentHash` 折进下游的 `contentHash`。于是"内容没变就不重编"
 这一条判断自带级联：上游一变，下游的 hash 必然跟着变。壳侧不需要再写传播代码，
-`docs/native-abi.md` §4 那个坑在数据结构层面就被堵死了。
+`docs/extend/native-abi.md` §4 那个坑在数据结构层面就被堵死了。
 
 同一个 hash 还决定 Swift module 名（`ClamSidebar_h9f31c0aa12b4`），
 所以"内容寻址缓存"与"世代类型隔离"是同一个事实的两面。
@@ -77,7 +77,7 @@ export default createSwiftPlugin({
 ```
 
 `commands` 的完整字段表见 `lib/plugin.js` 的 `CommandDeclaration` typedef
-（汇总在 `docs/clam-contracts.md` §1）。**它不进 contentHash**：改一句菜单文案不该
+（汇总在 `docs/extend/contracts.md` §1）。**它不进 contentHash**：改一句菜单文案不该
 让 Swift 半边重编。反过来的代价是**只改 `commands` 不改 Swift 源码时不会推 snapshot**
 ——反正改 `lib/*.js` 本来就要重启 dsh。
 
@@ -99,7 +99,7 @@ HTTP 200、终端一片祥和，只是那个插件的原生半边**静默不存�
 新克隆的仓库拿不到。相对路径在"所有 clam-\* 是同一仓库里的兄弟目录"这个前提下永远成立。
 
 **外部插件没有这个问题**，用包名 `@wenbo/clam-bridge/plugin` 即可（写 peerDependencies）
-——完整上手路径见 `docs/plugin-author-guide.md`。
+——完整上手路径见 `docs/extend/plugin-author-guide.md`。
 
 Swift 半身见 `clam-sidebar/swift/SidebarPlugin.swift`（最小的槽插件入口）与
 `clam-app/host/Sources/ClamSDK/`（SDK 本体，含纪律说明）。

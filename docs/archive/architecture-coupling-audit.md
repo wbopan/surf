@@ -367,7 +367,7 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 | toolbar metadata 只列 4 键（实际 12），全文未提 `clam.toolbar.update` | `clam-layout/README.md:50-55` |
 | **"连自家新建会话也是一条普通贡献"**：`clam-layout/swift/` 里一个 `contribute` 调用都没有，工具栏眼下只剩 sidebar 的「筛选」一条 | CLAUDE.md |
 | 原生 header 插件的 `README.md` 通篇现在时，从不说自己已停用 | 全文 |
-| DSHKit 作为现行选项出现 | `clam-settings/README.md:142`、`lib/index.js:6`、`docs/clam-settings-plan.md:136` |
+| DSHKit 作为现行选项出现 | `clam-settings/README.md:142`、`lib/index.js:6`、`docs/archive/clam-settings-plan.md:136` |
 | `ClamHooks.swift:99` "⌥⌘D 面板会列它"——零调用方 | `ClamHooks.swift:99` |
 | 根 README 仓库结构漏 `clam-notify/` `clam-settings/`、当时那个 header 插件、**`surfclam/`** `tools/` | `README.md:68-79` |
 
@@ -386,7 +386,7 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 | 3 | **`sidebar` 门控改粘性事件**（§2.2） | 占 root 槽的插件 `emitSticky("clam.web.query", …)`，壳只订这条决定 URL 参数 | `MainWindowController.swift:406-411/452-470`、`LayoutPlugin.swift` |
 | 4 | **删 request 通道、降级 `bridge.app`**（§3.2 #1 #3） | `clam.window.title` / `titlebarMetrics` 改 `emitSticky`，删 `ToolbarContribution.swift:60-70` 两条 request 与 `:421` 订阅、`HeaderPlugin.swift:307`、`HeaderToolbar.swift:65`；`bridge.app` 改成 clam-app 的普通 `expose`/`push` | `ToolbarContribution.swift`、`clam-bridge/lib/index.js:126-143/225-234`、`NativePluginHost.swift:114-163` |
 | 5 | **toolbar metadata 代码化** | ClamLayout module 加 `public struct ToolbarSpec` + `toMetadata()`，`HeaderPlugin.swift:50` 的 `"toolbar"` 字面量换 `LayoutToolbar.slot`；槽名 `"root"` / `"sidebar"` 各给一个 public 常量 | `clam-layout/swift/LayoutSplitController.swift:472-540`、`SidebarPlugin.swift:109/145-151` |
-| 6 | **文档** | 新建 `docs/plugin-author-guide.md`（三种骨架、package.json 字段表、命名规则、`files` 白名单、peerDependencies、profile patch 一行、`dsh plugin add link:` 热循环）与 `docs/clam-contracts.md`（toolbar metadata、`Topic`、`Key`、hook 名、`menuCommand` 四张词汇表，源码注释改为指向它）；修 §5.4 那张过时表；把 `ClamPlugin.swift:22-23` 的 ABI 承诺改成事实描述（或做成真的，见 P1） | `docs/`、各 README、CLAUDE.md |
+| 6 | **文档** | 新建 `docs/extend/plugin-author-guide.md`（三种骨架、package.json 字段表、命名规则、`files` 白名单、peerDependencies、profile patch 一行、`dsh plugin add link:` 热循环）与 `docs/extend/contracts.md`（toolbar metadata、`Topic`、`Key`、hook 名、`menuCommand` 四张词汇表，源码注释改为指向它）；修 §5.4 那张过时表；把 `ClamPlugin.swift:22-23` 的 ABI 承诺改成事实描述（或做成真的，见 P1） | `docs/`、各 README、CLAUDE.md |
 
 ### P1 —— 动 SDK，合并成一次
 
@@ -440,7 +440,7 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 
 ## §7 执行日志
 
-本文只审计不改代码；改动按 [`docs/p0-decoupling-plan.md`](p0-decoupling-plan.md) 分波执行，
+本文只审计不改代码；改动按 [`docs/archive/p0-decoupling-plan.md`](p0-decoupling-plan.md) 分波执行，
 那份计划的 §3 有逐项的做法、验证与遗留。这里只记落地位置。
 
 **正文里所有 `文件:行` 仍然是审计当时（main `3c6d3ec`）的位置**，下面这些项落地后

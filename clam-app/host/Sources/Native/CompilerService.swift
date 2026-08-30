@@ -222,7 +222,8 @@ actor CompilerService {
             args += ["-l\(module)"]
         }
         // rpath 一律写成**可搬运**的形式：产物要能随 App bundle 分发（预编译方案，
-        // distribution-plan §3.2），烘焙一条构建机的绝对路径进去就等于把它钉死在那台机器上。
+        // docs/archive/distribution-plan.md §3.2），烘焙一条构建机的绝对路径进去
+        // 就等于把它钉死在那台机器上。
         // 共享 module 永远在 `<App>.app/Contents/Frameworks`，而 `@executable_path` 展开的
         // 是**主可执行文件**（壳）的位置——与这份 dylib 自己躺在哪里（用户缓存 / bundle 内
         // 预编译目录）无关，所以这条对两种落点都成立。壳自己链接 ClamSDK 用的也正是这条
@@ -364,7 +365,7 @@ actor CompilerService {
     /// ——把整个 `ClamModules/` 一股脑算进来，就等于让改一行共享 module 把从不
     /// import 它的插件也全量重编一遍。
     ///
-    /// **这里不查本机 `swiftc --version`**（2026-08-30 删掉，distribution-plan §3.2）。
+    /// **这里不查本机 `swiftc --version`**（2026-08-30 删掉，docs/archive/distribution-plan.md §3.2）。
     /// 两条理由：
     ///
     /// 1. **它让预编译分发不可能成立**。contentHash 要在构建机与用户机上算出同一个数，

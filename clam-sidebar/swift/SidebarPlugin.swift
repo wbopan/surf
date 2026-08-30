@@ -44,7 +44,7 @@ final class SidebarPlugin: ClamPlugin {
 
         // 界面语言。真相是 dsh 的 `locale` 设置，壳把它当粘性事件广播
         // （`clam.locale`），所以这一句订上的瞬间就已经是当前值——初值只兜住
-        // "壳还没发过"那一刻（决议链见 docs/clam-i18n-plan.md §3）。
+        // "壳还没发过"那一刻（决议链见 docs/archive/clam-i18n-plan.md §3）。
         let locale = ClamLocaleStore(bus: host.events)
 
         let model = AppSidebarModel(snapshot: seed, bridge: host.bridge,

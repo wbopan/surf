@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Observation
 
-/// 托管后端：让壳自己保证"有一个后端在跑"（`docs/clam-connection-plan.md` §5）。
+/// 托管后端：让壳自己保证"有一个后端在跑"（`docs/archive/clam-connection-plan.md` §5）。
 /// 语义照 Docker Desktop——**打开即有、⌘Q 即退**。
 ///
 /// 四件事：
@@ -502,8 +502,9 @@ final class BackendManager {
         return nil
     }
 
-    /// release 形态那个常驻 LaunchAgent（`docs/release-install-plan.md`）。
-    /// 它和托管是**互斥**的两种合法形态：它在跑就轮不到我们。
+    /// 旧版 `./release` 装过的那个常驻 LaunchAgent。**那一层 2026-08-30 已退役**
+    /// （后端改由壳自己托管，见 `docs/internals/connection.md`），这里只剩查重：
+    /// 装过旧版的机器上它可能还在跑，那时它和托管是**互斥**的两种形态，它在跑就轮不到我们。
     /// **`nonisolated`**：查重那两下跑在 `Task.detached` 里（外部命令是阻塞的，
     /// 不该占着主线程），从那里读一个 `@MainActor` 类的静态常量会告警。
     nonisolated static let daemonLabel = "io.wenbo.surfclam.dsh"

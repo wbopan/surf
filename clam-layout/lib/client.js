@@ -14,10 +14,10 @@
  * 3. **键位表投影**：订 settings 的 `clam-shortcuts` 命名空间（schema 由 clam-app
  *    的 node 半边注册），值一变就经同一条页内桥推给壳，壳据此重建主菜单。
  *    住这儿是因为页 → 壳的上报通道（ready / currentSession）本来就归它。
- *    计划：docs/clam-shortcuts-settings-plan.md。
+ *    计划：docs/archive/clam-shortcuts-settings-plan.md。
  * 4. **语言投影**：订 `ctx.locale`（dsh 解析后的 active，不是设置里的原始
  *    preference），经同一条页内桥推给壳，壳转成粘性总线主题 `clam.locale`
- *    供原生插件消费。计划：docs/clam-i18n-plan.md。
+ *    供原生插件消费。计划：docs/archive/clam-i18n-plan.md。
  *
  * 纯样式的原生化（透出玻璃、红绿灯让位、禁橡皮筋/禁选中）不在这里，
  * 那是 clam-nativeify 的事，它零服务依赖、要抢首帧。

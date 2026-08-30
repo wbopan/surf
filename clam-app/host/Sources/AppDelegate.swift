@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 系统 delegate 中转站。**壳持有它**：那些 delegate 属性多半是 weak 的，
     /// 而且它必须活得和进程一样久。
     private let systemDelegates = SystemDelegateRelay()
-    /// 托管后端（`docs/clam-connection-plan.md` §5）。**AppDelegate 持有**：
+    /// 托管后端（`docs/archive/clam-connection-plan.md` §5）。**AppDelegate 持有**：
     /// 它得活得和进程一样久，而窗口是可以关掉的（关窗 ≠ 退出）。
     private let backend = BackendManager()
 

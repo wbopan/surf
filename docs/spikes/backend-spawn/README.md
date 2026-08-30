@@ -1,6 +1,6 @@
 # spike：托管后端的进程组与信号
 
-`docs/clam-connection-plan.md` §5 的托管形态要壳自己 spawn 一个后端并在 ⌘Q 时
+`docs/archive/clam-connection-plan.md` §5 的托管形态要壳自己 spawn 一个后端并在 ⌘Q 时
 杀干净。这台验证台只回答一个问题：**信号送得到吗**。
 
 ```sh

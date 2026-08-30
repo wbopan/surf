@@ -6,7 +6,7 @@ import Observation
 /// 不加「跟随系统」选项：dsh 那边「设置缺省 = 环境推导」本身就是跟随系统。
 ///
 /// 语言的唯一权威是 dsh 的 `locale.preference` 设置；这里只是它在原生侧的投影
-/// （决议链见 `docs/clam-i18n-plan.md` §3）。**SDK 里只有语言这个词汇，
+/// （决议链见 `docs/archive/clam-i18n-plan.md` §3）。**SDK 里只有语言这个词汇，
 /// 一条具体文案都不进来**——文案表各插件自己带（`swift/Strings.swift`）。
 public enum ClamLocale: String, Sendable, CaseIterable {
     case zh

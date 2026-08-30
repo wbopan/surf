@@ -20,7 +20,7 @@
  * CLAUDE.md 与 skill-catalog 那样独立成行。所以本文件的出口从"一整段文本"
  * 改成**分段**（`renderSections`）——`source.sections` 正是 UI 分段展示的依据。
  *
- * 权威计划：docs/clam-memory-plan.md §2.3（注入什么）、§4（提示词文案）、§8 执行日志。
+ * 权威计划：docs/archive/clam-memory-plan.md §2.3（注入什么）、§4（提示词文案）、§8 执行日志。
  */
 
 // ── 注入信封（读者视角）────────────────────────────────────────────────────

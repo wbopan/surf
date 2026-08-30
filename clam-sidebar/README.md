@@ -56,7 +56,7 @@ v3 收回了这个例外：侧边栏有了「显示已归档」开关，滤在 n
 插件 `activate` 里建一个 `ClamLocaleStore(bus: host.events)`（订粘性主题
 `clam.locale`），视图 body 读 `L(locale.current)` 就建立了观察依赖，切语言自动重渲
 ——**不用 `withObservationTracking`**（静默死亡坑）。权威计划见
-`docs/clam-i18n-plan.md`。
+`docs/archive/clam-i18n-plan.md`。
 
 三条纪律：
 

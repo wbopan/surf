@@ -1,6 +1,6 @@
 // clam-memory 的路径决议。
 //
-// 硬约束（docs/clam-memory-plan.md §0）：**零依赖**——只用 node 内置模块，
+// 硬约束（docs/archive/clam-memory-plan.md §0）：**零依赖**——只用 node 内置模块，
 // 不 import 任何 clam-* 也不 import @deepseek-ai/*。这个文件必须能在
 // 一台只有 node 的 Linux 机器上原样跑起来。
 //

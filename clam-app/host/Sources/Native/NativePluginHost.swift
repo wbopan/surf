@@ -15,7 +15,7 @@ struct AppBuildState {
     let log: String?
 }
 
-/// 插件 dylib 的 C 入口签名（M2 定稿，见 `docs/native-abi.md` §1）。
+/// 插件 dylib 的 C 入口签名（M2 定稿，见 `docs/extend/native-abi.md` §1）。
 private typealias ClamPluginEntry = @convention(c) () -> UnsafeMutableRawPointer
 
 /// 一个在役的插件世代。

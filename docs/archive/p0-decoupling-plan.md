@@ -1,6 +1,6 @@
 # P0 解耦执行计划（2026-08-29）
 
-来源：`docs/architecture-coupling-audit.md` §6 的 P0 档。这一批的共同特征是**不动 ClamSDK 任何 public 声明**
+来源：`docs/archive/architecture-coupling-audit.md` §6 的 P0 档。这一批的共同特征是**不动 ClamSDK 任何 public 声明**
 ——不触发全量重编，不需要 ABI 版本变化；每一项都能单独回退。
 
 ## 0. 不变量（每个执行者必读）
@@ -34,7 +34,7 @@
 插件 swift 半边照旧订 menuCommand 主题应答（一行不用改）
 ```
 
-`commands` 每条的形状（定稿，写进 `docs/clam-contracts.md`）：
+`commands` 每条的形状（定稿，写进 `docs/extend/contracts.md`）：
 
 ```js
 {
@@ -108,17 +108,17 @@
 
 **D. 文档（P0 #6）**
 
-- 新建 `docs/plugin-author-guide.md`：三种最小骨架（纯 node / 带 Swift / 带 client）、package.json 字段表
+- 新建 `docs/extend/plugin-author-guide.md`：三种最小骨架（纯 node / 带 Swift / 带 client）、package.json 字段表
   （`exports`、`files` 含 `swift`、peerDependencies 纪律、`dsh.client`）、`name` 命名规则（kebab-case → module 名）、
   `@wenbo/clam-bridge/plugin` 包名 import、profile patch 里 insert 一行、`dsh plugin add link:` 外部热循环、
   `activate` 返回值必须是持有链的根、跨代保管箱只放系统类型、只读别人的设置 ns 的配方。素材位置见审计附录 B。
-- 新建 `docs/clam-contracts.md`：`commands` 声明形状（Wave 1 定稿）、toolbar `ToolbarSpec` 各键、`ClamEventBus` 主题表
+- 新建 `docs/extend/contracts.md`：`commands` 声明形状（Wave 1 定稿）、toolbar `ToolbarSpec` 各键、`ClamEventBus` 主题表
   （含 `clam.web.query`、粘性与否、发布方/订阅方）、`ClamObjects` 键表、hook 名表、`clam.toolbar.update` 活通道。
-  源码里对应的注释改成一句"约定见 docs/clam-contracts.md"，不再各自维护一份长注释。
+  源码里对应的注释改成一句"约定见 docs/extend/contracts.md"，不再各自维护一份长注释。
 - 修审计 §5.4 那张过时表里的每一项（各 README、CLAUDE.md、`ClamHooks.swift:99` 那句假话）。
   CLAUDE.md 里 clam-layout 那段"连自家新建会话也是一条普通贡献"改成事实；`macOS 26+` → `27`；
   原生 header 插件的 README 顶部加"已停用"；`clam-app/README.md` 的目录表与配置表补全。
-- 审计文档 `docs/architecture-coupling-audit.md` 末尾加"§7 执行日志"，记 P0 各项的落地 commit。
+- 审计文档 `docs/archive/architecture-coupling-audit.md` 末尾加"§7 执行日志"，记 P0 各项的落地 commit。
 
 文件归属：`docs/**`、各 `README.md`、`CLAUDE.md`、`clam-app/host/Sources/ClamSDK/ClamHooks.swift`（**只改注释**）。
 
@@ -320,7 +320,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
 
   两份新文档，**分工按"谁在读"切**而不是按主题切：
 
-  - `docs/plugin-author-guide.md` —— 写给**仓库外**的插件作者。三种最小骨架
+  - `docs/extend/plugin-author-guide.md` —— 写给**仓库外**的插件作者。三种最小骨架
     （纯 node / 带 Swift / 带 client，`package.json` + `index.js` + `FooPlugin.swift`
     都能直接抄）、`name` → module 名规则与三条 fail-loud、包名 import
     （`@wenbo/clam-bridge/plugin`）vs 本仓库的相对路径、peerDependencies 纪律、
@@ -330,7 +330,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
     不 `@objc` / 跨界只用 SDK 与系统类型）、六条配方（命令、工具栏贡献、占槽、
     只读别人的设置 ns、可选依赖、`ctx.provide` 中性服务名）、一张**症状 → 原因表**、
     一节"已知边界"（ABI 空承诺、metadata 零校验、无错误边界、侧边栏没贡献槽）。
-  - `docs/clam-contracts.md` —— 契约总表。每一节都标着"权威在哪"，
+  - `docs/extend/contracts.md` —— 契约总表。每一节都标着"权威在哪"，
     **权威永远是代码**（那里写着"为什么"和"失败长什么样"），这份只是索引，
     回答"我要接一条新的，现有的都有哪些"这类横向问题。含 `commands` 字段表 +
     当前在册的十一条声明、`ToolbarSpec` 12 键 + 四条渲染路线 + `clam.toolbar.update`
