@@ -1,0 +1,152 @@
+# surf-app
+
+Surf macOS 壳的宿主插件。**在仓库里**它的载荷是 `host/` 里的整个 Xcode 工程
+——壳源码不是特权目录，只是本插件的一份资产，如同 `swift/` 之于 surf-sidebar。
+
+**但 `host/` 不随包分发，驱动它的那半边 node 代码也不**。目录分工：
+
+| 目录 | 干什么 | 随包分发？ |
+|---|---|---|
+| `lib/` | 发现文件、拉起、`surfApp` 服务、快捷键设置面 | ✅（`files` 白名单只收它，App 的 `SurfNode/` 载荷也只拷它） |
+| `host-build/` | 源码 hash、xcodegen + xcodebuild、盯源码后台重建 | ❌ |
+| `host/` | Xcode 工程本体 | ❌ |
+
+于是本插件有两副面孔，**判据是 `host-build/` 这个模块 import 得不得到**
+（`lib/index.js` 顶层一次 `await import(…)`），不是环境变量、也不是探路径：
+拿得到就做下面三件事，拿不到只做第 1 和第 3 件。
+壳不再自己构建自己的理由见 `docs/archive/distribution-plan.md` §3.3——发布的 App 是签名
+公证过的，自己 xcodebuild 重建自己会把签名降级成 ad-hoc，所有热插件随之装载失败。
+
+## 它做三件事
+
+`dsh web` 加载到本行时（`inject: ["webServer"]`，端口已定）：
+
+1. **写 endpoint 发现文件** `~/Library/Application Support/io.wenbo.surf/endpoints/<profile>.json`
+   （`{httpBase, bridgePath, pid, startedAt, profile, hostDir, appPath}`，原子写；
+   字段表在 `docs/extend/contracts.md` §10.1）。先于构建落地，
+   一个已经开着的 app 立刻就能接入，不必等分钟级的首次构建。fiber 卸载时按 pid
+   匹配删除——两个 dsh 并存时，先退的那个不会把后来者的文件删掉。
+   `hostDir` 是本插件所在的 `surf-app/host` 绝对路径、`appPath` 是本进程期望伺候的
+   App bundle：没拿到 flag 的壳靠这两条认出"哪一份是我这一套"
+   （开发期壳的 bundle 就在 `<hostDir>/build/Build/Products/<配置>/`；
+   **装到 `/Applications` 的 Release 壳不在任何 worktree 之下，只能靠 `appPath`**），
+   否则多 worktree 时它会连上邻居的 dsh 并编译邻居的插件源码。
+2. **按需构建**：源码 hash 变了或产物缺失 → `write-build-timestamp.sh` +
+   `xcodegen generate` + `xcodebuild -derivedDataPath build`（与 `scripts/dev.sh`
+   同一套步骤）。hash 只看内容不看 mtime，换 git 分支不会被误判成"改过"。
+   共享 module（眼下只有 SurfSDK）由工程自己的 pre/postBuild 脚本管，本插件不用操心。
+3. **拉起**：产物就绪且 app 未运行 → `open <app> --args --surf-endpoint <httpBase>`。
+
+然后 provide `surfApp = {appPath, freshness, configuration, httpBase, bridgePath}`。
+
+## 壳里还剩什么（M6 之后）
+
+界面已经全在插件里，壳只保留"让插件能跑起来"的那部分。
+**通知本身没有丢弃**——计划 §7.3 那条早期决定后来以 `surf-notify` 插件的形态落地了
+（权威计划 `docs/archive/surf-notify-plan.md`）；壳这边只剩一个不认识通知语义的中转站，见下表
+的 `SystemDelegateRelay`。
+
+| 目录 | 职责 |
+|---|---|
+| `host/Sources/SurfSDK/` | 壳↔插件的 ABI 词汇。编成独立 dylib 随 bundle 分发，全进程只有一份。四张表：`SurfRegistry`（替换槽，一槽一主）、`SurfContributions`（贡献槽，一槽 N 条）、`SurfHooks`（应答钩子表）、`SurfEventBus`（事件总线，含 `emitSticky`），外加 `SurfObjects` / `SurfStore` / `SurfBridge` |
+| `host/Sources/Native/` | BridgeClient（连 surf-bridge 的 WS）、CompilerService（内容寻址地跑 swiftc）、NativePluginHost（dlopen + activate + 世代账）、GenerationLedger（世代与退休 image 的账本）、ShellRootView（root 槽 + 全出血 WebView 兜底）、WebPolicy（下载 / 外链 / 新窗口，见下）、SystemDelegateRelay（占住系统 delegate，经 `SurfHooks` 转交插件，见下） |
+| `host/Sources/MainWindowController.swift` | 窗口、菜单、连接状态机、页内桥消息转 EventBus、壳自身构建的提示条。没有业务 UI |
+
+两个容易被漏掉的：
+
+- **`WebPolicy.swift`**：WKWebView 对下载与新窗口的默认行为是**静默丢弃**——不实现
+  `decidePolicyFor navigationResponse` 就没有下载，不设 `uiDelegate` 就没有新窗口，
+  两者都不给任何回调、日志或视觉反馈。dsh 两类都用（会话导出 ZIP 走 `<a download>`，
+  正文外链走 `target="_blank"`）。归壳不归插件：逃生舱模式也得能下载。
+  scheme 走白名单（http/https/mailto），下载目录固定 `~/Downloads`——页面里的链接
+  等同不可信输入。
+- **`SystemDelegateRelay.swift`**：在 `applicationDidFinishLaunching` 的第一句占住那些
+  **必须在启动完成前装好**的系统 delegate（眼下只有 `UNUserNotificationCenter`），
+  把回调拍平成字典经 `SurfHooks` 问一遍插件。运行时装载的插件永远不可能自己占这些
+  位子，这里是唯一的转交点。壳侧只有转发，没有业务判断（hook 名与载荷见
+  `docs/extend/contracts.md` §7）。
+
+**壳里没有任何一条业务命令的名字。** 菜单项、默认键位、⌘/ 面板、`surf-shortcuts`
+设置页四样东西共用插件 node 半边的一份 `commands` 声明（形状见
+`surf-bridge/lib/plugin.js` 的 `CommandDeclaration`，汇总见 `docs/extend/contracts.md` §1）。
+页面 URL 带什么查询参数也一样：壳只订粘性主题 `surf.web.query`，参数名的定义权在
+占 `root` 槽的插件那里。
+
+没有任何插件占 `root` 槽时（没装 surf-layout、或它编译失败还没有过成功世代），
+ShellRootView 退化成整窗 WebView——功能不缺，只是没有原生分栏和侧边栏。
+
+## 两个构建脚本
+
+`project.yml` 上挂着一对脚本，把共享 module 做成"全进程一份"：
+
+- **preBuild `scripts/build-modules.sh`** → `host/build-sdk/lib<M>.dylib` + `.swiftmodule` +
+  `.swiftinterface`（`-enable-library-evolution -language-mode 5`，内容 hash 命中则秒过）。
+- **postBuild `scripts/embed-modules.sh`** → 拷进 `Contents/Frameworks/`（壳按 `@rpath` 加载）
+  和 `Contents/Resources/SurfModules/`（插件运行时编译的 `-I` 落点），然后**重新 ad-hoc 签名**——
+  拷贝发生在 Xcode 自己的签名步骤之后，不补签会起不来。
+
+改 SurfSDK 会让所有插件的 contentHash 失效、全量重编，这是有意的：`.swiftmodule` 对不上
+比慢几秒糟得多。
+
+## 优雅缺席
+
+构建失败、没装完整 Xcode、连既有产物都找不到——都只在终端留一句话就收手，
+**不重试、不成环**（防的是构建风暴）。dsh 照常服务浏览器，只是没有 macOS 壳。
+没有 Xcode 时退化为只探测既有产物，**只有两跳**：先本形态期望的那一份，再
+`host/build/Build/Products/<配置>/`。没有构建能力时更简单，只有一跳
+（`/Applications/Surf.app`）——本地 `build/` 根本不存在。
+从前还有第三跳「退到 `/Applications/Surf.app`」，2026-08-30 删了：
+它在前一种形态下是重复的，在后一种形态下等于让 `surf-dev` 的后端去拉起属于
+profile `surf` 的 App，那正是 profile 分片要消掉的混线。
+
+## 配置（`cordis.patch.yml`，可被 profile 的 patch 层覆写）
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `configuration` | `Debug` | `Debug` 产物是 `Surf Dev.app`（`io.wenbo.surf.dev`），`Release` 是 `Surf.app`；两者可并存运行 |
+| `build` | `true` | 关掉则只探测既有产物，从不调用 xcodebuild |
+| `launch` | `true` | 关掉则只构建、只写发现文件，由用户自己开 app |
+| `watch` | `true` | dsh 运行期间盯着壳源码，变了就后台重建并经桥提示「有新版」。需要 `build` 也开着 |
+| `watchIntervalMs` | `2000` | 盯壳源码的轮询间隔（下限 300）。先比 mtime/size 签名，签名变了才读内容算 hash |
+| `restartOnRebuild` | `false` | 重建成功后不等用户点，直接让壳退出并重拉。开发期省事，代价是每次改壳都丢页面状态 |
+
+开发期默认 `Debug`；日常使用者应在自己 profile 的 `cordis.patch.yml` 里覆写成 `Release`。
+
+**`host-build/` 不在时，`build` / `watch` / `restartOnRebuild` 被整体关掉**，
+并打一行日志。这是本插件唯一的形态判据——从前那个环境变量 `SURF_RELEASE`
+2026-08-30 随分发重构 M4 删了（`docs/archive/distribution-plan.md` §3.3，
+`docs/extend/contracts.md` §10.3）。同一次里 `hostDir` 也不再无条件写进发现文件：
+没有 `host/` 就没有那个目录，写一个不存在的路径只会误导读日志的人。
+
+`launch` **不关**：正式形态下 App 早就在跑（后端正是它 spawn 的），
+`launch()` 自己会因为 `isRunning` 跳过；而用户手动 `dsh --profile surf` 时，
+把装好的 App 带起来正是他要的。
+
+构建失败时（源码在场那一路）：旧壳继续在役，错误落
+`surf-app-build.<profile>.<配置>.log`，**记住失败那次的源码 hash、hash 再变才重试**
+——不许 2s 一轮空转 xcodebuild。没有完整 Xcode 时构建这一步降级成"只探测既有产物"，
+盯源码也就不会启动。
+
+## 它还注册一个设置 ns
+
+`surf-shortcuts`（键位覆盖）。**schema 不是写死的**，而是按桥的登记表现拼——
+`surfBridge.commands.list()` 里 `configurable` 的那些各成一项，
+默认值取声明里的 `key`。登记表静默 300ms 后注册一次；之后指纹变了就 dispose
+子 fiber 再注册一份（`dsh-settings` 的 `register` 重复注册 fails loud，但撤销调用方
+fiber 就能解注册）。一条可配置命令都没有时**不注册**——不开空卡片。
+用户存过的覆盖值不受影响：它们躺在设置文档里，schema 只决定怎么解析与显示。
+
+## 已知毛刺
+
+`dsh web` 自己会另开一个浏览器标签页（`web-app` 行的 `openBrowser` 默认 `true`），
+和壳窗口重复。眼下用 `dsh web --no-open`；插件不去改 web-app 的行配置，
+因为 patch 的 `{id, config}` 是整体替换而非深合并，动它会连带抹掉该行其余的键。
+
+## 日志
+
+进度写终端（`surf-app: …`，仿 dsh 自己的 `dsh web: …`），同时喂 `ctx.logger`。
+**`dsh web` 默认不装 logger exporter**，只走 logger 的消息进环形缓冲、终端上看不见——
+这就是本插件另外直写 stderr 的原因。完整 xcodebuild 输出落
+`~/Library/Application Support/io.wenbo.surf/logs/surf-app-build.<profile>.<配置>.log`，
+终端只留结论与失败时的最后 20 行。**文件名带 profile 是必须的**：这份日志是覆盖写，
+多 worktree 各跑各的 dsh 时，共用文件名就会让你打开终端指的那条路径、读到邻居的编译错误。

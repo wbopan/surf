@@ -87,7 +87,7 @@
   更早 → 本地化短日期。
 - **本地化走 `DateFormatter` 自己的能力**（`doesRelativeDateFormatting = true`
   给「昨天」，`setLocalizedDateFormatFromTemplate` 给周几），语言用
-  `clam-bridge/locale` 决议出来的那个，别往 `Strings.swift` 里手写一堆
+  `surf-bridge/locale` 决议出来的那个，别往 `Strings.swift` 里手写一堆
   「昨天 / Yesterday」。
 - 字体 `.system(size: 10)` + `.monospacedDigit()`，`.foregroundStyle(.tertiary)`。
 - **DateFormatter 要缓存**，别每行每帧新建一个（它很贵）。
@@ -153,9 +153,9 @@
 
 - `SidebarView.swift:31-48` 的 identifier 清单补 `sidebar.newSession`，
   删掉 `sidebar.chips.<mode>`。
-- `CLAUDE.md` 里 clam-sidebar 那段（「搜索 + 全部/按时间/待处理三枚胶囊 +
+- `CLAUDE.md` 里 surf-sidebar 那段（「搜索 + 全部/按时间/待处理三枚胶囊 +
   两行会话行」）已经不成立，改掉。
-- `node --test clam-sidebar/test/*.test.js` 跑通（分组/去抖/翻牌那几条应该
+- `node --test surf-sidebar/test/*.test.js` 跑通（分组/去抖/翻牌那几条应该
   不受影响；受影响就改测试，别改行为）。
 - 截图对照设计稿的浅色与深色两张。
 
@@ -170,7 +170,7 @@
    `sidebar.group.<id>` 没有被拼两遍（SwiftUI 容器合并的老坑）。
 4. 「筛选」菜单：`peekaboo menu list --pid <pid>` 或直接截图，
    看两个分区头画得出来、「清除筛选」无筛选时是灰的而不是消失。
-5. `node --test clam-sidebar/test/*.test.js`（**目录要带通配符**，
+5. `node --test surf-sidebar/test/*.test.js`（**目录要带通配符**，
    给 `--test` 一个目录在 node 26 上直接 `MODULE_NOT_FOUND`）。
 
 ## 4. 顺序与耦合
@@ -203,15 +203,15 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
   务必 dump 一次 AX。
 - `NSHostingController.sizingOptions` 必须是 `[]`，否则换代重建视图会把
   分栏宽度拉成内容宽度（`LayoutSplitController.swift:180-186` 已经设了，别动)。
-- 别把清理逻辑挂在 `ClamPluginHandle` 析构上；`activate` 每次热替换都会跑。
+- 别把清理逻辑挂在 `SurfPluginHandle` 析构上；`activate` 每次热替换都会跑。
 
 ## 7. 执行日志
 
 （每完成一个里程碑追加一行：里程碑 / 日期 / 实际改了哪些文件 / 与计划的偏差）
 
-- **M1 会话行改单行** · 2026-08-30 · `clam-sidebar/swift/SidebarView.swift`
+- **M1 会话行改单行** · 2026-08-30 · `surf-sidebar/swift/SidebarView.swift`
   （`SessionRow` 整体重写、`timeSections`/`TimeSection.rows` 去掉工作区字段、
-  删 `dividerVisible`、`row()` 收成一参）、`clam-sidebar/swift/StatusIndicator.swift`
+  删 `dividerVisible`、`row()` 收成一参）、`surf-sidebar/swift/StatusIndicator.swift`
   （`slot` 16 → 20）。
   **与计划的偏差三处**：
   ① 计划只说"删摘要"，实际连「按时间」视图那条**工作区名**副行也一并删了
@@ -226,7 +226,7 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
   无分隔线、选中高亮仍是 List 自己画的那枚内缩 10pt 圆角块。
   截图 `.scratch/verify-m1.png`。
 
-- **M2 时间戳** · 2026-08-30 · 新增 `clam-sidebar/swift/SessionTimestamp.swift`；
+- **M2 时间戳** · 2026-08-30 · 新增 `surf-sidebar/swift/SessionTimestamp.swift`；
   `SidebarView.swift` 的 `SessionRow.trailing` 加时间、新增 `archivable`。
   格式实测（`zh_Hans` / `en`）：`16:29`/`4:29 PM`、`昨天`/`Yesterday`、
   `周四`/`Thu`、`2026/7/31`/`7/31/26`——**一个「昨天」都没写进 `Strings.swift`**，
@@ -295,7 +295,7 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
   补 `sidebar.newSession`、删 `sidebar.chips.<mode>`、把「顶部三段」改写成
   「新建行 / 搜索 / 列表 / 底栏」）、`README.md` 与 `docs/internals/architecture.md`
   （「待处理」胶囊 → 置顶分区）、`docs/use/install.md`（「界面 › 会话边栏」整条重写）。
-  **与计划的偏差一处**：计划说改 `CLAUDE.md` 里 clam-sidebar 那段——**那段已经不在了**
+  **与计划的偏差一处**：计划说改 `CLAUDE.md` 里 surf-sidebar 那段——**那段已经不在了**
   （根 CLAUDE.md 早前瘦身成一行"数据面在 node 半边，Swift 只管画"，仍然成立）。
   真正过期的三处在 README / architecture / install，改的是它们。
   `docs/archive/` 下的旧计划按惯例不动。
@@ -308,12 +308,12 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
 | 2 | 深色截图 | `.scratch/verify-dark.png`（临时把 `~/.dsh/settings.yaml` 的 `ui-theme.preference` 切成 `dark`，量完**已还原成 `system`**）。分区头合成色 `rgb(123,125,125)`，正是 40% 白压在 `rgb(35,38,38)` 上的值 |
 | 3 | AX 树 | `peekaboo see --pid --tree --json`：`sidebar.newSession` 在、`sidebar.chips.*` 一条不剩、`sidebar.group.<id>` 没有被拼两遍。**一条既有现象记在这儿**：会话行的 identifier 会同时落在行内每个 AX 叶子上（归档行是 archivebox + 标题两个），所以带图标的行数出来是 2 个同 id 元素——这不是本次引入的（状态图标一直如此），`--on` 定位时要留意 |
 | 4 | 筛选菜单 | `.scratch/verify-m4-menu.png` / `-menu2.png` / `-menu-clean.png`：两个原生分区头画得出来、计数右对齐成一列、⌥⌘K 画在右列、无筛选时「显示全部工作区」与「清除筛选」是**灰的而不是消失** |
-| 5 | 单测 | `node --test clam-sidebar/test/*.test.js` → 18 passed / 0 failed（分组、去抖、翻牌那几条不受影响，一行没改） |
+| 5 | 单测 | `node --test surf-sidebar/test/*.test.js` → 18 passed / 0 failed（分组、去抖、翻牌那几条不受影响，一行没改） |
 
 **「按时间」视图**另截一张 `.scratch/verify-bydate.png` 核对：分段头与工作区分组头
 长得一模一样（同一个 `PlainSectionHeader`）。
 
-- **收尾调整（用户当场提的两条）** · 2026-08-30 · `clam-sidebar/swift/SidebarView.swift`
+- **收尾调整（用户当场提的两条）** · 2026-08-30 · `surf-sidebar/swift/SidebarView.swift`
   ① **底栏那条 `Divider()` 去掉**。原本的理由是"没有线，⊕ 就是个孤立符号"，
      但侧边栏通篇不画线（行与行之间也没有），单给底栏来一条就成了整面唯一的
      一道横杠，比 ⊕ 本身还显眼。
@@ -332,7 +332,7 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
   ② **「新建会话」行高跟搜索框走 36，不跟会话行走 32**：两件头部控件上下紧邻，
      高度对不齐会看出一节台阶；它离最近的会话行还隔着一个分区头。图标与文字不放大，
      **不画常驻底**——那圈液态玻璃胶囊是"这里可以输入"的承诺，这一行不是输入框。
-  ③ **筛选菜单新增「隐藏空工作区」，默认开**（`clam.sidebar.filter.hideEmptyWorkspaces`，
+  ③ **筛选菜单新增「隐藏空工作区」，默认开**（`surf.sidebar.filter.hideEmptyWorkspaces`，
      没设过 = true，所以初始化要先问 `object(forKey:)` 在不在，`bool(forKey:)` 读不到
      时给的 false 正好是反的）。与「显示已归档」同一分区（都是"改变可见集合"的开关，
      先工作区层面再会话层面），带空组计数。**`isNarrowed` 不含它**——关掉它是"看到更多"
@@ -342,6 +342,6 @@ node 半边（M4 的 `commands` 声明）改了**必须重启 dsh**。
      `deriveGroups` 是 "Every group shows"），现在它是用户看得见、关得掉的显式筛选，
      可见集合由用户当场决定，不是我们背着人删东西。
   验收：`.scratch/check-4.png`（三条同时生效：搜索框 36、新建行 36 且是标签色、
-  surfclam/dsh-mac 两个空组已收起）。菜单项本身没截到图——多显示器下 peekaboo 的
+  surf/dsh-mac 两个空组已收起）。菜单项本身没截到图——多显示器下 peekaboo 的
   按元素点击不稳（CLAUDE.md 记着这条），但开关的效果已在主界面确认。
   设计稿也同步到了实机形态（同一个 artifact 链接）。

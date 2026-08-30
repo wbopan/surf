@@ -189,7 +189,7 @@ for(const [d,n] of Object.entries(tally).sort((a,b)=>b[1]-a[1])) console.log("  
 
 2. **筛选菜单吞掉第一个工作区** —— `NSMenuToolbarItem` 走 pull-down 语义，把菜单第 0 项
    当自己的标题吃掉。症状是工作区列表永远少最上面那一个，而数据和日志里都在。
-   已在 clam-layout 收口（`NSMenuToolbarItem.padPullDownTitleSlot`，block 与数据两条
+   已在 surf-layout 收口（`NSMenuToolbarItem.padPullDownTitleSlot`，block 与数据两条
    菜单路线都垫），贡献方不需要知道这件事。
 
 ---

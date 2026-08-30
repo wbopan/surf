@@ -1,0 +1,95 @@
+# surf-layout
+
+窗口布局：接管壳的 `root` 槽，把 WKWebView 和 `sidebar` 槽摆好。
+
+```
+root（本插件占）
+└─ NSSplitViewController
+   ├─ sidebar 槽（surf-sidebar 占；没人占就整个分栏项都不装）
+   └─ WKWebView（壳的那一个，从保管箱借用）
+```
+
+## 为什么是 AppKit
+
+`NSSplitViewItem(sidebarWithViewController:)` 白送这些东西：材质（macOS 26 的
+Liquid Glass）、分隔条、拖拽调宽、双击复位、宽度 autosave、收起动画、以及工具栏里
+跟随 divider 的 `NSTrackingSeparatorToolbarItem`。用 SwiftUI 的 `HSplitView` 重画一遍
+只会得到一个更差的仿制品。所以 root 槽的形状是 **AppKit 包在 SwiftUI 里包在 AppKit 里**
+（`NSViewControllerRepresentable`）——丑，但值。
+
+**别覆写 `loadView()`**：`NSSplitViewController` 的默认实现会把自己的 `splitView` 装成
+`view`，换成一个空 `NSView` 等于把分栏整个丢了，窗口会全白。
+
+## WebView 的归属
+
+WKWebView 实例归**壳**，放在保管箱（`SurfObjects.Key.webView`）里，本插件只借用排版。
+两个理由：
+
+1. 壳的终极逃生舱（本插件缺席时的全出血网页模式）要用同一个实例，页面才不重载；
+2. 本插件热替换时页面也不重载——M2 断言 9 实测：换代后 `window` 上的 JS 状态原样还在。
+
+`navigationDelegate`/`uiDelegate` 同样归壳，所以计划 §10-R5 说的"新世代必须重设 delegate"
+在这里根本不存在。
+
+## 导出给下游的东西
+
+- `public protocol SurfConversationSurface` —— 会话展示面（选中会话 / 新建 / 打开设置）。
+  **接口住在消费者侧**（1×N 规则）：拥有 WebView 的是本插件，所以协议定义在这里，
+  随 `SurfLayout.swiftmodule` 传给 surf-sidebar。SDK 只放内核词汇，生态词汇由插件自带。
+- 实例经保管箱的 `SurfObjects.Key.conversationSurface` 传递。
+
+## 工具栏
+
+归本插件（计划原本写"留壳"）：`NSTrackingSeparatorToolbarItem` 要 splitView，而 splitView
+在这儿。壳只留菜单——⌘, 走 EventBus 的 `surf.menu.command` 广播出来，本插件接住再调
+会话展示面。壳喊话，有能力的插件干活。
+
+工具栏上的按钮**全部来自 `toolbar` 贡献槽**，本插件自己一颗都不放。
+
+### 拓扑：`ToolbarSpec`
+
+**权威是 `swift/LayoutContracts.swift` 的 `public struct ToolbarSpec`**（12 个键各一个
+有类型的属性 + `metadata()`），贡献方按名字引，拼错就编不过：
+
+```swift
+host.contribute(to: LayoutToolbar.slot, id: "filter", order: -100,
+                metadata: ToolbarSpec(label: "筛选",
+                                      symbol: "line.3.horizontal.decrease",
+                                      menu: buildMenu).metadata()) { AnyView(EmptyView()) }
+```
+
+消费方（`ToolbarContribution.swift`）**仍然读字典**——SDK 的贡献槽只收容器不收词汇，
+把 `ToolbarSpec` 冻进 ABI 等于把"工具栏长什么样"钉死在预编译的壳里。
+`ToolbarSpec` 给的是**生产端**的类型安全，不是新的传输格式。
+
+键的清单与四条渲染路线（`button` / `group` / `menu` / `view`）见 `ToolbarSpec` 的文档
+注释，汇总表在 `docs/extend/contracts.md` §2。
+
+`menu` 的类型必须是 `@convention(block) (NSMenu) -> Void`：它要装在 `[String: Any]` 里
+穿过 dylib 边界，ObjC block 是个货真价实的对象，装箱取箱都稳；裸 Swift 闭包的函数类型
+元数据跨 image 取回来是碰运气。菜单**每次弹出前重建**（`ContributionMenuDelegate`），
+所以 block 里读什么状态都是当场的，勾选态不会停在上次打开时的样子。
+
+### 流量：`surf.toolbar.update`
+
+`ToolbarSpec` 的每个字段**一变就重建整条工具栏**。徽标数字、菜单内容、段控选中态、
+显隐是**流量**，一秒能变好几次——走 metadata 等于每次把工具栏拆了重装（按钮会闪、
+popover 会掉）。它们走活通道：
+
+```swift
+host.events.emit(LayoutToolbar.updateTopic,
+                 ["owner": host.plugin, "id": "filter", "badge": 3])
+```
+
+消费方把 patch 记进 `ToolbarItemState`（跟着 `(owner, id)` 记账而不是跟着项）**并**
+就地改活着的那一项——记账是必须的，项会因为换代/重建而重造。载荷键见
+`ToolbarContribution.swift` 的 `ToolbarItemState`。
+
+槽名、活通道与回程主题（`activate` / `menuSelect` / `menuOpen`）都从
+`public enum LayoutToolbar` 引；`LayoutSplitController` 自己是 internal 的实现细节。
+槽名 `sidebar` 从 `public enum LayoutSlots` 引。
+
+**「新建会话」不在工具栏上**：那一格让给了 surf-sidebar 的「筛选」，眼下整条工具栏
+只有这一条贡献。⌘N 走的是 surf-layout 自己的
+`commands` 声明 → 壳 emit `menuCommand` → 本插件应答；`LayoutPlugin.newSessionTopic`
+这条主题仍然在，留给第三方按钮。

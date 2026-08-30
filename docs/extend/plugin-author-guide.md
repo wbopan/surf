@@ -1,7 +1,7 @@
-# 写一个 clam 插件
+# 写一个 surf 插件
 
 这份文档写给**不在本仓库里**的插件作者：你有自己的 npm 包、自己的 git 仓库，
-想给 surfclam 加一格工具栏按钮、一条快捷键、一扇窗口，或者干脆换掉侧边栏。
+想给 surf 加一格工具栏按钮、一条快捷键、一扇窗口，或者干脆换掉侧边栏。
 
 契约的字段表在 [`contracts.md`](contracts.md)，这里讲怎么把东西跑起来。
 
@@ -9,19 +9,19 @@
 
 1. **插件就是一个普通的 cordis 插件**（npm 包），跑在 dsh 进程里。
    没有插件 SDK、没有脚手架、没有构建步骤。
-2. **壳（`Surfclam.app`）是预编译产物，你改不了它。** 所有跨插件的约定都是
+2. **壳（`Surf.app`）是预编译产物，你改不了它。** 所有跨插件的约定都是
    **字符串**——槽名、事件主题、metadata 键。抄错一个字母是静默失败：
    界面上什么都不发生，没有编译错误也没有日志。
 3. **Swift 半边是运行时编译装载的**：你的 `swift/` 目录经桥传给壳，壳用
    `xcrun swiftc` 编成 dylib 再 `dlopen`。所以你**不需要 Xcode**（Command Line
-   Tools 就够，ClamSDK 的 `.swiftinterface` 随 app bundle 分发），
-   但你需要一台已经跑起来过 surfclam 的机器。
+   Tools 就够，SurfSDK 的 `.swiftinterface` 随 app bundle 分发），
+   但你需要一台已经跑起来过 surf 的机器。
 
 **App 是 dsh 的客户端外设，不是宿主**，但两种形态下谁先起是反过来的：
 
-- **装好的正式形态**（用户的机器）：双击 `Surfclam.app`，它自己 spawn 一个 dsh
+- **装好的正式形态**（用户的机器）：双击 `Surf.app`，它自己 spawn 一个 dsh
   并盯着它（连接偏好默认 `managed`，打开即有、⌘Q 即退）。
-- **仓库开发形态**：终端先跑起 dsh，其中的 `clam-app` 插件按需构建并拉起 App。
+- **仓库开发形态**：终端先跑起 dsh，其中的 `surf-app` 插件按需构建并拉起 App。
 
 对你没有区别——两种形态下你的插件都跑在 dsh 进程里，Swift 半边都由壳在运行时编译装载。
 
@@ -32,11 +32,11 @@
 | 形态 | 有什么 | 例子 |
 |---|---|---|
 | **纯 node** | 只有 `lib/index.js`。不碰界面，提供服务或订 dsh 事件 | 给别人喂数据的服务提供方 |
-| **带 Swift 载荷** | 多一个 `swift/` 目录。占槽、贡献工具栏、开窗口、发通知 | clam-sidebar、clam-notify、clam-settings |
-| **带 client 半边** | 多一个 `lib/client.js`。改 dsh 网页那一侧 | clam-nativeify（CSS）、clam-layout（动作桥） |
+| **带 Swift 载荷** | 多一个 `swift/` 目录。占槽、贡献工具栏、开窗口、发通知 | surf-sidebar、surf-notify、surf-settings |
+| **带 client 半边** | 多一个 `lib/client.js`。改 dsh 网页那一侧 | surf-nativeify（CSS）、surf-layout（动作桥） |
 
 三者可叠加。**这三个半边彼此独立**：Swift 半边靠桥与 node 半边说话（`push`/`invoke`），
-client 半边靠页内桥与壳说话（`postMessage` → `clam.page.<type>`），
+client 半边靠页内桥与壳说话（`postMessage` → `surf.page.<type>`），
 node 半边与 client 半边之间没有直连通道。
 
 ---
@@ -46,7 +46,7 @@ node 半边与 client 半边之间没有直连通道。
 ```jsonc
 // package.json
 {
-  "name": "@acme/clam-hello",
+  "name": "@acme/surf-hello",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
@@ -60,13 +60,13 @@ node 半边与 client 半边之间没有直连通道。
 // lib/index.js
 import z from "@deepseek-ai/schemastery";
 
-export const name = "clam-hello";
+export const name = "surf-hello";
 export const inject = [];
 export const Config = z.object({ greeting: z.string().default("hi") });
 
 export function apply(ctx, config) {
   ctx.on("session/created", (session) => {
-    process.stderr.write(`clam-hello: ${config.greeting} ${session.id}\n`);
+    process.stderr.write(`surf-hello: ${config.greeting} ${session.id}\n`);
   });
 }
 ```
@@ -84,29 +84,29 @@ node 半边通常就是一段配置——`createSwiftPlugin` 替你做完登记�
 ```jsonc
 // package.json —— 注意 files 里的 "swift"
 {
-  "name": "@acme/clam-hello",
+  "name": "@acme/surf-hello",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": { ".": "./lib/index.js", "./package.json": "./package.json" },
   "files": ["lib", "swift"],
-  "peerDependencies": { "@wenbo/clam-bridge": "^0.1.0" }
+  "peerDependencies": { "@wenbo/surf-bridge": "^0.1.0" }
 }
 ```
 
 ```js
 // lib/index.js
-import { createSwiftPlugin } from "@wenbo/clam-bridge/plugin";
+import { createSwiftPlugin } from "@wenbo/surf-bridge/plugin";
 
 export default createSwiftPlugin({
-  name: "clam-hello",                       // ← 决定 Swift module 名，见 §5
+  name: "surf-hello",                       // ← 决定 Swift module 名，见 §5
   swiftDir: new URL("../swift/", import.meta.url),
 
-  // 想 import ClamLayout（占 sidebar 槽 / 用 LayoutToolbar 那些常量）就加这两行。
+  // 想 import SurfLayout（占 sidebar 槽 / 用 LayoutToolbar 那些常量）就加这两行。
   // 只写一半不行：swiftDeps 是 Swift 编译拓扑序，inject 是 cordis 挂载时序，
   // 两者必须是同一份声明（漏了会被自动补上并 warn）。
-  inject: ["clam-layout"],
-  swiftDeps: ["clam-layout"],
+  inject: ["surf-layout"],
+  swiftDeps: ["surf-layout"],
 
   // 想让壳给你装菜单项 / 快捷键就声明在这里（形状见 contracts.md §1）。
   commands: [{
@@ -128,20 +128,20 @@ export default createSwiftPlugin({
 ```swift
 // swift/HelloPlugin.swift
 import AppKit
-import ClamSDK
+import SurfSDK
 import SwiftUI
 
-@_cdecl("clam_plugin_entry")
-public func clam_plugin_entry() -> UnsafeMutableRawPointer {
+@_cdecl("surf_plugin_entry")
+public func surf_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(HelloPlugin()).toOpaque()
 }
 
-final class HelloPlugin: ClamPlugin {
-    func activate(host: ClamHost) -> AnyObject? {
-        let handle = ClamPluginHandle()
+final class HelloPlugin: SurfPlugin {
+    func activate(host: SurfHost) -> AnyObject? {
+        let handle = SurfPluginHandle()
 
         // 菜单命令：壳只喊命令名，谁应答谁干活。
-        host.events.subscribe(ClamEventBus.Topic.menuCommand) { payload in
+        host.events.subscribe(SurfEventBus.Topic.menuCommand) { payload in
             guard payload["command"] as? String == "sayHello" else { return }
             NSSound.beep()
         }.kept(by: handle)
@@ -181,17 +181,17 @@ client 半边是**手写的 lazy-CJS 经典脚本**，没有构建步骤。
 ```js
 // lib/client.js
 window.__ModuleLoader__.load({
-  id: "@acme/clam-hello",     // ← 必须逐字等于 package.json 的 name
+  id: "@acme/surf-hello",     // ← 必须逐字等于 package.json 的 name
   factory: () => {
     var module = { exports: {} };
     var exports = module.exports;
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
-    /** 只在壳里生效：UA 含 "Clam/"（带斜杠，防普通子串误命中）。 */
-    const insideClam = () => navigator.userAgent.includes("Clam/");
+    /** 只在壳里生效：UA 含 "Surf/"（带斜杠，防普通子串误命中）。 */
+    const insideSurf = () => navigator.userAgent.includes("Surf/");
 
     exports.apply = (ctx) => {
-      if (!insideClam()) return;
+      if (!insideSurf()) return;
       ctx.effect(() => {
         const style = document.createElement("style");
         style.textContent = `/* … */`;
@@ -216,8 +216,8 @@ window.__ModuleLoader__.load({
   `documentElement` 属性 / window 全局，会砍掉新实例刚装好的那一份。
   写全局状态必须带实例 token，cleanup 只收 token 对得上的。
 
-想给壳送一条消息就 `window.webkit.messageHandlers.clam.postMessage({ type, ... })`
-——**壳不设白名单**，任意 `type` 都会广播成 `clam.page.<type>`，你的 Swift 半边订它即可。
+想给壳送一条消息就 `window.webkit.messageHandlers.surf.postMessage({ type, ... })`
+——**壳不设白名单**，任意 `type` 都会广播成 `surf.page.<type>`，你的 Swift 半边订它即可。
 
 ---
 
@@ -228,11 +228,11 @@ window.__ModuleLoader__.load({
 
 ```
 kebab-case 拆开，每段首字母大写，拼起来
-clam-hello       → ClamHello
+surf-hello       → SurfHello
 acme_status_bar  → AcmeStatusBar
 ```
 
-**别拿 scoped 包名当 `name`**：`@acme/clam-hello` 会算出 `@acme/ClamHello`，
+**别拿 scoped 包名当 `name`**：`@acme/surf-hello` 会算出 `@acme/SurfHello`，
 不是合法的 Swift 标识符。桥在登记这一刻就会抛错并告诉你怎么改
 （从前它一路放行，直到壳去 `swiftc -module-name` 才炸，而那条错误落在**壳的日志里**、
 长得像编译器的毛病）。
@@ -241,7 +241,7 @@ acme_status_bar  → AcmeStatusBar
 `name` 重复登记（检查编排表里是不是列了两行）。
 
 `name` 与包名不必相同，但**必须全局唯一**——它是登记表的键。
-包名的 scope 建议留给你自己（`@acme/clam-hello`），`name` 写裸名（`clam-hello`）。
+包名的 scope 建议留给你自己（`@acme/surf-hello`），`name` 写裸名（`surf-hello`）。
 
 ---
 
@@ -249,24 +249,24 @@ acme_status_bar  → AcmeStatusBar
 
 | 你在哪 | 怎么 import `createSwiftPlugin` |
 |---|---|
-| **外部包**（你的情形） | `import { createSwiftPlugin } from "@wenbo/clam-bridge/plugin";`，并把 `@wenbo/clam-bridge` 写进 **peerDependencies** |
-| 本仓库内的 `clam-*` | `import … from "../../clam-bridge/lib/plugin.js";`（相对路径） |
+| **外部包**（你的情形） | `import { createSwiftPlugin } from "@wenbo/surf-bridge/plugin";`，并把 `@wenbo/surf-bridge` 写进 **peerDependencies** |
+| 本仓库内的 `surf-*` | `import … from "../../surf-bridge/lib/plugin.js";`（相对路径） |
 
 本仓库用相对路径是因为包名 import 需要 npm workspace 或手工 symlink，
-那是机器本地状态，新克隆的仓库拿不到；而"所有 clam-\* 是同一仓库里的兄弟目录"永远成立。
-**你没有这个问题**——你的包被装进 profile 时，`@wenbo/clam-bridge` 会平铺在
+那是机器本地状态，新克隆的仓库拿不到；而"所有 surf-\* 是同一仓库里的兄弟目录"永远成立。
+**你没有这个问题**——你的包被装进 profile 时，`@wenbo/surf-bridge` 会平铺在
 profile 的 `node_modules` 里。
 
-`clam-bridge` 的公开出口只有两个：`./plugin`（`createSwiftPlugin`）与
+`surf-bridge` 的公开出口只有两个：`./plugin`（`createSwiftPlugin`）与
 `./locale`（语言决议的小工具）。别 deep import `lib/` 里的其它文件。
 
 **`@deepseek-ai/*`（以及 `ws`、`@deepseek-ai/schemastery`）一律写 peerDependencies。**
 理由不是包体积：cordis 的服务与 Schema 按**实例身份**认人，你必须用 dsh 自己进程里的
 那一份。装一份版本号相同的副本反而会因为实例不同而出诡异的错。
 
-`@wenbo/clam-bridge` 也建议写 peerDependencies，不过它宽容一些：`createSwiftPlugin`
-是无状态纯工厂（只用 `ctx.clamBridge` 这个**服务名**接头，不比对模块实例），
-拿到第二份副本也不会出事——真正要求单例的是 `clamBridge` 服务的提供者，
+`@wenbo/surf-bridge` 也建议写 peerDependencies，不过它宽容一些：`createSwiftPlugin`
+是无状态纯工厂（只用 `ctx.surfBridge` 这个**服务名**接头，不比对模块实例），
+拿到第二份副本也不会出事——真正要求单例的是 `surfBridge` 服务的提供者，
 它由伞包只挂一次。
 
 ---
@@ -277,26 +277,26 @@ profile 的 `node_modules` 里。
 
 - **profile** = 一张 `bundles` 清单（`<profile>/package.json`），零代码。
 - **bundle** = 一张编排表（`cordis.patch.yml`），说"装哪些包、什么顺序、什么配置"。
-  surfclam 那张住在伞包 `@wenbo/surfclam` 里。
+  surf 那张住在伞包 `@wenbo/surf` 里。
 - **plugin** = 真正的代码，纯 npm 包，**不声明 `dsh.bundle`**。
 
 **你不需要改伞包。** profile 自己的 `cordis.patch.yml` 在所有 bundle 层之后应用：
 
 ```yaml
-# ~/.dsh/profiles/surfclam/cordis.patch.yml
+# ~/.dsh/profiles/surf/cordis.patch.yml
 - insert:
-    - id: clam-hello
-      name: "@acme/clam-hello"
+    - id: surf-hello
+      name: "@acme/surf-hello"
       config:
         greeting: hello
 ```
 
-挂载顺序不用你操心：`createSwiftPlugin` 自动补上 `inject: ["clamBridge"]`，
+挂载顺序不用你操心：`createSwiftPlugin` 自动补上 `inject: ["surfBridge"]`，
 cordis 的依赖解析保证桥先于你挂载（**行序不带加载语义**，只影响诊断树的可读性）。
 
 **别把自己列进 `bundles`。** 那一栏只收 bundle；列一个没有 `dsh.bundle` 声明的包上去，
-`loadProfile` 会直接 fails loud。`surfclam/bin/surfclam.js` 的 `fixBundles` 会把
-clam-\* 从 `bundles` 里清掉，但**保留你自己 add 的其它条目**，不会动你的 patch 层。
+`loadProfile` 会直接 fails loud。`surf/bin/surf.js` 的 `fixBundles` 会把
+surf-\* 从 `bundles` 里清掉，但**保留你自己 add 的其它条目**，不会动你的 patch 层。
 
 ---
 
@@ -306,13 +306,13 @@ clam-\* 从 `bundles` 里清掉，但**保留你自己 add 的其它条目**，�
 （源码经 WS 传过去）。
 
 ```sh
-# 一次性：把你的仓库 link 进 surfclam 的 profile
+# 一次性：把你的仓库 link 进 surf 的 profile
 # （`--profile` 是必填项；spec 原样交给 pnpm add，所以 link:/ file: 都能用）
-dsh plugin add --profile surfclam link:/path/to/your/clam-hello
+dsh plugin add --profile surf link:/path/to/your/surf-hello
 # 然后在 profile 的 cordis.patch.yml 里 insert 一行（§7）
 
 # 日常
-dsh --profile surfclam --no-open
+dsh --profile surf --no-open
 ```
 
 之后：
@@ -324,7 +324,7 @@ dsh --profile surfclam --no-open
 | `lib/client.js` | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
 
 编译失败会带文件行号打进 **dsh 终端的 stderr**，旧世代继续在役，界面不变也不崩。
-完整日志埋在世代目录的 `build.log`（`<AppSupport>/io.wenbo.surfclam/native-plugins/generations/`）。
+完整日志埋在世代目录的 `build.log`（`<AppSupport>/io.wenbo.surf/native-plugins/generations/`）。
 想确认"我现在跑的到底是哪份代码"就开 ⌥⌘D 诊断面板——那里列着每个插件的世代、
 module 名（module 名就是内容 hash），以及命令声明的条数与来源。
 
@@ -342,8 +342,8 @@ module 名（module 名就是内容 hash），以及命令声明的条数与来�
 症状极其误导——"上线"日志照常打印，然后什么都不发生，像是数据没来。
 
 ```swift
-func activate(host: ClamHost) -> AnyObject? {
-    let presenter = Presenter(host: host)   // presenter 自己持有 ClamPluginHandle
+func activate(host: SurfHost) -> AnyObject? {
+    let presenter = Presenter(host: host)   // presenter 自己持有 SurfPluginHandle
     presenter.start()
     return presenter                        // ← 壳按住这个返回值，它就是锚
 }
@@ -356,12 +356,12 @@ func activate(host: ClamHost) -> AnyObject? {
 `as? 自定义类` 跨代必然得到 nil。
 
 ```swift
-host.objects.setObject("clam.hello.snapshot", payload as NSDictionary)   // ✅
-host.objects.setObject("clam.hello.model", MyModel())                    // ❌ 下一代取不出来
+host.objects.setObject("surf.hello.snapshot", payload as NSDictionary)   // ✅
+host.objects.setObject("surf.hello.model", MyModel())                    // ❌ 下一代取不出来
 ```
 
 窗口这类资源同理：存 `NSWindow`，新一代 `activate` 时主动收拾上一代留下的那份。
-**别把清理逻辑只挂在 `ClamPluginHandle` 的析构上**——实测四十多次换代里 handle 只
+**别把清理逻辑只挂在 `SurfPluginHandle` 的析构上**——实测四十多次换代里 handle 只
 deinit 过三次；注册撤销之所以没出事，是因为 registry 用 token 兜住了"新的赢"。
 没有 token 兜底的东西（窗口是典型）会积累：每改一次 Swift 多叠一扇窗口。
 
@@ -380,7 +380,7 @@ Objective-C runtime 按名字注册类，两代同名类会打架。
 你自己定义的类型只能留在自己家里，或者经 `.swiftmodule` 交给**明确声明了 `swiftDeps`、
 因而会被级联重编**的下游插件。事件总线与桥的载荷只放 JSON 能表达的值。
 
-线程约定：SDK 的所有表**只在主线程使用**。`ClamPlugin.activate` 是唯一标了
+线程约定：SDK 的所有表**只在主线程使用**。`SurfPlugin.activate` 是唯一标了
 `@MainActor` 的地方，所以你可以直接用 AppKit / SwiftUI。
 
 ---
@@ -390,15 +390,15 @@ Objective-C runtime 按名字注册类，两代同名类会打架。
 ### 10.1 加一条菜单项 / 全局快捷键
 
 声明在 node 半边的 `commands`（§3 的骨架里有），Swift 半边订
-`ClamEventBus.Topic.menuCommand` 应答。壳不认得你的 id，你的插件缺席时那条菜单项
+`SurfEventBus.Topic.menuCommand` 应答。壳不认得你的 id，你的插件缺席时那条菜单项
 干脆不出现。字段表见 [`contracts.md` §1](contracts.md)。
 
 ### 10.2 往工具栏加一格
 
-需要 `inject`/`swiftDeps` 都带上 `clam-layout`：
+需要 `inject`/`swiftDeps` 都带上 `surf-layout`：
 
 ```swift
-import ClamLayout
+import SurfLayout
 
 host.contribute(to: LayoutToolbar.slot, id: "hello", order: 10,
                 metadata: ToolbarSpec(label: "打招呼",
@@ -429,7 +429,7 @@ host.register(slot: LayoutSlots.sidebar) { AnyView(MySidebar()) }.kept(by: handl
 ```
 
 一槽一主，后来者覆盖。想让 dsh 网页那侧配合（比如收起它自带的侧边栏），
-那是**占 `root` 槽的插件**的事——它经 `clam.web.query` 告诉壳页面该带什么参数，
+那是**占 `root` 槽的插件**的事——它经 `surf.web.query` 告诉壳页面该带什么参数，
 壳对参数名不设白名单也不解释。
 
 ### 10.4 只读别人的设置 ns
@@ -466,8 +466,8 @@ function read(ctx) {
 ### 10.6 让别人能扩展你
 
 `ctx.provide("<中性服务名>", impl)`——**服务名描述事实，不要描述插件**。
-clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `clamNotify`，
-所以 clam-sidebar 消费它时并不知道对面是谁，换一个实现方也不用改代码。
+surf-notify 提供的是 `surfPending`（"有什么在等着你"）而不是 `surfNotify`，
+所以 surf-sidebar 消费它时并不知道对面是谁，换一个实现方也不用改代码。
 
 ---
 
@@ -494,7 +494,7 @@ clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `cl
 
 ## 12. 已知边界（发布前还没解决的）
 
-- **预编译只覆盖仓库内置的插件，你的不在其中。** 分发的 `Surfclam.app` 是
+- **预编译只覆盖仓库内置的插件，你的不在其中。** 分发的 `Surf.app` 是
   Developer ID 签名 + 公证的实体，内置插件的 dylib 已经预编译进 bundle，用户机器上
   零次 swiftc。但**第三方插件的 `swift/` 仍然是运行时现场编译的**，所以你的用户
   需要 Command Line Tools（不需要完整 Xcode）。
@@ -505,13 +505,13 @@ clam-notify 提供的是 `clamPending`（"有什么在等着你"）而不是 `cl
   后全部装载失败，报错是 `mapping process and mapped file (non-platform) have
   different Team IDs`，**字面上一个字都没提 library validation**。
   撞见这句话要去查 entitlements，不是查签名身份。
-- **ABI 版本号是空承诺**：`clamABIVersion` 眼下没有装载期比对，
+- **ABI 版本号是空承诺**：`surfABIVersion` 眼下没有装载期比对，
   SDK 语义变更对老插件是静默漂移。
 - **部署目标钉死 `arm64-apple-macos27.0`**，SDK 较旧的机器编不过。
 - **贡献的 metadata 零校验**，键名拼错静默降级到缺省。
 - **没有错误边界**：`make()` / hook body / event handler 全是裸调用，
   一个贡献者崩了整个进程走人。
-- **侧边栏没有贡献槽**：想给会话行加一列装饰/筛选，眼下必须改 clam-sidebar 本身
-  （`clamPending` 是唯一现成的扩展点，但只喂 `status` 一个字段）。
+- **侧边栏没有贡献槽**：想给会话行加一列装饰/筛选，眼下必须改 surf-sidebar 本身
+  （`surfPending` 是唯一现成的扩展点，但只喂 `status` 一个字段）。
 
 这几条的路线图在 [`architecture-coupling-audit.md` §6](../archive/architecture-coupling-audit.md)。

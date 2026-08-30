@@ -1,6 +1,6 @@
 # 编排：这些包是怎么被装进 dsh 的
 
-这篇讲 **surfclam 的一堆 npm 包是怎么变成 dsh 进程里的一棵插件树的**：
+这篇讲 **surf 的一堆 npm 包是怎么变成 dsh 进程里的一棵插件树的**：
 profile / bundle / plugin 三层怎么分工、编排权在谁手上、模块解析靠什么、
 一个插件的三个半边各住在哪、各自改完要付什么代价。写给**本仓库的维护者**。
 
@@ -14,9 +14,9 @@ profile / bundle / plugin 三层怎么分工、编排权在谁手上、模块解
 
 | 层 | 是什么 | 我们这一份 |
 |---|---|---|
-| **profile** | 一张 `bundles` 清单（`<profile>/package.json` 的 `dsh.profile.bundles`）。**零代码** | 装好的那套叫 `surfclam` |
-| **bundle** | 一张**编排表**（`cordis.patch.yml`）：装哪些包、什么顺序、什么配置。代码在别处 | 伞包 `@wenbo/surfclam`（目录 `surfclam/`） |
-| **plugin** | 真正的代码，纯 npm 包。**不声明 `dsh.bundle`** | `@wenbo/clam-*` 那八个 |
+| **profile** | 一张 `bundles` 清单（`<profile>/package.json` 的 `dsh.profile.bundles`）。**零代码** | 装好的那套叫 `surf` |
+| **bundle** | 一张**编排表**（`cordis.patch.yml`）：装哪些包、什么顺序、什么配置。代码在别处 | 伞包 `@wenbo/surf`（目录 `surf/`） |
+| **plugin** | 真正的代码，纯 npm 包。**不声明 `dsh.bundle`** | `@wenbo/surf-*` 那八个 |
 
 `@deepseek-ai/dsh-web-app` 就是这个形状的范本：自己只有两三百行，却编排了
 八十多个 row、依赖近七十个包。
@@ -25,14 +25,14 @@ profile / bundle / plugin 三层怎么分工、编排权在谁手上、模块解
 `cordis.patch.yml`、各自声明 `dsh.bundle` 是可行的（dsh 支持），但那样
 "装了哪些插件、什么顺序" 就散在八个包里，而且它们会各自被 reconcile 进
 `bundles`——同一个插件挂载两次这类问题从此有了滋生的地方。摘掉子包的
-`dsh.bundle` 声明之后，**改编排只改 `surfclam/cordis.patch.yml` 一个文件**。
+`dsh.bundle` 声明之后，**改编排只改 `surf/cordis.patch.yml` 一个文件**。
 
 ---
 
 ## 2. 我们的 profile 只列三个 bundle
 
 ```
-@deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app + @wenbo/surfclam
+@deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app + @wenbo/surf
 ```
 
 **三者平级。** 不存在"我们的 profile 依赖 web profile"这回事——dsh 自带的 `web`
@@ -50,19 +50,19 @@ profile 自己的 `cordis.patch.yml`（用户那一层）在所有 bundle 层之
 
 ## 3. 编排表长什么样
 
-`surfclam/cordis.patch.yml` 是一串 `insert`，每行三样东西：`id`（诊断树上的名字）、
+`surf/cordis.patch.yml` 是一串 `insert`，每行三样东西：`id`（诊断树上的名字）、
 `name`（包名）、可选的 `config`：
 
 ```yaml
 - insert:
-    - id: clam-bridge
-      name: "@wenbo/clam-bridge"
+    - id: surf-bridge
+      name: "@wenbo/surf-bridge"
       config:
-        path: /clam/bridge
+        path: /surf/bridge
         pollIntervalMs: 500
 
-    - id: clam-app
-      name: "@wenbo/clam-app"
+    - id: surf-app
+      name: "@wenbo/surf-app"
       config:
         configuration: Debug
         build: true
@@ -73,17 +73,17 @@ profile 自己的 `cordis.patch.yml`（用户那一层）在所有 bundle 层之
 ```
 
 **行序不带加载语义。** 挂载时序由 cordis 的依赖解析决定：带 Swift 载荷的插件都
-`inject: ["clamBridge"]`（`createSwiftPlugin` 自动补），clam-sidebar 还
-`inject: ["clam-layout"]`。表里的顺序只影响诊断树读起来顺不顺眼。
+`inject: ["surfBridge"]`（`createSwiftPlugin` 自动补），surf-sidebar 还
+`inject: ["surf-layout"]`。表里的顺序只影响诊断树读起来顺不顺眼。
 
-被编排的插件里有一个不需要 macOS：`clam-memory` 是纯 node，不占槽、不碰桥，
+被编排的插件里有一个不需要 macOS：`surf-memory` 是纯 node，不占槽、不碰桥，
 排在这张表上只是因为它属于这套编排。
 
 ---
 
 ## 4. 两个必须知道的坑
 
-`surfclam/bin/surfclam.js` 的 `fixBundles` 就是在收拾它们。
+`surf/bin/surf.js` 的 `fixBundles` 就是在收拾它们。
 
 ### 4.1 `@deepseek-ai/dsh-web-app` 得手动列进 `bundles`
 
@@ -116,7 +116,7 @@ dsh 把它依赖闭包里的近两百个 `@deepseek-ai/*` 包**扁平铺**在
 **这个失败模式暴露得很晚，别被前两步的绿灯骗了**：链接缺失时
 `dsh plugin add` 和 `--dump-config` 都能过，直到真 `import` 才炸
 `ERR_MODULE_NOT_FOUND`。判据不是 `ls -l`（软链本身看着是活的），
-而是 `node -e 'import("@wenbo/surfclam")'`。
+而是 `node -e 'import("@wenbo/surf")'`。
 
 ### 为什么是符号链接，而不是把 `@deepseek-ai/*` 真装进仓库
 
@@ -126,17 +126,17 @@ dsh 把它依赖闭包里的近两百个 `@deepseek-ai/*` 包**扁平铺**在
 同一条理由决定了依赖声明的写法：**`@deepseek-ai/*`（以及 `ws`）一律写
 `peerDependencies`**，不是为了包体积。
 
-### `clam-*` 之间用相对路径 import
+### `surf-*` 之间用相对路径 import
 
 ```js
-import { createSwiftPlugin } from "../../clam-bridge/lib/plugin.js";
+import { createSwiftPlugin } from "../../surf-bridge/lib/plugin.js";
 ```
 
-而不是 `@wenbo/clam-bridge/plugin`。包名 import 需要 npm workspace 或手工 symlink，
-**那是机器本地状态，新克隆的仓库拿不到**；而"所有 `clam-*` 是同一仓库里的兄弟目录"
+而不是 `@wenbo/surf-bridge/plugin`。包名 import 需要 npm workspace 或手工 symlink，
+**那是机器本地状态，新克隆的仓库拿不到**；而"所有 `surf-*` 是同一仓库里的兄弟目录"
 永远成立，零配置。
 
-外部插件作者没有这个问题——他们的包被装进 profile 时，`@wenbo/clam-bridge` 会平铺在
+外部插件作者没有这个问题——他们的包被装进 profile 时，`@wenbo/surf-bridge` 会平铺在
 profile 的 `node_modules` 里，写包名即可（并写进 peerDependencies）。
 
 ---
@@ -154,12 +154,12 @@ profile 的 `node_modules` 里，写包名即可（并写进 peerDependencies）
 不 link 它们，启动即炸：
 
 ```
-Cannot find package '@wenbo/clam-bridge' imported from ~/.dsh/profiles/<profile>/
+Cannot find package '@wenbo/surf-bridge' imported from ~/.dsh/profiles/<profile>/
 ```
 
 **发布形态下没有这个问题**：那时它们是伞包真实的 npm 依赖，会被平铺进 profile 的
 `node_modules`。装好的 App 走的是第三条路——它把自己 bundle 里那份 node 载荷
-镜像进 `<profile>/.surfclam/`，再手写 `link:` 行与符号链接（`Native/ProfileBootstrap.swift`），
+镜像进 `<profile>/.surf/`，再手写 `link:` 行与符号链接（`Native/ProfileBootstrap.swift`），
 不调 pnpm。
 
 **三种形态下 `bundles` 都只有那三行**，因为编排权始终在伞包那张表上。
@@ -179,7 +179,7 @@ Cannot find package '@wenbo/clam-bridge' imported from ~/.dsh/profiles/<profile>
 | **swift** | `swift/*.swift` | 壳进程（运行时编译装载） | node 半边经 `createSwiftPlugin` 登记给桥 |
 
 **三者彼此独立。** Swift 半边靠桥与自己的 node 半边说话（`push` / `invoke`），
-client 半边靠页内桥与壳说话（`postMessage` → `clam.page.<type>` 广播），
+client 半边靠页内桥与壳说话（`postMessage` → `surf.page.<type>` 广播），
 node 半边与 client 半边之间**没有直连通道**。
 
 ### 更新边界（这张表决定了开发循环）
@@ -199,7 +199,7 @@ TS 半身完全不用重载。否则第一行那个"1~3 秒"就不可能成立�
 
 ---
 
-## 8. `surfclam/bin/surfclam.js`：`./dev` 与 `./release`
+## 8. `surf/bin/surf.js`：`./dev` 与 `./release`
 
 伞包**不含任何运行时代码**，只有一张编排表和这一个脚本。它服务开发者，
 不在仓库里跑就当场 fails loud。
@@ -223,7 +223,7 @@ TS 半身完全不用重载。否则第一行那个"1~3 秒"就不可能成立�
 Ctrl-C 直达 dsh。装好之后 `dsh --profile <名字> --no-open` 也照样能用——
 `./dev` 只是替你把安装那步做了。
 
-clam-app 随之按需构建并拉起 App。**不需要手动 `dsh plugin add`。**
+surf-app 随之按需构建并拉起 App。**不需要手动 `dsh plugin add`。**
 
 ### `./release` —— 把这台机器装成正式形态
 
@@ -255,7 +255,7 @@ clam-app 随之按需构建并拉起 App。**不需要手动 `dsh plugin add`。
 重建自己产出的是 ad-hoc 签名，**当场把自己降级成"来路不明"**，Hardened Runtime 与
 entitlements 随之对不上，所有热插件突然装载失败——而症状完全不像签名问题。
 所以正式形态下"要不要构建"这个开关根本不存在，不是默认关掉：
-**构建那一整套代码就不随包分发**（住在 `clam-app/host-build/`，`files` 白名单只收 `lib/`），
+**构建那一整套代码就不随包分发**（住在 `surf-app/host-build/`，`files` 白名单只收 `lib/`），
 判据是"那个模块 `import` 得到吗"，而不是任何旋钮。
 
 ---
@@ -267,5 +267,5 @@ entitlements 随之对不上，所有热插件突然装载失败——而症状�
 - [`../extend/plugin-author-guide.md`](../extend/plugin-author-guide.md) §7 ——
   外部插件怎么接进编排（不必改伞包）。
 - [`../extend/contracts.md`](../extend/contracts.md) —— 跨插件字符串约定的汇总索引。
-- `surfclam/cordis.patch.yml` —— 编排表本体，注释比这篇细。
-- `clam-bridge/lib/plugin.js` —— `createSwiftPlugin` 与 `CommandDeclaration` 的权威。
+- `surf/cordis.patch.yml` —— 编排表本体，注释比这篇细。
+- `surf-bridge/lib/plugin.js` —— `createSwiftPlugin` 与 `CommandDeclaration` 的权威。

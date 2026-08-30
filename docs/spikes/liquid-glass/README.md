@@ -36,7 +36,7 @@ docs/spikes/liquid-glass/run.sh      # 编译并打开（约 3s），产物在 b
 工具栏里的分段控件、弹出按钮、搜索框各自包进独立的玻璃元素，不需要写一行代码；
 而内容层的控件不参与这个分组。
 
-## 因此，在 clam-settings 里
+## 因此，在 surf-settings 里
 
 - 窗口工具栏那四个标签（`NSTabViewController(tabStyle: .toolbar)`）**已经是玻璃**。
 - 页内分栏用 `TabView`（= `NSTabView`）而不是 `Picker(.segmented)`：它是导航层的
@@ -55,5 +55,5 @@ Xcode 27 / MacOSX27.0.sdk / `MACOSX_DEPLOYMENT_TARGET = 27.0`。用旧 SDK 构�
 
 **部署目标要三处一起改**（少一处就静默不生效）：`project.yml` 的 `deploymentTarget`
 与 `MACOSX_DEPLOYMENT_TARGET`、`scripts/build-modules.sh` 的 `TARGET`、
-`CompilerService.targetTriple()` 的 fallback。插件的三元组是从 ClamSDK 的
+`CompilerService.targetTriple()` 的 fallback。插件的三元组是从 SurfSDK 的
 `.swiftinterface` 头里抄的，所以真正说了算的是第二处。

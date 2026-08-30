@@ -1,7 +1,7 @@
 // P2 spike：`-apple-visual-effect` 在**不透明窗口**里到底采样到什么。
 //
 // 与手册附录 A 的唯一实质差异：**窗口保持 isOpaque = true**（手册/Raycast 是
-// 透明窗口 + 桌面采样）。surfclam 是文档型 App，窗口不打算透明（计划 §4 已明确
+// 透明窗口 + 桌面采样）。surf 是文档型 App，窗口不打算透明（计划 §4 已明确
 // 不采纳透明窗口），所以"材质在不透明窗口里是否还成立"必须单独实测——
 // 这正是本 spike 存在的理由。
 //
@@ -20,10 +20,10 @@ import WebKit
 /// 右键菜单转储：把 WebKit 默认菜单每一项的 identifier / title 写进文件。
 /// P5 的白名单靠它对表，不靠记忆里的常量名。
 final class MenuDumpWebView: WKWebView {
-    /// 本次转储的场景名（plain / selection / link），由 CLAM_SPIKE_DUMP_MENU 决定。
+    /// 本次转储的场景名（plain / selection / link），由 SURF_SPIKE_DUMP_MENU 决定。
     var dumpLabel = "plain"
 
-    /// CLAM_SPIKE_EMPTY_MENU=1：把菜单裁空。P5 在正文空白处会把 Reload 与两条
+    /// SURF_SPIKE_EMPTY_MENU=1：把菜单裁空。P5 在正文空白处会把 Reload 与两条
     /// 分隔符全裁掉（Release 下连 Inspect Element 都没有），剩下一个 0 项的
     /// NSMenu——要先知道 AppKit 到底是"不显示"还是"露一个空框"。
     var emptyOut = false
@@ -51,10 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         let cfg = WKWebViewConfiguration()
 
-        // ② 的对照组：环境变量 CLAM_SPIKE_NO_SYSTEM_APPEARANCE=1 时不开私有开关，
+        // ② 的对照组：环境变量 SURF_SPIKE_NO_SYSTEM_APPEARANCE=1 时不开私有开关，
         // 页面上的 CSS.supports 应当从 true 翻回 false。
         let wantSystemAppearance = ProcessInfo.processInfo
-            .environment["CLAM_SPIKE_NO_SYSTEM_APPEARANCE"] != "1"
+            .environment["SURF_SPIKE_NO_SYSTEM_APPEARANCE"] != "1"
         if wantSystemAppearance,
            cfg.preferences.responds(to: NSSelectorFromString("_setUseSystemAppearance:")) {
             cfg.preferences.setValue(true, forKey: "useSystemAppearance")
@@ -100,15 +100,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // CLAM_SPIKE_DUMP_MENU=plain|selection|link：自己合成一次右键，把默认菜单
+        // SURF_SPIKE_DUMP_MENU=plain|selection|link：自己合成一次右键，把默认菜单
         // 转储下来就退出。走进程内 sendEvent 而不是 CGEvent，是因为这个 ad-hoc
         // 签名的 spike 没有可读的 AX 树（peekaboo 够不着），而 CGEvent 又要先知道
         // 窗口的屏幕坐标。
-        if let mode = ProcessInfo.processInfo.environment["CLAM_SPIKE_DUMP_MENU"] {
+        if let mode = ProcessInfo.processInfo.environment["SURF_SPIKE_DUMP_MENU"] {
             webView.dumpLabel = mode
-            webView.emptyOut = ProcessInfo.processInfo.environment["CLAM_SPIKE_EMPTY_MENU"] == "1"
+            webView.emptyOut = ProcessInfo.processInfo.environment["SURF_SPIKE_EMPTY_MENU"] == "1"
             // 右键前留够时间：截图前得先把窗口弄到前台（`open -n` 之后它未必是 key）。
-            let delay = Double(ProcessInfo.processInfo.environment["CLAM_SPIKE_DUMP_DELAY"] ?? "") ?? 2.5
+            let delay = Double(ProcessInfo.processInfo.environment["SURF_SPIKE_DUMP_DELAY"] ?? "") ?? 2.5
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.dumpMenu(mode) }
         }
     }

@@ -47,7 +47,7 @@ r=8 `rgba(0,0,0,.11)`、标题 SFPro-Medium 15 `rgb(54,54,54)`。
 
 ## 用这些数值的三条家规（与仓库设计立场一致）
 
-1. 数值服务于 **web 半边** 的 CSS 模仿（clam-nativeify、web header）。原生半边不需要它
+1. 数值服务于 **web 半边** 的 CSS 模仿（surf-nativeify、web header）。原生半边不需要它
    ——真 AppKit 就在手边，`tools/shot.sh` 截图量出来的才是本机此刻的真相。
 2. 颜色字体落进 CSS 时**引用本体而不是抄快照**：WebKit 支持 `-apple-system-blue` 等
    语义色与 `system-ui` 字体，套件色板只用来核对。

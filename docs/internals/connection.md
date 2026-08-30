@@ -11,7 +11,7 @@
 
 - **装好的正式形态**：双击 App，它自己 spawn 一个后端并盯着它
   （连接偏好缺省就是 `managed`）。
-- **仓库开发形态**：后端（`dsh web`）先起，其中的 `clam-app` 插件构建并拉起 App，
+- **仓库开发形态**：后端（`dsh web`）先起，其中的 `surf-app` 插件构建并拉起 App，
   在命令行上把本次的地址亲手递过去。
 
 所以壳从来不能假设"我的后端就在那儿"——它要么被后端亲手拉起（命令行上带着地址），
@@ -21,7 +21,7 @@
 
 ## 1. 唯一真相：`ConnectionController`
 
-**`clam-app/host/Sources/Native/ConnectionController.swift` 是壳里"我此刻连着谁"
+**`surf-app/host/Sources/Native/ConnectionController.swift` 是壳里"我此刻连着谁"
 的唯一真相**，一个显式状态机。曾经这件事散在 `endpoint` / `bootstrapPhase` /
 `isBridgeConnected` / `bridgeReady` 四个变量、三条互不知情的时间线里——
 "页面装上了没有"和"桥握上了没有"各自为政，合起来是什么状态没有人说得清。
@@ -38,7 +38,7 @@
 反方向只有两条：`noteBridge(connected:)` 与 `notePageReady(_:)`，由壳把桥那侧的
 事实喂回来。
 
-状态还经粘性主题 `clam.connection.state` 投影给插件（clam-settings 的「连接」栏读它）。
+状态还经粘性主题 `surf.connection.state` 投影给插件（surf-settings 的「连接」栏读它）。
 **状态型消息一律 `emitSticky`**：插件必然晚于壳启动，不粘的话它要等到下一次状态
 变化才知道此刻连着谁，而那个状态可能一直不变。
 
@@ -74,8 +74,8 @@
 经 `NativePluginHost` 上报给状态机——**只上报，不改桥自己的退避行为**。
 
 `bridgeRejected` 是唯一一条不由 HTTP 探测得出的：HTTP 活着、页面也装得出来，
-但那个后端的 profile 里没有任何 clam 插件（典型场景是用户手动连了一个普通的
-`dsh web`），桥永远握不上。**连拒三次就判定这个后端不含 Surfclam 组件**，放弃它、
+但那个后端的 profile 里没有任何 surf 插件（典型场景是用户手动连了一个普通的
+`dsh web`），桥永远握不上。**连拒三次就判定这个后端不含 Surf 组件**，放弃它、
 退回引导页。阈值取 3 是给正常启动窗口留余地——后端起桥比起 HTTP 晚一拍是合法的。
 不判定的话 App 会停在一个没有任何原生功能的裸页面上，且不报错。
 
@@ -90,8 +90,8 @@
 
 1. **用户当场点的一次性目标**——连接页上点某个后端的「连接」，或敲完地址回车。
    **不落偏好**，只活到下一次显式动作。
-2. **`--clam-endpoint` flag**——由拉起本进程的那个后端亲手递来。
-3. **连接偏好 `clam.connection.mode`**（§4）。
+2. **`--surf-endpoint` flag**——由拉起本进程的那个后端亲手递来。
+3. **连接偏好 `surf.connection.mode`**（§4）。
 4. **endpoint 发现文件**（§5）。
 5. 都没有 = 连接页。
 
@@ -113,7 +113,7 @@
 
 ## 4. 连接偏好四档
 
-UserDefaults 键 `clam.connection.mode`（域 `io.wenbo.surfclam[.dev]`），
+UserDefaults 键 `surf.connection.mode`（域 `io.wenbo.surf[.dev]`），
 四档 + 一个"未设置"：
 
 | 值 | 语义 |
@@ -121,7 +121,7 @@ UserDefaults 键 `clam.connection.mode`（域 `io.wenbo.surfclam[.dev]`），
 | *（键不存在）* | 读成 **`managed`**（`ConnectionController.fallbackMode`） |
 | `unset` | 发现轮询照跑、列表照显，**但绝不自动接入**。接不接由用户在引导页上点 |
 | `auto` | 扫发现文件、并行探测、择优接入 |
-| `fixed` | 钉死 `clam.connection.fixedURL` 那一个，连不上如实报错，**不回退 auto** |
+| `fixed` | 钉死 `surf.connection.fixedURL` 那一个，连不上如实报错，**不回退 auto** |
 | `managed` | auto 的发现逻辑 + `BackendManager` 保证有一个自己的后端在跑（§6） |
 
 **坏值退 `managed`**，不是退 `unset`：认不出来的偏好该退到"起一个自己的"，
@@ -138,25 +138,25 @@ UserDefaults 键 `clam.connection.mode`（域 `io.wenbo.surfclam[.dev]`），
 
 - **引导页的两枚勾选框**（`setMode` / `rememberFixed`）——当场生效。
   「记住这个地址」一次落两个键：只改 `mode` 会钉向上一次的地址。
-- **设置窗口第五栏「连接」**（`clam-settings/swift/ConnectionPage.swift`）——
+- **设置窗口第五栏「连接」**（`surf-settings/swift/ConnectionPage.swift`）——
   **只写盘，不当场切**。这一栏说的是"下次打开 App 时"，当场把用户正在用的连接
   换掉不是他按那几个段控的意思。盘上那份与粘性投影里"此刻生效中"的那份并排放着，
-  不一致就是"改了还没重启"，那颗「立即重启」按钮据此出现（emit `clam.app.relaunch`，
+  不一致就是"改了还没重启"，那颗「立即重启」按钮据此出现（emit `surf.app.relaunch`，
   壳自我重启）。
 
-设置窗口那一栏**不直接调 `ConnectionController`**：clam-settings 的 Swift 半边虽然
+设置窗口那一栏**不直接调 `ConnectionController`**：surf-settings 的 Swift 半边虽然
 与壳同进程，但它是运行时编出来的 dylib，`import` 不到壳里的类型（壳是预编译产物，
 不导出 module）。所以它只有两种数据面：`UserDefaults` 直接读写偏好，订
-`clam.connection.state` 读状态。
+`surf.connection.state` 读状态。
 
 ---
 
 ## 5. endpoint 发现文件
 
-落点 `~/Library/Application Support/io.wenbo.surfclam/endpoints/<profile>.json`，
-**一个 profile 一份**。写在 `clam-app/lib/index.js` 的 `writeEndpointFile`（原子写：
+落点 `~/Library/Application Support/io.wenbo.surf/endpoints/<profile>.json`，
+**一个 profile 一份**。写在 `surf-app/lib/index.js` 的 `writeEndpointFile`（原子写：
 先临时文件再 rename，壳永远读不到半截 JSON），fiber 卸载时删（带 pid 校验，
-只删自己那份）。读在 `ClamEndpoint.swift` 的 `decodeEndpoint`。
+只删自己那份）。读在 `SurfEndpoint.swift` 的 `decodeEndpoint`。
 
 字段表见 [`../extend/contracts.md` §10.1](../extend/contracts.md)。
 
@@ -177,12 +177,12 @@ UserDefaults 键 `clam.connection.mode`（域 `io.wenbo.surfclam[.dev]`），
 
 ### 5.1 候选排序：判据是硬事实，不是名字推断
 
-`ClamEndpoint.isOwn` —— "这套后端是不是我这一套"。两条判据，任一成立即算：
+`SurfEndpoint.isOwn` —— "这套后端是不是我这一套"。两条判据，任一成立即算：
 
 1. **`appPath` == `Bundle.main.bundlePath`**（解符号链接后比）。开发期与安装期都成立，
    是首选。
-2. **`hostDir` == `ClamPaths.ownHostDir`**。壳从自己的 bundle 路径里反推
-   `<worktree>/clam-app/host`。
+2. **`hostDir` == `SurfPaths.ownHostDir`**。壳从自己的 bundle 路径里反推
+   `<worktree>/surf-app/host`。
 
 **第 2 条对装到 `/Applications` 的 Release 壳必然失败**——那份 bundle 不在任何
 worktree 的 `build/Build/Products/` 之下，`ownHostDir` 根本推不出来。`appPath`
@@ -209,12 +209,12 @@ worktree 的 `build/Build/Products/` 之下，`ownHostDir` 根本推不出来。
 | 壳 | 命令 |
 |---|---|
 | Dev（bundle 路径推得出 worktree） | `cd <worktree> && exec ./dev` |
-| Release | 先跑 `ProfileBootstrap`，再 `exec dsh --profile surfclam --port 0 --no-open` |
+| Release | 先跑 `ProfileBootstrap`，再 `exec dsh --profile surf --port 0 --no-open` |
 
 Dev 壳借 `./dev` 白捡 link / profile 判定 / xcodegen 兜底那一整套安装逻辑，
 壳一件都不必抄。**Dev 壳不自举 profile**：开发形态的 profile 由 `./dev` 自己备
 （link 仓库源码），自举一插手就把仓库从运行链上摘掉了；两者的 profile 名也不同
-（`surfclam-dev` vs `surfclam`）。
+（`surf-dev` vs `surf`）。
 
 Release 那条路上**自举必须排在 spawn 之前**：镜像不在位时后端会因为
 `ClientPackageCompositionError` 整个起不来，顺序反了就是必崩。
@@ -225,7 +225,7 @@ node 就是"起不来"，且看上去像后端坏了，其实它一次都没被�
 （`zsh -lc` 读 `.zshenv`/`.zprofile`/`.zlogin`，**不读 `.zshrc`**。）
 两条命令都 `exec`，让 pid 落在真身上——多一层 zsh 只会让日志里的 pid 对不上人。
 
-**命令行上没有任何形态环境变量。** 形态由 clam-app 自己看"壳源码在不在包里"判定
+**命令行上没有任何形态环境变量。** 形态由 surf-app 自己看"壳源码在不在包里"判定
 （见 [`distribution.md` §4](distribution.md)），判据在包的内容里，不在这条命令行上。
 
 ### 6.2 spawn 之前必须查重
@@ -296,7 +296,7 @@ spawn（症状是"托管好像没生效"，原因在上一次退出）。macOS �
 会抢同一个 profile、互抹 endpoint 发现文件——那正是"双击 App 连不上、点开启托管
 什么也没发生"那类死锁的一半原因。
 
-历史上确实有过一个 `io.wenbo.surfclam.dsh` LaunchAgent，已经退役。留下的只有两处：
+历史上确实有过一个 `io.wenbo.surf.dsh` LaunchAgent，已经退役。留下的只有两处：
 `./release` 跑一次会自动清掉旧安装（`removeLegacyDaemon`），托管查重还会问它一句
 （万一那台机器上还残留着）。
 
@@ -333,7 +333,7 @@ spawn（症状是"托管好像没生效"，原因在上一次退出）。macOS �
 |---|---|
 | 我现在连着谁、幕是什么、候选各是死是活 | **⌥⌘D 诊断面板**（也写着本进程日志的全路径） |
 | 托管后端起没起来、为什么没起来 | `logs/managed-dsh.<instanceTag>.log`；`BackendManager.diagnosticSummary` 那一行 |
-| 壳自己在干什么 | `logs/surfclam.<instanceTag>.log`（tag `connection` / `endpoint` / `backend`） |
+| 壳自己在干什么 | `logs/surf.<instanceTag>.log`（tag `connection` / `endpoint` / `backend`） |
 | 装好的那套是什么状态 | `./release --status` |
 
 **日志一律中文、一律不随界面语言变**：读它的是终端前的人和 agent，跟着界面语言变

@@ -4,17 +4,17 @@ P2 的实测台。权威计划 `docs/archive/native-feel-upgrade-plan.md` §3 P2
 这份 README 就是答案；手册背景见 `docs/extend/webview-native-feel.md` §1.1、附录 A。
 
 **和手册附录 A 的唯一实质差异：窗口 `isOpaque = true`。** Raycast 那套是透明窗口 +
-桌面采样（计划 §4 已明确不采纳），surfclam 是文档型 App，窗口不打算透明——
+桌面采样（计划 §4 已明确不采纳），surf 是文档型 App，窗口不打算透明——
 所以"材质在不透明窗口里还成不成立、采样到什么"必须自己测，这就是本 spike 的理由。
 
 ## 怎么复跑
 
 ```sh
 ./run.sh                                    # 开私有开关（默认）
-CLAM_SPIKE_NO_SYSTEM_APPEARANCE=1 ./run.sh  # 对照组：不开开关
-CLAM_SPIKE_DUMP_MENU=plain ./run.sh         # 转储右键菜单（还有 selection / link）
+SURF_SPIKE_NO_SYSTEM_APPEARANCE=1 ./run.sh  # 对照组：不开开关
+SURF_SPIKE_DUMP_MENU=plain ./run.sh         # 转储右键菜单（还有 selection / link）
                                             # → build/menu-dump-<场景>.txt，转储完自动退出
-CLAM_SPIKE_DUMP_MENU=plain CLAM_SPIKE_EMPTY_MENU=1 CLAM_SPIKE_DUMP_DELAY=8 ./run.sh
+SURF_SPIKE_DUMP_MENU=plain SURF_SPIKE_EMPTY_MENU=1 SURF_SPIKE_DUMP_DELAY=8 ./run.sh
                                             # 把菜单裁空，看 AppKit 露不露空框
                                             # （DELAY 留出把窗口弄到前台的时间）
 
@@ -74,7 +74,7 @@ peekaboo see --app "VisualEffect Spike" --no-elements --path shot-active.png
 ### ② `CSS.supports` 在开关打开前后是否翻转？
 
 **翻转，而且是干脆的全有全无。** 对照组 `shot-switch-off.png`
-（`CLAM_SPIKE_NO_SYSTEM_APPEARANCE=1`）里：
+（`SURF_SPIKE_NO_SYSTEM_APPEARANCE=1`）里：
 
 - `CSS.supports('-apple-visual-effect', …)` 九个值**全部 ✘**（打开时全部 ✔）。
 - `getComputedStyle(...).getPropertyValue('-apple-visual-effect')` 回读成 `""`
@@ -107,7 +107,7 @@ peekaboo see --app "VisualEffect Spike" --no-elements --path shot-active.png
 不同、副标题一张写"激活"一张写"失活"、红绿灯一张有色一张灰——**图是新鲜的，
 材质就是没动**。
 
-**对 P3 的意义**：计划 §3 P3 里"失活态沿用 `data-clam-blur` 切换、blur 时
+**对 P3 的意义**：计划 §3 P3 里"失活态沿用 `data-surf-blur` 切换、blur 时
 `-apple-visual-effect: none` 回落到现有失活 3 层"的方案是**必须的**，不是可选的
 优化——系统不会替我们做这件事。至于用 `-subdued` 当失活态，本机实测它与
 `media-controls` 在同一背景上只差几个色阶（208.67 vs 204.68 的 G），
@@ -163,8 +163,8 @@ WKMenuItemIdentifierInspectElement        | Inspect Element
    一个都没有，屏幕上（`selection` 场景实拍）却有：顶上一条 Ask Siri、
    底下一条 Services 子菜单。**所以 P5 不需要、也没法"保留 Services"**，
    它压根不经过我们的手；上面那几条连续 nil 分隔符正是给它们留的位子。
-4. **把菜单裁空不会露出空框**。实拍验证过（`CLAM_SPIKE_DUMP_MENU=plain
-   CLAM_SPIKE_EMPTY_MENU=1`，正文空白处右键 → `menu.removeAllItems()`）：
+4. **把菜单裁空不会露出空框**。实拍验证过（`SURF_SPIKE_DUMP_MENU=plain
+   SURF_SPIKE_EMPTY_MENU=1`，正文空白处右键 → `menu.removeAllItems()`）：
    屏幕上一个菜单框都没有，就像没右键过。这条很关键——**Release 下正文空白处
    的默认菜单只有 Reload + 两条分隔符**（`isInspectable` 只在 Debug 开，
    所以 Release 连 Inspect Element 都没有），P5 裁完就是空的，

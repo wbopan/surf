@@ -1,6 +1,6 @@
 # spike：托管后端的进程组与信号
 
-`docs/archive/clam-connection-plan.md` §5 的托管形态要壳自己 spawn 一个后端并在 ⌘Q 时
+`docs/archive/surf-connection-plan.md` §5 的托管形态要壳自己 spawn 一个后端并在 ⌘Q 时
 杀干净。这台验证台只回答一个问题：**信号送得到吗**。
 
 ```sh
@@ -8,7 +8,7 @@ docs/spikes/backend-spawn/run.sh                  # 默认跑 fake-dev.sh（两�
 docs/spikes/backend-spawn/run.sh 'exec sleep 30'  # 换任意命令
 ```
 
-`run.sh` 把壳里那份 `clam-app/host/Sources/Native/ManagedProcess.swift` **原文件**
+`run.sh` 把壳里那份 `surf-app/host/Sources/Native/ManagedProcess.swift` **原文件**
 编进来（不抄一份，抄了就会和真实现漂移），跑六条断言。一次通过的输出：
 
 ```

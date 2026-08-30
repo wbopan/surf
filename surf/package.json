@@ -1,0 +1,35 @@
+{
+	"name": "@wenbo/surf",
+	"version": "0.1.0",
+	"description": "surf：把 dsh 的 Web UI 装进 macOS 原生壳。伞 bundle——本包不含运行时代码，只有一张编排表（cordis.patch.yml）和一个安装器（bin/surf.js）。",
+	"type": "module",
+	"bin": {
+		"surf": "./bin/surf.js"
+	},
+	"files": [
+		"bin",
+		"cordis.patch.yml"
+	],
+	"exports": {
+		"./cordis.patch.yml": "./cordis.patch.yml",
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@wenbo/surf-app": "^0.1.0",
+		"@wenbo/surf-bridge": "^0.1.0",
+		"@wenbo/surf-layout": "^0.1.0",
+		"@wenbo/surf-sidebar": "^0.1.0",
+		"@wenbo/surf-notify": "^0.1.0",
+		"@wenbo/surf-settings": "^0.1.0",
+		"@wenbo/surf-nativeify": "^0.1.0",
+		"@wenbo/surf-memory": "^0.1.0"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		}
+	}
+}

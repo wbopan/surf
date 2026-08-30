@@ -1,0 +1,20 @@
+{
+  "name": "@wenbo/surf-app",
+  "version": "0.1.0",
+  "description": "Surf macOS 壳的宿主插件：写 endpoint 发现文件、定位/构建壳产物、拉起 Surf.app，并 provide 'surfApp'。壳的 Xcode 工程（host/）只在仓库里，不随包分发。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  }
+}

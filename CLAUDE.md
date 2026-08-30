@@ -5,24 +5,24 @@
 
 ## 这个仓库是什么
 
-一组 cordis 插件 + 一个极薄的 macOS 壳（**surfclam**），把 `dsh` 的 Web UI 装进
-原生 App。壳的源码、构建、拉起全都收进一个普通插件（`clam-app`），没有特权目录。
+一组 cordis 插件 + 一个极薄的 macOS 壳（**surf**），把 `dsh` 的 Web UI 装进
+原生 App。壳的源码、构建、拉起全都收进一个普通插件（`surf-app`），没有特权目录。
 
 ```
-surfclam/          伞 bundle：唯一的编排表 cordis.patch.yml + 启动器 bin/surfclam.js
-clam-app/          壳源码为载荷的插件；host/ = Xcode 工程，host-build/ = 构建能力（不随包分发）
-clam-bridge/       唯一特权插件：Swift 载荷登记表 + /clam/bridge WS + 盯 swift/ 目录
-clam-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、toolbar 贡献槽
-clam-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面在 node 半边，Swift 只管画）
-clam-notify/       桌面通知；同时是「有什么在等着你」的唯一真相
-clam-settings/     原生设置窗口（自己一扇窗，不占槽）
-clam-nativeify/    让 dsh Web UI 摸起来像原生：主力是 client 半边的 CSS
-clam-memory/       跨会话持久记忆；纯 node、零 macOS 依赖
+surf/          伞 bundle：唯一的编排表 cordis.patch.yml + 启动器 bin/surf.js
+surf-app/          壳源码为载荷的插件；host/ = Xcode 工程，host-build/ = 构建能力（不随包分发）
+surf-bridge/       唯一特权插件：Swift 载荷登记表 + /surf/bridge WS + 盯 swift/ 目录
+surf-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、toolbar 贡献槽
+surf-sidebar/      占 sidebar 槽：原生会话侧边栏（数据面在 node 半边，Swift 只管画）
+surf-notify/       桌面通知；同时是「有什么在等着你」的唯一真相
+surf-settings/     原生设置窗口（自己一扇窗，不占槽）
+surf-nativeify/    让 dsh Web UI 摸起来像原生：主力是 client 半边的 CSS
+surf-memory/       跨会话持久记忆；纯 node、零 macOS 依赖
 tools/             跨包工具（shot.sh 截图、apple-kit/ 官方 UI Kit 数值检索）
 docs/              文档，按受众分四层
 ```
 
-被编排的插件包名都是 `@wenbo/clam-*`（目录名 = 去掉 scope）。
+被编排的插件包名都是 `@wenbo/surf-*`（目录名 = 去掉 scope）。
 **它们自己都不声明 `dsh.bundle`**——编排权集中在伞包那张表上。
 
 ## 怎么跑
@@ -32,8 +32,8 @@ docs/              文档，按受众分四层
 ./release              # 装成本机正式形态：只装 App 进 /Applications，不装常驻服务
 ./release --status     # 后端与 App 各在什么状态
 
-node --test clam-sidebar/test/*.test.js   # 全仓唯一的测试，约 2s
-clam-app/host/scripts/dev.sh              # 手动构建壳的捷径（不想等轮询时）
+node --test surf-sidebar/test/*.test.js   # 全仓唯一的测试，约 2s
+surf-app/host/scripts/dev.sh              # 手动构建壳的捷径（不想等轮询时）
 ```
 
 无测试套件，改完靠跑起来看。**构建一律 `-derivedDataPath build`**——换个位置的症状是
@@ -46,7 +46,7 @@ clam-app/host/scripts/dev.sh              # 手动构建壳的捷径（不想等
 | 插件的 `swift/` | 存盘即可，桥轮询发现 → 壳重编 → 热替换 | **1~3s，不重启任何东西** |
 | `lib/client.js` | 浏览器侧有 HMR，自动重载；壳里 ⌘R 也行 | 秒级 |
 | `lib/*.js`、`package.json`、`cordis.patch.yml` | **必须重启 dsh**（官方在 web bundle 下关了 node 侧 HMR）。菜单项与快捷键的 `commands` 声明也在这一行 | 秒级 |
-| 壳源码 `clam-app/host/` | clam-app 盯着它，改了后台重建，窗口右上角提示「重启生效」 | 重建 2s + 重启 |
+| 壳源码 `surf-app/host/` | surf-app 盯着它，改了后台重建，窗口右上角提示「重启生效」 | 重建 2s + 重启 |
 
 改 Swift 插件**不需要碰 dsh，也不需要重启 App**。编译失败带文件行号打进 dsh 终端，
 旧世代继续在役，界面不变也不崩。
@@ -58,11 +58,11 @@ clam-app/host/scripts/dev.sh              # 手动构建壳的捷径（不想等
    跟随 dsh 投影）。**不主动制造原生界面与 dsh 网页端的显示偏差**，哪怕我们的版本
    更合理。已知缺口记在 `docs/internals/dsh-upstream-gaps.md`。
 2. **权威始终在代码里。** 文档是索引；文档与源码冲突，以源码为准并就地更新文档。
-3. **编排只改一处**：`surfclam/cordis.patch.yml`。别给子包加回 `dsh.bundle`。
+3. **编排只改一处**：`surf/cordis.patch.yml`。别给子包加回 `dsh.bundle`。
 4. **不背历史包袱。** 遇到旧路径直接删：不写迁移代码、不写兼容分支、不留"停用但保留"
    的代码、不加没有真实触发场景的兜底。（前提是尚未对外分发；一旦别人机器上跑着旧
    版本，这条要重新确认。当前形态需要的 fails loud 与诊断信息不算包袱，是功能。）
-5. **fails loud 优于 warn**：`clam-bridge` 的 `register()` 对 module 名非法 / swiftDir
+5. **fails loud 优于 warn**：`surf-bridge` 的 `register()` 对 module 名非法 / swiftDir
    不存在 / 重复登记三种情况一律当场抛。新写的校验照这个来。
 6. **状态型消息走 `emitSticky`，瞬间型走 `emit`。** 插件必然晚于壳启动，不粘的状态
    订阅者可能永远等不到下一次变化。别再为此配 request 回喊通道。
@@ -83,7 +83,7 @@ macOS 27 UI Kit 的数值检索），别凭记忆估。
 ## 看界面 / 驱动界面
 
 ```bash
-tools/shot.sh                 # 截 surfclam 窗口，不需要它在前台；--list 看有哪些窗口
+tools/shot.sh                 # 截 surf 窗口，不需要它在前台；--list 看有哪些窗口
 peekaboo see --pid <pid> --tree --no-screenshot   # AX 元素树 → elem_N
 peekaboo click --pid <pid> --on elem_140
 ```

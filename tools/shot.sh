@@ -1,9 +1,9 @@
 #!/bin/bash
-# 给 Surfclam 窗口截图，不需要它在前台、也不怕被别的窗口盖住。
+# 给 Surf 窗口截图，不需要它在前台、也不怕被别的窗口盖住。
 # 首次运行编译 shot.swift（约 1s），之后源码没变就直接跑缓存的二进制。
 #
-# 住在仓库根 tools/ 而不是 clam-app/host/scripts/：它截的是任意窗口，
-# 调用方散在 docs/spikes 与各插件里，clam-app 自己一次都不用它。
+# 住在仓库根 tools/ 而不是 surf-app/host/scripts/：它截的是任意窗口，
+# 调用方散在 docs/spikes 与各插件里，surf-app 自己一次都不用它。
 # 待在 host/scripts 下还有两笔学费——那目录同时是壳的 HASHED_ROOTS
 # 与 npm files 白名单，改一行截图代码要壳全量重建，还会发给用户。
 #

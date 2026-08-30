@@ -1,7 +1,7 @@
 # 带色玻璃实测台（可复跑）
 
 问「系统的蓝键/红键玻璃到底长什么样」时用的三件套。结论写在
-`clam-nativeify/README.md` 的「带色玻璃」一节，这里只留复跑步骤。
+`surf-nativeify/README.md` 的「带色玻璃」一节，这里只留复跑步骤。
 
 ```bash
 swiftc -O TintProbe.swift -o TintProbe

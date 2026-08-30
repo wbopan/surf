@@ -1,10 +1,10 @@
-# surfclam 文档
+# surf 文档
 
 按**你是谁**分四层。每层只服务一种读者，越往下越接近实现。
 
 | 你是谁 | 读哪一层 |
 |---|---|
-| 想用 surfclam | [`use/`](use/) |
+| 想用 surf | [`use/`](use/) |
 | 想给它写插件 | [`extend/`](extend/) |
 | 想改这个仓库本身 | [`internals/`](internals/) |
 | 想知道某个决定是怎么来的 | [`archive/`](archive/) |
@@ -51,24 +51,24 @@
 
 读它们之前先知道两件事：
 
-- **`phase2-clam-plugin-migration-plan.md` 整篇用的是更名前的旧名**——
+- **`phase2-surf-plugin-migration-plan.md` 整篇用的是更名前的旧名**——
   项目叫 `dash`（更早 `DSHarness`），插件 `dash-*`，Swift 类型 `Dash*`。
-  映射就是把它们分别换成 surfclam / `clam-*` / `Clam*`。
-- 档案里出现的 `clam-header` 插件**已经删除**（原生 header 方向出局，
+  映射就是把它们分别换成 surf / `surf-*` / `Surf*`。
+- 档案里出现的 `surf-header` 插件**已经删除**（原生 header 方向出局，
   留在 web 里用 CSS 贴近原生的那条路赢了）。
 
 | 档案 | 记的是什么 |
 |---|---|
-| `phase2-clam-plugin-migration-plan.md` | 壳最小化、一切皆插件、启动方向反转的整体迁移 |
+| `phase2-surf-plugin-migration-plan.md` | 壳最小化、一切皆插件、启动方向反转的整体迁移 |
 | `distribution-plan.md` | App 成为唯一分发单元、profile 退化成一次幂等自举、签名公证与 dmg |
-| `clam-connection-plan.md` | 连接状态机、连接页、连接偏好四档、壳托管后端 |
+| `surf-connection-plan.md` | 连接状态机、连接页、连接偏好四档、壳托管后端 |
 | `architecture-coupling-audit.md` | 一次架构耦合审计（文件:行都钉在旧提交上，读到行号先按符号名搜） |
 | `p0-decoupling-plan.md` | 上面那份审计的 P0 档施工单 |
-| `clam-settings-plan.md` | 原生设置窗口；§1「三条走不通的路」仍有价值 |
-| `clam-notify-plan.md` | 可交互桌面通知；不占槽插件的样板 |
-| `clam-memory-plan.md` | 跨会话持久记忆；§1.1 那张 dsh 六条上下文注入通道对照表仍有价值 |
-| `clam-shortcuts-settings-plan.md` | 把壳的快捷键做成 dsh 设置项 |
-| `clam-i18n-plan.md` / `clam-i18n-copy-review.md` | 原生侧文案双语化与逐条文案审校 |
+| `surf-settings-plan.md` | 原生设置窗口；§1「三条走不通的路」仍有价值 |
+| `surf-notify-plan.md` | 可交互桌面通知；不占槽插件的样板 |
+| `surf-memory-plan.md` | 跨会话持久记忆；§1.1 那张 dsh 六条上下文注入通道对照表仍有价值 |
+| `surf-shortcuts-settings-plan.md` | 把壳的快捷键做成 dsh 设置项 |
+| `surf-i18n-plan.md` / `surf-i18n-copy-review.md` | 原生侧文案双语化与逐条文案审校 |
 | `native-feel-upgrade-plan.md` | 对照 `extend/webview-native-feel.md` 做的原生感升级 |
 | `web-header-native-match-plan.md` | 只用 CSS 把 web header 调到 macOS 27 工具栏形态 |
 | `native-subagent-catalog.md` | 子代理 catalog 原生化；实现已随 header 插件删除，保留是因为它是仓库里唯一记着 dsh 子代理契约的地方 |

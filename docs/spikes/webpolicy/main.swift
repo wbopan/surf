@@ -7,7 +7,7 @@
 // 全走一遍。
 //
 // 判定看两处：进程 stdout 的 [harness] 行，以及壳日志里的 [web] 行
-// （~/Library/Application Support/io.wenbo.surfclam/logs/surfclam.log）。
+// （~/Library/Application Support/io.wenbo.surf/logs/surf.log）。
 import AppKit
 import WebKit
 
@@ -32,7 +32,7 @@ final class Harness: NSObject {
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         policy = WebPolicy(
             currentEndpoint: {
-                ClamEndpoint(httpBase: base, bridgePath: "/clam/bridge",
+                SurfEndpoint(httpBase: base, bridgePath: "/surf/bridge",
                              pid: nil, startedAt: nil, profile: nil,
                              hostDir: nil, appPath: nil, source: .flag)
             },

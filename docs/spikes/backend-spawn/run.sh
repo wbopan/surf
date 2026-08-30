@@ -6,7 +6,7 @@ out=$here/.build
 mkdir -p "$out"
 chmod +x "$here"/fake-*.sh
 swiftc -O \
-  "$here/../../../clam-app/host/Sources/Native/ManagedProcess.swift" \
+  "$here/../../../surf-app/host/Sources/Native/ManagedProcess.swift" \
   "$here/main.swift" \
   -o "$out/spike"
 cp "$here"/fake-*.sh "$out"/

@@ -1,4 +1,4 @@
-# surfclam 设置窗口 · 版式草图
+# surf 设置窗口 · 版式草图
 
 画布（私有 artifact，可从页面分享菜单发出去）：
 <https://claude.ai/code/artifact/b405ba22-c845-492e-a8fd-20db6db15768>

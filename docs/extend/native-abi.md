@@ -1,4 +1,4 @@
-# surfclam 原生插件 ABI：M2 spike 实测结论
+# surf 原生插件 ABI：M2 spike 实测结论
 
 > 本文是计划 §6.5 断言清单的执行结果，**全部结论来自本机实跑**，不是推理。
 > 复跑方式见文末。spike 工程在 `docs/spikes/m2-abi/`。
@@ -23,8 +23,8 @@ dyld 依赖解析两项旁证）：SwiftUI 视图 + `@Observable` model 从命�
 每个插件 dylib 导出一个 C 符号：
 
 ```swift
-@_cdecl("clam_plugin_entry")
-public func clam_plugin_entry() -> UnsafeMutableRawPointer {
+@_cdecl("surf_plugin_entry")
+public func surf_plugin_entry() -> UnsafeMutableRawPointer {
     Unmanaged.passRetained(AlphaPlugin()).toOpaque()
 }
 ```
@@ -34,13 +34,13 @@ public func clam_plugin_entry() -> UnsafeMutableRawPointer {
 ```swift
 typealias EntryFn = @convention(c) () -> UnsafeMutableRawPointer
 
-// RTLD_LOCAL 是必需的：每个插件都导出同名 clam_plugin_entry，
+// RTLD_LOCAL 是必需的：每个插件都导出同名 surf_plugin_entry，
 // 必须按 image handle 取符号，不能走 RTLD_DEFAULT 全局查找。
 let image = dlopen(path, RTLD_NOW | RTLD_LOCAL)!
-let sym   = dlsym(image, "clam_plugin_entry")!
+let sym   = dlsym(image, "surf_plugin_entry")!
 let raw   = unsafeBitCast(sym, to: EntryFn.self)()
 let obj   = Unmanaged<AnyObject>.fromOpaque(raw).takeRetainedValue()
-let plugin = obj as? ClamPlugin        // 跨 dylib 的协议 cast 成立
+let plugin = obj as? SurfPlugin        // 跨 dylib 的协议 cast 成立
 ```
 
 `passRetained` / `takeRetainedValue` 往返实测无过释放、无泄漏（后续 `activate`
@@ -54,13 +54,13 @@ let plugin = obj as? ClamPlugin        // 跨 dylib 的协议 cast 成立
 ### SDK（`-enable-library-evolution`，随 app bundle 分发 `.swiftinterface`）
 
 ```bash
-xcrun swiftc sdk/ClamSDK.swift \
-  -module-name ClamSDK \
-  -emit-library -o libClamSDK.dylib \
-  -emit-module -emit-module-path ClamSDK.swiftmodule \
-  -emit-module-interface -emit-module-interface-path ClamSDK.swiftinterface \
+xcrun swiftc sdk/SurfSDK.swift \
+  -module-name SurfSDK \
+  -emit-library -o libSurfSDK.dylib \
+  -emit-module -emit-module-path SurfSDK.swiftmodule \
+  -emit-module-interface -emit-module-interface-path SurfSDK.swiftinterface \
   -enable-library-evolution -language-mode 5 \
-  -Xlinker -install_name -Xlinker "@rpath/libClamSDK.dylib" \
+  -Xlinker -install_name -Xlinker "@rpath/libSurfSDK.dylib" \
   -target arm64-apple-macos27.0 -Onone -g
 ```
 
@@ -74,7 +74,7 @@ xcrun swiftc <plugin>/swift/*.swift \
   -module-name Alpha_g1 \
   -emit-library -o libAlpha_g1.dylib \
   -emit-module -emit-module-path Alpha_g1.swiftmodule \
-  -I <sdk 目录> -L <sdk 目录> -lClamSDK \
+  -I <sdk 目录> -L <sdk 目录> -lSurfSDK \
   -I <依赖插件目录> -L <依赖插件目录> -lAlpha_g1 \
   -module-alias Alpha=Alpha_g1 \          # 源码写 import Alpha，世代对作者透明
   -Xlinker -rpath -Xlinker "@loader_path/../sdk" \
@@ -102,10 +102,10 @@ xcrun swiftc <plugin>/swift/*.swift \
 | 3 | 世代替换：换 module 名重编 → dlopen → registry 换指向 + `.id(version)` → 新视图上屏 | ✅ | 与 g1 差异 274880 像素，截图 `06-alpha-g2.png`（蓝 gen1 → 橙 gen2） |
 | 3b | 旧实例 ARC 回收、进程不崩 | ✅ | 释放旧 handle → `deinit` 调用计数 0→1；旧 dylib **不 dlclose**，进程存活 |
 | 4 | 两代类型隔离的失败形态 | ✅ | 旧代对象 `as?` 新代同名协议 `AlphaFeature` → **nil**（干净失败，不崩、不误命中） |
-| 5 | SDK 词汇跨代传递 | ✅ | g1 留在保管箱的对象，g2 经 `ClamOpaqueHandle` existential 调用成功（`pong from alpha g1`） |
+| 5 | SDK 词汇跨代传递 | ✅ | g1 留在保管箱的对象，g2 经 `SurfOpaqueHandle` existential 调用成功（`pong from alpha g1`） |
 | 6 | 上游换代后未重编的下游直接跑 | ✅（**危险形态已确认**） | Beta 不崩、正常运行，但 `alphaGeneration()` 仍返回 1 —— **绑在旧代的沉默语义分裂**。见 §4 |
 | 7 | dylib 依赖定位 | ✅ | `@rpath` + `-rpath`，dyld 自动加载；不必先 dlopen 上游 |
-| 8 | SDK 只以 `.swiftinterface` 分发（模拟 app bundle 内路径） | ✅ | 去掉 `.swiftmodule` 只留 `.swiftinterface` + dylib，插件编译通过（0.68s），且运行时 `as? ClamPlugin` / SDK existential 全部成立 —— **类型身份跨 interface 重建一致** |
+| 8 | SDK 只以 `.swiftinterface` 分发（模拟 app bundle 内路径） | ✅ | 去掉 `.swiftmodule` 只留 `.swiftinterface` + dylib，插件编译通过（0.68s），且运行时 `as? SurfPlugin` / SDK existential 全部成立 —— **类型身份跨 interface 重建一致** |
 | 9 | WKWebView 实例跨代/跨挂载 | ✅ | 壳创建实例放保管箱，插件 `NSViewRepresentable` 借用；换代后 `window.__spikeState` 与种子值完全一致 = **页面未重载、JS 状态存活** |
 | 10 | 编译耗时基线 | ✅ | 见 §5 |
 
@@ -130,7 +130,7 @@ xcrun swiftc <plugin>/swift/*.swift \
 | SDK 从 `.swiftinterface` 重建 + 编插件 | 0.68s |
 | spike 宿主（197 行 AppKit+SwiftUI） | 0.72s |
 
-四个 clam 插件全量冷编译的现实预期是 **3–5 秒**，不是计划 §7.1 假设的分钟级。
+四个 surf 插件全量冷编译的现实预期是 **3–5 秒**，不是计划 §7.1 假设的分钟级。
 
 **对计划的修正**：
 - §7.1 的冷启动门控预算 60s → 收到 **10s** 足够宽裕；超时即降级 fallback。
@@ -142,7 +142,7 @@ xcrun swiftc <plugin>/swift/*.swift \
 
 1. **真实 DSHSidebarUI 只 import Foundation + SwiftUI 就能独立编成 dylib** ——
    它的 `Package.swift` 声明的 `DSHKit` 依赖在源码层面并未使用。M6 迁移时
-   `clam-sidebar/swift/` 不需要把 DSHKit 拖进插件的编译闭包（数据面仍按计划走保管箱）。
+   `surf-sidebar/swift/` 不需要把 DSHKit 拖进插件的编译闭包（数据面仍按计划走保管箱）。
 2. **Observation 宏无需额外 flag**，命令行 swiftc 直接可用（曾担心宏插件在非 SwiftPM
    场景需要 `-load-plugin-executable` 之类，实测不需要）。
 

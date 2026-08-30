@@ -63,7 +63,7 @@ struct ContentView: View {
                 }
                 .padding(.vertical, 24)
                 // 窗口激活态指示灯：绿=key，红=失活（失活态的玻璃是另一种材质，
-                // 照它调必错，见 clam-nativeify/lib/client.js 的注释）
+                // 照它调必错，见 surf-nativeify/lib/client.js 的注释）
                 VStack { HStack { Spacer()
                     Circle().fill(active == .key ? .green : .red)
                         .frame(width: 14, height: 14).padding(8) }

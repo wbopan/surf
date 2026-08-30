@@ -2,7 +2,7 @@
 # 编译并打开 spike。产物落在 build/ 下（gitignore）。
 #
 #   ./run.sh                                  # 开私有开关（默认）
-#   CLAM_SPIKE_NO_SYSTEM_APPEARANCE=1 ./run.sh  # 对照组：不开，看 CSS.supports 翻回 false
+#   SURF_SPIKE_NO_SYSTEM_APPEARANCE=1 ./run.sh  # 对照组：不开，看 CSS.supports 翻回 false
 #
 # 右键菜单转储会落在 build/menu-dump.txt（在窗口里右键一次就有）。
 set -e

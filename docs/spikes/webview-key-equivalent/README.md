@@ -1,6 +1,6 @@
 # WKWebView 会吃掉插件命令的键位
 
-**症状**：clam-sidebar 声明的 ⌘⇧⌫「归档会话」，焦点在 dsh 的输入框（composer）里时
+**症状**：surf-sidebar 声明的 ⌘⇧⌫「归档会话」，焦点在 dsh 的输入框（composer）里时
 **按下去什么都不发生**；点开菜单，那一项好好地画着 `⌘⇧⌫` 键符，鼠标点它照常归档。
 焦点不在输入框时按键也照常生效。
 
@@ -9,9 +9,9 @@
 区域有焦点时，把一批带 ⌘ 的删除类组合当成自己的编辑命令**吃掉并返回 `true`**
 ——菜单于是根本没被问到。
 
-**修法**（`fix.swift` 实测）：`ClamWebView` 覆写 `performKeyEquivalent`，先拿一份
+**修法**（`fix.swift` 实测）：`SurfWebView` 覆写 `performKeyEquivalent`，先拿一份
 **只装插件贡献命令的影子菜单**匹配，命中就当场触发、不给 WebKit。
-落在 `clam-app/host/Sources/Native/ClamWebView.swift` +
+落在 `surf-app/host/Sources/Native/SurfWebView.swift` +
 `MainWindowController.commandKeyEquivalentMenu`。
 
 ## 跑法

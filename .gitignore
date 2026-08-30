@@ -6,18 +6,18 @@ xcuserdata/
 *.xcuserstate
 
 # 构建时间戳（prebuild 脚本每次生成，入库只会让工作区永远脏）
-clam-app/host/Sources/Resources/BuildTimestamp.txt
+surf-app/host/Sources/Resources/BuildTimestamp.txt
 
 # 共享 module 编译产物（scripts/build-modules.sh 每次构建重生成）
-clam-app/host/build-sdk/
+surf-app/host/build-sdk/
 
 # xcodegen 二进制（从 GitHub Releases 下载，或 brew install xcodegen）。
-# 挡住它是对的，但**缺了它整个壳就没了**（clam-app 只留一句「优雅缺席」）——
+# 挡住它是对的，但**缺了它整个壳就没了**（surf-app 只留一句「优雅缺席」）——
 # 所以 `./dev` 的 ensureXcodegen 会从同仓库的其它 worktree 或 PATH 拷一份补上，
 # 详见 CLAUDE.md「多 worktree」。
 # **必须带路径锚点**：无锚点的 `tools/` 匹配任意层级的同名目录，会把源码工具
-# 一起吞掉——clam-nativeify/tools/dump-css.mjs 就这么在库外躺了一阵子。
-/clam-app/host/tools/
+# 一起吞掉——surf-nativeify/tools/dump-css.mjs 就这么在库外躺了一阵子。
+/surf-app/host/tools/
 
 # 插件依赖解析：指向 harness @deepseek-ai 的本地 symlink（机器相关，勿入库）
 # 不带斜杠：`./dev` 在仓库根补的是一条**符号链接**，带斜杠的规则只匹配真目录，会漏。
@@ -63,10 +63,10 @@ docs/spikes/hover/*
 /tools/.cache/
 
 # 兜底：给 shot.sh 传了相对路径、又恰好 cd 在壳工程根时的残留
-/clam-app/host/*.png
+/surf-app/host/*.png
 
 # 预编译工具的产物（scripts/prebuild-plugins.sh 按源码 hash 重编）
-/clam-app/host/build-prebuild/
+/surf-app/host/build-prebuild/
 
 # 分发流水线的产物（scripts/release-dmg.sh 的独立 derivedDataPath + dmg）
-/clam-app/host/build-dist/
+/surf-app/host/build-dist/

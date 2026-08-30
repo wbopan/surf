@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import WebKit
-import ClamSDK
+import SurfSDK
 
 // ============================================================
 // M2 ABI spike 宿主：模拟壳的 registry + 编译机装载路径，
@@ -25,7 +25,7 @@ final class SlotBox: ObservableObject {
     var factory: (() -> AnyView)?
 }
 
-final class Registry: ClamHost {
+final class Registry: SurfHost {
     let box = SlotBox()
     var objects: [String: AnyObject] = [:]
     var notes: [String] = []
@@ -58,20 +58,20 @@ struct RootView: View {
 
 typealias EntryFn = @convention(c) () -> UnsafeMutableRawPointer
 
-func loadPlugin(_ path: String) -> (image: UnsafeMutableRawPointer, plugin: ClamPlugin)? {
-    // RTLD_LOCAL：多个 dylib 导出同名 clam_plugin_entry，必须按 handle 取符号。
+func loadPlugin(_ path: String) -> (image: UnsafeMutableRawPointer, plugin: SurfPlugin)? {
+    // RTLD_LOCAL：多个 dylib 导出同名 surf_plugin_entry，必须按 handle 取符号。
     guard let image = dlopen(path, RTLD_NOW | RTLD_LOCAL) else {
         info("dlopen 失败 \(path): \(String(cString: dlerror()))")
         return nil
     }
-    guard let sym = dlsym(image, "clam_plugin_entry") else {
+    guard let sym = dlsym(image, "surf_plugin_entry") else {
         info("dlsym 失败: \(String(cString: dlerror()))")
         return nil
     }
     let raw = unsafeBitCast(sym, to: EntryFn.self)()
     let obj = Unmanaged<AnyObject>.fromOpaque(raw).takeRetainedValue()
-    guard let plugin = obj as? ClamPlugin else {
-        info("entry 返回值 as? ClamPlugin 失败：\(type(of: obj))")
+    guard let plugin = obj as? SurfPlugin else {
+        info("entry 返回值 as? SurfPlugin 失败：\(type(of: obj))")
         return nil
     }
     return (image, plugin)
@@ -160,7 +160,7 @@ registry.setObject("shell.webview", webView)
 
 let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 230),
                       styleMask: [.titled, .closable], backing: .buffered, defer: false)
-window.title = "surfclam ABI spike"
+window.title = "surf ABI spike"
 let hosting = NSHostingView(rootView: RootView(box: registry.box))
 window.contentView = hosting
 window.makeKeyAndOrderFront(nil)
@@ -174,7 +174,7 @@ info("=== 断言 1/2：swiftc -emit-library → dlopen → SwiftUI 上屏 ===")
 guard let g1 = loadPlugin("\(outDir)/alpha_g1/libAlpha_g1.dylib") else {
     assert_("A1.dlopen", false, "装载 alpha g1 失败"); exit(1)
 }
-assert_("A1.dlopen", true, "dlopen + dlsym(clam_plugin_entry) + as? ClamPlugin 成功")
+assert_("A1.dlopen", true, "dlopen + dlsym(surf_plugin_entry) + as? SurfPlugin 成功")
 
 var g1Handle: AnyObject? = g1.plugin.activate(host: registry)
 assert_("A2.retain", g1Handle != nil,
@@ -187,7 +187,7 @@ assert_("A1.render", sub1.opaque > 100 && sub1.colors > 3,
         "g1 视图上屏：不透明像素 \(sub1.opaque)、distinct 颜色 \(sub1.colors)（01-alpha-g1.png）")
 
 // ---------- 断言 1b：@Observable 跨 dylib 驱动重绘（经 SDK existential 触发）----------
-if let h = g1Handle as? ClamOpaqueHandle {
+if let h = g1Handle as? SurfOpaqueHandle {
     let before = capture(hosting, "02-before-poke")
     h.poke()                                   // 壳 → SDK 协议 → 插件内部 @Observable
     pump(0.5)
@@ -196,7 +196,7 @@ if let h = g1Handle as? ClamOpaqueHandle {
     assert_("A1.observe", d > 0,
             "壳经 SDK existential 改插件内 @Observable 后画面变化：\(d) 个像素（Observation 宏跨 dylib 生效）")
 } else {
-    assert_("A1.observe", false, "handle as? ClamOpaqueHandle 失败")
+    assert_("A1.observe", false, "handle as? SurfOpaqueHandle 失败")
 }
 
 // ---------- 断言 1c：真实事件链（合成鼠标点击 SwiftUI Button）----------
@@ -253,7 +253,7 @@ if FileManager.default.fileExists(atPath: g2Path), let g2 = loadPlugin(g2Path) {
     assert_("A4", a4.contains("=> nil"), "旧代对象 as? 新代同名协议：\(a4)（期望 nil = 干净失败，不崩）")
 
     // ---------- 断言 6：A 换代后，未重编的 B 直接跑 ----------
-    if let bh = betaHandle as? ClamOpaqueHandle {
+    if let bh = betaHandle as? SurfOpaqueHandle {
         let stillAlive = bh.ping()
         assert_("A6", stillAlive.contains("generation 1"),
                 "Alpha 已在 g2，未重编的 Beta 仍可运行但绑在旧代：\(stillAlive) → 桥必须强制级联重编")
@@ -289,8 +289,8 @@ if FileManager.default.fileExists(atPath: ifacePath) {
     info("=== 断言 8：SDK 只以 .swiftinterface 分发（模拟 app bundle）===")
     if let iface = loadPlugin(ifacePath) {
         let h = iface.plugin.activate(host: registry)
-        assert_("A8", h != nil && (h as? ClamOpaqueHandle) != nil,
-                "插件从 interface-only 路径编出的 dylib：dlopen + as? ClamPlugin + SDK existential 全部成立（类型身份跨 interface 重建一致）")
+        assert_("A8", h != nil && (h as? SurfOpaqueHandle) != nil,
+                "插件从 interface-only 路径编出的 dylib：dlopen + as? SurfPlugin + SDK existential 全部成立（类型身份跨 interface 重建一致）")
     } else {
         assert_("A8", false, "interface-only 插件装载失败——类型身份不匹配")
     }

@@ -1,0 +1,102 @@
+// surf-memory 路径决议的单测。零依赖，`node --test`。
+//
+//   node --test surf-memory/test/*.test.js
+//
+// **别省那个通配符**：给 `--test` 一个目录在 node 26 上会 MODULE_NOT_FOUND。
+//
+// 本文件只**读**真实 ~/.claude / ~/.dsh 的路径字符串，绝不往里写东西。
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { dshHome, expandHome, gitRootFor, memoryDirFor, mkdirp700, slugFor } from "../lib/paths.js";
+
+function tmpRoot(tag) {
+	return fs.mkdtempSync(path.join(os.tmpdir(), `surf-memory-${tag}-`));
+}
+
+// ── slug ─────────────────────────────────────────────────────────────────────
+// §2.5 风险 1：算错了不会报错，只会在 Claude 旁边安静地建一个空目录。
+
+test("slugFor 与本机真实的 Claude 目录名逐字节一致", () => {
+	// 这个断言与机器无关：路径存在时 gitRootFor 停在含 .git 的 surf 本身，
+	// 不存在时一路走到 / 再退回原路径——两条路给出同一个字符串。
+	assert.equal(slugFor("/Users/wenbopan/Repos/surf"), "-Users-wenbopan-Repos-surf");
+	// 以 `-` 开头不是笔误，是 Claude 的实际格式。
+	assert.ok(slugFor("/Users/wenbopan/Repos/surf").startsWith("-"));
+});
+
+test("git worktree 里 .git 是文件，slug 用 worktree 自己的根", () => {
+	const root = fs.realpathSync(tmpRoot("wt"));
+	const repo = path.join(root, "repo");
+	const wt = path.join(repo, ".claude", "worktrees", "feature-x");
+	fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+	fs.mkdirSync(path.join(wt, "src"), { recursive: true });
+	// worktree 的 .git 是一行 `gitdir: …` 的**文件**
+	fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${repo}/.git/worktrees/feature-x\n`);
+
+	assert.equal(gitRootFor(path.join(wt, "src")), wt, "含 .git 文件的那一级就是根，不跟着 gitdir 再跳");
+	assert.equal(slugFor(path.join(wt, "src")), wt.split(path.sep).join("-"));
+	// 本机实测佐证：~/.claude/projects/ 里 worktree 与主仓库各有独立 slug。
+	assert.notEqual(slugFor(path.join(wt, "src")), slugFor(repo));
+});
+
+test("不在 git 仓库里就退回 cwd 本身", () => {
+	const root = fs.realpathSync(tmpRoot("nogit"));
+	const deep = path.join(root, "a", "b");
+	fs.mkdirSync(deep, { recursive: true });
+	// tmpdir 之上不可能有 .git；真有的话这条断言会明确报出来而不是静默走偏
+	assert.equal(gitRootFor(deep), deep);
+});
+
+// ── 三种 dir 模式 ─────────────────────────────────────────────────────────────
+
+test("dir 缺省 → <dshHome>/memory/<slug>", () => {
+	const prev = process.env.DSH_HOME;
+	try {
+		process.env.DSH_HOME = "/tmp/fake-dsh-home";
+		assert.equal(
+			memoryDirFor({ dir: "", cwd: "/Users/wenbopan/Repos/surf" }),
+			"/tmp/fake-dsh-home/memory/-Users-wenbopan-Repos-surf",
+		);
+		assert.equal(
+			memoryDirFor({ cwd: "/Users/wenbopan/Repos/surf" }),
+			"/tmp/fake-dsh-home/memory/-Users-wenbopan-Repos-surf",
+		);
+		delete process.env.DSH_HOME;
+		assert.equal(dshHome(), path.join(os.homedir(), ".dsh"));
+	} finally {
+		if (prev === undefined) delete process.env.DSH_HOME;
+		else process.env.DSH_HOME = prev;
+	}
+});
+
+test('dir === "claude" → ~/.claude/projects/<slug>/memory', () => {
+	assert.equal(
+		memoryDirFor({ dir: "claude", cwd: "/Users/wenbopan/Repos/surf" }),
+		path.join(os.homedir(), ".claude", "projects", "-Users-wenbopan-Repos-surf", "memory"),
+	);
+});
+
+test("dir 是别的值 → 当绝对路径用，展开前导 ~", () => {
+	assert.equal(memoryDirFor({ dir: "/srv/mem", cwd: "/anything" }), "/srv/mem");
+	assert.equal(memoryDirFor({ dir: "~/mem", cwd: "/anything" }), path.join(os.homedir(), "mem"));
+	assert.equal(expandHome("~"), os.homedir());
+	assert.equal(expandHome("/a/~/b"), "/a/~/b", "只认前导波浪号");
+});
+
+// ── 路径加固 ─────────────────────────────────────────────────────────────────
+
+test("mkdirp700 逐级 0o700（recursive+mode 只管叶子）", () => {
+	const root = fs.realpathSync(tmpRoot("mkdir"));
+	const deep = path.join(root, "a", "b", "c");
+	mkdirp700(deep);
+	for (const p of [path.join(root, "a"), path.join(root, "a", "b"), deep]) {
+		assert.equal(fs.statSync(p).mode & 0o777, 0o700, `${p} 应当是 0700`);
+	}
+	mkdirp700(deep); // 幂等
+	assert.ok(fs.existsSync(deep));
+});

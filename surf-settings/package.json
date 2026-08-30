@@ -1,0 +1,18 @@
+{
+	"name": "@wenbo/surf-settings",
+	"version": "0.1.0",
+	"description": "surf 的原生设置窗口：窗框、导航、控件全是 AppKit/SwiftUI，数据面在 dsh 进程里直接消费 host 服务",
+	"type": "module",
+	"main": "lib/index.js",
+	"exports": {
+		".": "./lib/index.js",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"lib",
+		"swift"
+	],
+	"publishConfig": {
+		"access": "public"
+	}
+}

@@ -1,11 +1,11 @@
 # 安装与使用
 
-surfclam 把 dsh 的界面装进一个 macOS 应用。
+surf 把 dsh 的界面装进一个 macOS 应用。
 
 ## 要求
 
 - macOS 27 或更高版本。
-- dsh。它的安装由 dsh 自己管，surfclam 不接管：
+- dsh。它的安装由 dsh 自己管，surf 不接管：
 
   ```sh
   npm i -g @deepseek-ai/dsh@0.1.1-rc.2
@@ -18,8 +18,8 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 ## 安装
 
 1. 装 dsh（上面那条命令）。
-2. 下载 `Surfclam-<版本>.dmg`，把里面的 Surfclam 拖进「应用程序」。
-3. 双击 Surfclam。
+2. 下载 `Surf-<版本>.dmg`，把里面的 Surf 拖进「应用程序」。
+3. 双击 Surf。
 
 没有第四步。
 
@@ -30,7 +30,7 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 
 看到「已损坏，无法打开」说明下载的文件不完整——重新下载。
 
-第一次打开时，应用在 `~/.dsh/profiles/surfclam/` 下备好自己要用的文件，随后每次打开只做校验。
+第一次打开时，应用在 `~/.dsh/profiles/surf/` 下备好自己要用的文件，随后每次打开只做校验。
 
 ## 后端
 
@@ -58,8 +58,8 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 
 | 键 | 值 |
 |---|---|
-| `clam.connection.mode` | `managed` / `fixed` / `auto`；未设置 = 显示连接页面 |
-| `clam.connection.fixedURL` | 「固定地址」那一档连的地址 |
+| `surf.connection.mode` | `managed` / `fixed` / `auto`；未设置 = 显示连接页面 |
+| `surf.connection.fixedURL` | 「固定地址」那一档连的地址 |
 
 关窗不等于退出：关掉窗口后点 Dock 图标可以原样带回来，后端继续跑。⌘Q 才是退出。
 
@@ -72,7 +72,7 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 - **设置窗口**。⌘, 打开，五栏：通用、模型、插件、智能体预设、连接。前四栏改的是 dsh 的设置，
   第五栏只管这个应用连谁。
 - **桌面通知**。需要批准工具、agent 提问、回合跑完、出错时发系统通知，批准与拒绝可以直接在
-  通知上点。各类通知的开关在设置 › 插件 › clam-notify。
+  通知上点。各类通知的开关在设置 › 插件 › surf-notify。
 - **深浅色**。跟随 dsh 的界面主题设置。
 
 全部快捷键在 ⌘/ 一览。
@@ -84,11 +84,11 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 
 **⌘⇧R** 重新连接后端。
 
-日志在 `~/Library/Application Support/io.wenbo.surfclam/logs/`：
+日志在 `~/Library/Application Support/io.wenbo.surf/logs/`：
 
 | 文件 | 内容 |
 |---|---|
-| `surfclam.log` | 应用自己的：连接、插件装载、编译错误 |
+| `surf.log` | 应用自己的：连接、插件装载、编译错误 |
 | `managed-dsh.log` | 应用启动的那个 dsh 的输出 |
 
 同一目录下另有 `endpoints/`（正在运行的后端各写一份）与 `native-plugins/`（插件缓存）。
@@ -99,8 +99,8 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 | 症状 | 第一步 |
 |---|---|
 | 窗口开着，一直显示没连上后端 | 看连接页面上写的原因。写找不到 dsh，就是登录 shell 的 PATH 上没有它——那个 shell 读 `.zprofile` 而不读 `.zshrc`，node 只配在 `.zshrc` 里的机器解不出来 |
-| 双击图标没反应 | 应用可能已在运行，点 Dock 图标把窗口带回来。仍无反应看 `surfclam.log` 末尾几行 |
-| 通知不弹出来 | 系统设置 › 通知 › Surfclam 是否允许；「专注模式」会拦下通知。都正常再看设置 › 插件 › clam-notify 里对应那一类的开关 |
+| 双击图标没反应 | 应用可能已在运行，点 Dock 图标把窗口带回来。仍无反应看 `surf.log` 末尾几行 |
+| 通知不弹出来 | 系统设置 › 通知 › Surf 是否允许；「专注模式」会拦下通知。都正常再看设置 › 插件 › surf-notify 里对应那一类的开关 |
 | 通知进了通知中心但屏幕上没动静 | 同上，先查「专注模式」 |
 | 界面某处错位或空着一块 | 核对 dsh 版本（见「要求」）。然后 ⌥⌘D 看插件那一节，缺了哪个会写在里面 |
 | 边栏和网页里显示的会话对不上 | ⌘R 重新载入页面 |
@@ -108,18 +108,18 @@ surfclam 把 dsh 的界面装进一个 macOS 应用。
 
 ## 升级
 
-没有自动更新。下载新的 `Surfclam-<版本>.dmg`，替换「应用程序」里那份，重新打开。
-应用会在下次打开时更新自己在 `~/.dsh/profiles/surfclam/` 下那份文件。
+没有自动更新。下载新的 `Surf-<版本>.dmg`，替换「应用程序」里那份，重新打开。
+应用会在下次打开时更新自己在 `~/.dsh/profiles/surf/` 下那份文件。
 
 ## 卸载
 
-把 Surfclam 从「应用程序」拖进废纸篓。
+把 Surf 从「应用程序」拖进废纸篓。
 
 **不受影响的**：会话、设置、模型凭据都在 `~/.dsh` 顶层，删应用不动它们。终端里的
 `dsh` 也照常可用。
 
 想清干净，还可以删这两处：
 
-- `~/Library/Application Support/io.wenbo.surfclam/` —— 日志与插件缓存。
-- `~/.dsh/profiles/surfclam/` —— 这个应用用的那份 dsh 配置。**如果你往里加过别的插件或
+- `~/Library/Application Support/io.wenbo.surf/` —— 日志与插件缓存。
+- `~/.dsh/profiles/surf/` —— 这个应用用的那份 dsh 配置。**如果你往里加过别的插件或
   配置，它们也在这个目录里。**
