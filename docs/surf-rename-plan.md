@@ -7,7 +7,7 @@
 动手前先读本文 §1 与清单的「结论 B」，每完成一个里程碑在 §9 追加一行执行日志。
 
 **这是本仓库第二次整体更名**（更早：DSHarness → dash → surfclam），
-所以 §6 的档案处理照抄上一次的先例，不发明新办法。
+所以 §6.3 的档案处理照抄上一次的先例，不发明新办法。
 
 ## 0. 决策（2026-08-30 用户拍板）
 
@@ -25,13 +25,16 @@
 - 只有 `origin` 一个远端，本地 `main` 领先它 3 个提交。
 - 本机没有 LaunchAgent 残留（那一层 2026-08-30 已退役）。
 
-### 三个待拍板的小决定（不阻塞开工）
+### 四个待拍板的小决定（不阻塞开工）
 
-1. **`docs/archive/` 里 8 个文件名带 clam**，改不改是独立决定；改了要同步约 20 处
+1. **GitHub 仓库现在叫 `wbopan/dsh`**——不是 surfclam，是比 surfclam 还早一代的
+   名字残留（DSHarness 时期）。要不要一并改成 `surf`？见 §6.2。这是唯一一件
+   **仓库外**的动作，需要单独批准。
+2. **`docs/archive/` 里 8 个文件名带 clam**，改不改是独立决定；改了要同步约 20 处
    交叉引用。默认不改（正文本来就不改）。
-2. **`/Applications/Surf.app` 与第三方产品 Deta Surf 在 Dock / LaunchServices 里重名**
+3. **`/Applications/Surf.app` 与第三方产品 Deta Surf 在 Dock / LaunchServices 里重名**
    ——只是本机观感问题，不影响功能。
-3. **三个顺手项**（见 §附注）：删死词汇、修 4 处既有文档漂移、删 `removeLegacyDaemon`。
+4. **三个顺手项**（见 §附注）：删死词汇、修 4 处既有文档漂移、删 `removeLegacyDaemon`。
 
 ## 1. 映射总表
 
@@ -150,7 +153,7 @@
 | M4 | **包名与目录**（组 3、9）：`git mv` 8 个插件目录 + 伞包目录，改 `package.json`、11 处相对 import、2 处 loader id、`cordis.patch.yml`、bin、`.gitignore` 6 条锚点 | `./dev` 重装 profile 后照常起；**浏览器控制台无 `loaded without registering`**；`git check-ignore -v surf-app/host/tools/xcodegen` 命中 |
 | M5 | **App 身份与分发**（组 4、5、10）：bundle id、App 名、xcodeproj / target、entitlements、AppSupport 根、日志名、profile 名、镜像目录与 `assertNoForeignLinks` 判据、xcodegen 三处、`./dev` / `./release`、图标、`tools/shot.swift` | Debug 与 Release 都构建通过；`./release --status` 说得对 |
 | M6 | **文档**：`CLAUDE.md`、`README.md`、`docs/**`（archive 正文除外）、`tools/*/README.md`、design 画板；`docs/README.md` 的旧名映射表追加一行 | §8 自检归零 |
-| M7 | **收尾**：本机清理（§5）→ 端到端验证（§7）→ 仓库根目录改名（§6） | 双击 `/Applications/Surf.app` 能用 |
+| M7 | **收尾**：本机清理（§5）→ 端到端验证（§7）→ 本地目录改名（§6.1） | 双击 `/Applications/Surf.app` 能用 |
 
 M1–M6 每步做完都应保持「`./dev` 能起、App 能用」。跨里程碑的中间态不保证。
 
@@ -188,7 +191,11 @@ defaults delete io.wenbo.surfclam.dev
 那些标签不会变，界面上会同时出现 `clam-memory` 与 `surf-memory` 两种署名。
 按铁律 1（我们只是壳）不去改 dsh 的数据。**记忆目录本身不含 clam，数据不丢。**
 
-## 6. 仓库根目录改名与 worktree
+## 6. 仓库位置：本地目录、remote、GitHub
+
+三样东西各自独立，别以为改一个就带动另外两个。
+
+### 6.1 本地目录与 worktree
 
 M7 最后一步，**必须在所有 worktree 都不在使用时做**：
 
@@ -202,6 +209,25 @@ cd ~/Repos/surf && git worktree repair            # 修所有 worktree 的绝对
 - profile 里的 `link:` 行是**绝对路径**（`link:/Users/wenbopan/Repos/surfclam/clam-app`），
   改名后全废——但 `./dev` 幂等重建，新 profile 名本来就是全新的，不用管旧的。
 - 终端、IDE、shell 历史里的旧路径要自己重开。
+
+### 6.2 GitHub 仓库与 remote（**仓库外动作，需单独批准**）
+
+远程现在是 `https://github.com/wbopan/dsh.git`，GitHub 上的仓库名叫 **`dsh`**
+——不是 surfclam，是**比 surfclam 还早一代**的名字残留（DSHarness 时期）。
+仓库内容里一处都 grep 不到它，所以 §2 那张规模表不含这一项。
+
+```sh
+gh repo rename surf                                # 在 wbopan/dsh 上执行
+git remote set-url origin https://github.com/wbopan/surf.git
+```
+
+- GitHub 会为旧名字保留**永久重定向**，克隆和 push 都不会立刻断——但 remote URL
+  该改还是要改，否则以后看 `git remote -v` 会以为项目叫 dsh。
+- 私有仓库，没有外部协作者，**改名不影响别人**。
+- 另一个 worktree 的 remote 与主仓库共用同一份 config，改一次就够。
+- 与本地目录名、profile 名、bundle id 全都不耦合，**什么时候改都行**，也可以不改。
+
+### 6.3 archive 的处理
 
 **`docs/archive/` 不改正文**（照 dash → clam 那次的先例）：它是历史档案，正文用的是
 当时的写法。在 `docs/README.md` 的旧名映射表里追加一行
@@ -270,3 +296,4 @@ grep -rIn --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=build \
 | 日期 | 里程碑 | 结果 |
 |---|---|---|
 | 2026-08-30 | 计划成文 | 本文 + `surf-rename-anchors.md`（866 行锚点清单）；决策见 §0 |
+| 2026-08-30 | 补 §6.2 | 发现 GitHub 仓库名是 `wbopan/dsh`（比 surfclam 还早一代的残留），原计划只覆盖了本地目录 |
