@@ -168,7 +168,9 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
 
     // MARK: - WebView
 
-    private lazy var webView: WKWebView = {
+    /// 类型是 `ClamWebView` 而不是 `WKWebView`：菜单那边要给它装影子键位表
+    /// （`commandKeyEquivalents`），插件从保管箱里借用时照样 `as? WKWebView` 命中。
+    private lazy var webView: ClamWebView = {
         let config = WKWebViewConfiguration()
         // UA 追加 "Clam/<version>"（带斜杠，防 "clam" 作为普通子串误命中）：
         // clam-nativeify / clam-layout 的 client 半边以此判断页面运行在壳内（终端 dsh web /
@@ -939,9 +941,61 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
+        // 主菜单换了新的，WebView 那份影子键位表也得跟着换（它是这棵树的克隆）。
+        webView.commandKeyEquivalents = commandKeyEquivalentMenu(from: mainMenu)
     }
 
     // MARK: - 贡献的菜单项
+
+    /// 把主菜单里**插件贡献的那些项**克隆一份，摊平成一张永不显示的菜单，
+    /// 交给 `ClamWebView` 在 `performKeyEquivalent` 里抢先匹配。
+    /// 为什么非要抢（以及为什么只抢这些），见 `Native/ClamWebView.swift` 那条注释。
+    ///
+    /// **克隆而不是另建一份**：键位、掩码、`representedObject` 全是 `addContributions`
+    /// 现算的，另建就是第二处真相，一改就漂移；而匹配那件事本身也交给 `NSMenu`
+    /// 自己做——⌫ 的 `0x08 ↔ 0x7F` 归一化、大写字母隐含 ⇧ 这些规矩只有 AppKit
+    /// 自己知道，手写一遍必然对不齐（那两条坑 CLAUDE.md 里各记着一笔）。
+    /// 实测 `NSMenuItem.copy()` 把 target / action / representedObject /
+    /// keyEquivalentModifierMask 一并带过来（spike 里逐字段打印确认过）。
+    ///
+    /// 判据是 `representedObject is MenuCommandBox` = "这条是贡献来的"。
+    /// 壳本地那些（⌘R / ⌘± / ⌥⌘D / ⌘/）**一条都不抢**：WebKit 本来就不认领它们，
+    /// 抢了反而多一条会静默失效的路。
+    private func commandKeyEquivalentMenu(from mainMenu: NSMenu) -> NSMenu {
+        let shadow = NSMenu()
+        // 影子菜单不显示，也就没人替它跑 validateMenuItem——自动启用会按响应链
+        // 现算一遍，算不中就整条不匹配。显式关掉，只认"有没有这条键位"。
+        shadow.autoenablesItems = false
+        func walk(_ menu: NSMenu) {
+            for item in menu.items {
+                if let submenu = item.submenu { walk(submenu); continue }
+                guard item.representedObject is MenuCommandBox,
+                      !item.keyEquivalent.isEmpty,
+                      let clone = item.copy() as? NSMenuItem else { continue }
+                // ⌘1-9 那一族是隐藏项（`allowsKeyEquivalentWhenHidden`）。这张表
+                // 从不显示，直接摊平成可见可用，省掉对那个 flag 的依赖。
+                clone.isHidden = false
+                clone.isEnabled = true
+                shadow.addItem(clone)
+            }
+        }
+        walk(mainMenu)
+        // **只在条数变了时才记一行**：setupMenus 是幂等的，换语言/换键位/每来一份
+        // 命令 snapshot 都会重跑，无条件写日志就是一串刷屏的重复行。
+        // 而这一行本身不能省——"装了 0 条"是这套机制**唯一**的静默失败模式
+        // （克隆判据看走眼、命令还没到就建表），界面上完全看不出来：
+        // 菜单项照画、键符照显，只是在网页里按下去仍然没反应，和修之前一模一样。
+        if shadow.numberOfItems != lastCommandKeyEquivalentCount {
+            lastCommandKeyEquivalentCount = shadow.numberOfItems
+            Log.write("网页键位表：抢下 \(shadow.numberOfItems) 条插件命令键位 "
+                      + "[\(shadow.items.compactMap { ($0.representedObject as? MenuCommandBox)?.command }.joined(separator: " "))]",
+                      to: ClamPaths.logURL, tag: "menu")
+        }
+        return shadow
+    }
+
+    /// 上一次报过的影子键位条数（-1 = 还没报过）。只为压掉重复日志，不参与任何判断。
+    private var lastCommandKeyEquivalentCount = -1
 
     /// 壳自带的那几个菜单。**这不是白名单**：不在这张表里的 `menu` id 会造一个
     /// 新的顶级菜单，第三方插件想要一个自己的菜单不用改壳。

@@ -1,7 +1,12 @@
 import AppKit
 import WebKit
 
-/// 主 WebView 的薄子类。只干一件事：**把 WebKit 默认右键菜单里的浏览器味导航项裁掉**。
+/// 主 WebView 的薄子类，两件事：
+///
+/// 1. **把插件命令的键位从 WebKit 嘴里抢回来**（`performKeyEquivalent` 覆写 +
+///    `commandKeyEquivalents` 影子菜单，见下面那一段注释）；
+/// 2. **把 WebKit 默认右键菜单里的浏览器味导航项裁掉**（`willOpenMenu`，
+///    本注释余下部分讲的都是它）。
 ///
 /// **为什么要裁**：WKWebView 的默认菜单是给浏览器设计的——正文空白处右键弹的是
 /// "Reload"，链接上多一条 "Open Link in New Window"。surfclam 是一扇文档窗口，
@@ -28,6 +33,34 @@ import WebKit
 ///    `isInspectable` 是关的，正文空白处的默认菜单只有 Reload + 两条分隔符，
 ///    裁完就是空——而"空白处右键什么都不弹"正是原生文档 App 的行为。
 final class ClamWebView: WKWebView {
+
+    // MARK: - 键位：插件命令优先于网页
+
+    /// **插件贡献的那些菜单项的一份克隆**，摊平成一张永不显示的菜单，
+    /// 只用来做键位匹配。由 `MainWindowController.setupMenus()` 每次重建菜单时换新
+    /// （见那边的 `commandKeyEquivalentMenu`），缺席 = 一条都不抢。
+    ///
+    /// **为什么必须有这一层**（`docs/spikes/webview-key-equivalent/` 可复跑）：
+    /// AppKit 派发 keyDown 时**先走视图层级的 `performKeyEquivalent`、主菜单排在后面**，
+    /// 而 WKWebView 在可编辑区域（dsh 的输入框）有焦点时会把一批带 ⌘ 的删除类组合
+    /// 当成自己的编辑命令**吃掉并返回 true**——⌘⌫、⌘⇧⌫ 都在其中（前者删到行首，
+    /// 后者也删到行首）。于是 clam-sidebar 声明的 ⌘⇧⌫「归档会话」
+    /// **只有在焦点不在输入框时才触发**，焦点一进 composer 就静默失效：
+    /// 菜单项好好地画着键符、按下去什么都不发生，还顺手把用户输了一半的字删了。
+    ///
+    /// **两条实测边界，别推广成"WebView 里 ⌘ 组合都到不了菜单"**：同一次运行里
+    /// ⌘⇧⌦ 与 ⌘⇧A 都是 `performKeyEquivalent -> false`、菜单照常触发。
+    /// 被吃掉的只有 WebKit 自己认领的那几个编辑组合，所以这里也**只抢插件声明过的**
+    /// ——认不出的一律原样交给 WebKit，失效方向是"网页照常"而不是"网页哑了"。
+    var commandKeyEquivalents: NSMenu?
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // 命中 = 这个键位是插件声明的命令，网页不该看见它（连 keydown 都不该收到，
+        // 实测确认：影子菜单命中后 textarea 的内容与 jsLog 都纹丝不动）。
+        if commandKeyEquivalents?.performKeyEquivalent(with: event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    // MARK: - 右键菜单
 
     /// 要裁掉的项。**只裁导航**：把页面换掉、或者开出第二扇浏览器窗口的那些。
     ///

@@ -685,6 +685,22 @@ BackendManager 自己那套退避管不了这一段——它只监护自己亲�
   归一化。**验菜单键位一律用 `CGEvent(keyboardEventSource:virtualKey:keyDown:)` 造
   真实键码事件再 `NSEvent(cgEvent:)`**，然后 `menu.performKeyEquivalent(with:)`；
   看 `peekaboo menu list --pid` 里键符是不是画得出来也是个快速判据。
+- **键位匹配里视图层级排在主菜单前面，而 WKWebView 会吃掉带 ⌘ 的删除类组合**：
+  焦点在 dsh 输入框里时 ⌘⌫ / ⌘⇧⌫ 被 WebKit 当成自己的编辑命令消费掉
+  （`performKeyEquivalent` 返回 `true`，还顺手把用户输了一半的字删到行首），
+  主菜单**根本没被问到**——症状是"⌘⇧⌫ 归档会话只在焦点不在输入框时才好使"，
+  菜单项照画、键符照显、鼠标点它照常归档，极像插件没应答。
+  **别推广成"WebView 里 ⌘ 组合都到不了菜单"**：同一次实测里 ⌘⇧⌦ 与 ⌘⇧A 都照常
+  触发，被吃的只有 WebKit 认领的那几个编辑组合。修法在 `Native/ClamWebView.swift`：
+  覆写 `performKeyEquivalent`，先拿一张**从主菜单克隆出来的影子菜单**
+  （只收 `representedObject is MenuCommandBox` 的项，即插件贡献的那些）匹配，
+  命中就当场触发。三条要点：① **克隆而不是另建**，否则键位是第二处真相、一改就漂移
+  （`NSMenuItem.copy()` 实测把 target/action/representedObject/掩码都带过来）；
+  ② **匹配交给 `NSMenu` 自己做**，上面那条 ⌫ 归一化的规矩手写必然对不齐；
+  ③ **只抢插件声明过的键**，认不出的原样交给 WebKit——失效方向是"网页照常"
+  而不是"网页哑了"。唯一的静默失败模式是影子表装了 0 条（判据看走眼、命令还没到），
+  界面上完全看不出来，所以壳在条数变化时记一行 `[menu] 网页键位表：抢下 N 条`。
+  隔离验证台 `docs/spikes/webview-key-equivalent/`（根因组 + 修复对照组，都可复跑）。
 - **`UNNotificationInterruptionLevel.passive` 的意思是"不弹横幅"，不是"安静一点"**：
   设成它的通知直接躺进通知中心，屏幕上一点动静都没有，而日志里照常写着"已发送"
   ——看上去像系统设置（定时摘要 / 专注模式）出了问题，实际是自己配的。要静就把
