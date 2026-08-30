@@ -52,6 +52,18 @@ npx @wenbo/surfclam
 首次会构建壳（分钟级），之后源码没变就秒起。窗口没弹出来就看终端——`clam-app:`
 开头的那几行会说清卡在哪。
 
+**装：**想让这台机器上随时双击就能用（不必开着终端），在主 worktree 跑——
+
+```bash
+./release          # Release 壳进 /Applications + 常驻 dsh（LaunchAgent，登录即起）
+./release --status # daemon / plist / endpoint / App 各在什么状态
+./release --stop   # 停掉常驻 dsh，回到 ./dev 前台开发
+```
+
+它与 `./dev` 共用全部安装步骤，只是把 dsh 交给 launchd 而不是终端；两者互斥
+（同一个 profile），撞上了会明说该怎么办。细节见
+[`docs/release-install-plan.md`](docs/release-install-plan.md)。
+
 ## 三个开发循环，快慢差两个数量级
 
 | 改什么 | 怎么生效 | 耗时 |

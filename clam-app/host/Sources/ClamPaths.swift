@@ -37,6 +37,9 @@ enum ClamPaths {
     ///
     /// clam-app 插件把同一个路径写进 endpoint 发现文件，壳凭它认出
     /// "哪一份是我这一套"——见 `ClamEndpoint.isOwn`。
+    ///
+    /// **对装到 `/Applications` 的 Release 产物恒为 nil**（路径里没有 `clam-app`
+    /// 那一段），那种场合由发现文件里的 `appPath` 字段兜底。
     static let ownHostDir: String? = {
         let parts = Bundle.main.bundleURL.pathComponents
         guard let i = clamAppIndex, i + 1 < parts.count, parts[i + 1] == "host" else { return nil }

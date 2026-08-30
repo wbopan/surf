@@ -8,11 +8,14 @@ Surfclam macOS 壳的宿主插件。载荷是 `host/` 里的整个 Xcode 工程�
 `dsh web` 加载到本行时（`inject: ["webServer"]`，端口已定）：
 
 1. **写 endpoint 发现文件** `~/Library/Application Support/io.wenbo.surfclam/endpoints/<profile>.json`
-   （`{httpBase, bridgePath, pid, startedAt, profile, hostDir}`，原子写）。先于构建落地，
+   （`{httpBase, bridgePath, pid, startedAt, profile, hostDir, appPath}`，原子写；
+   字段表在 `docs/clam-contracts.md` §10.1）。先于构建落地，
    一个已经开着的 app 立刻就能接入，不必等分钟级的首次构建。fiber 卸载时按 pid
    匹配删除——两个 dsh 并存时，先退的那个不会把后来者的文件删掉。
-   `hostDir` 是本插件所在的 `clam-app/host` 绝对路径：没拿到 flag 的壳靠它认出
-   "哪一份是我这一套"（壳的 bundle 就在 `<hostDir>/build/Build/Products/<配置>/`），
+   `hostDir` 是本插件所在的 `clam-app/host` 绝对路径、`appPath` 是本进程期望伺候的
+   App bundle：没拿到 flag 的壳靠这两条认出"哪一份是我这一套"
+   （开发期壳的 bundle 就在 `<hostDir>/build/Build/Products/<配置>/`；
+   **装到 `/Applications` 的 Release 壳不在任何 worktree 之下，只能靠 `appPath`**），
    否则多 worktree 时它会连上邻居的 dsh 并编译邻居的插件源码。
 2. **按需构建**：源码 hash 变了或产物缺失 → `write-build-timestamp.sh` +
    `xcodegen generate` + `xcodebuild -derivedDataPath build`（与 `scripts/dev.sh`
@@ -75,8 +78,9 @@ ShellRootView 退化成整窗 WebView——功能不缺，只是没有原生分�
 
 构建失败、没装完整 Xcode、连既有产物都找不到——都只在终端留一句话就收手，
 **不重试、不成环**（防的是构建风暴）。dsh 照常服务浏览器，只是没有 macOS 壳。
-没有 Xcode 时退化为只探测既有产物：先 `host/build/Build/Products/<配置>/`，
-再 `/Applications/Surfclam.app`。
+没有 Xcode 时退化为只探测既有产物：先本形态期望的那一份（release 形态就是
+`/Applications/Surfclam.app`，见上面的 `CLAM_RELEASE`），再
+`host/build/Build/Products/<配置>/`，最后 `/Applications/Surfclam.app`。
 
 ## 配置（`cordis.patch.yml`，可被 profile 的 patch 层覆写）
 
@@ -90,6 +94,28 @@ ShellRootView 退化成整窗 WebView——功能不缺，只是没有原生分�
 | `restartOnRebuild` | `false` | 重建成功后不等用户点，直接让壳退出并重拉。开发期省事，代价是每次改壳都丢页面状态 |
 
 开发期默认 `Debug`；日常使用者应在自己 profile 的 `cordis.patch.yml` 里覆写成 `Release`。
+
+**环境变量 `CLAM_RELEASE`（非空且非 `0`）把上面几项整体覆写**成
+`configuration: Release`、`launch: false`、`restartOnRebuild: false`，
+`build`/`watch` 则**照开**（壳源码目录在的话），并打一行日志。仓库根的
+`./release` 装出来的那个 LaunchAgent 在 plist 里设它——于是**同一张编排表服务
+两种形态**，差别只在配置与落点：
+
+- 编译永远发生在 worktree 的 `build/Build/Products/Release/`（`-derivedDataPath build`
+  是硬约束），成功后多一步**安装**——先 `ditto` 到 `/Applications/.Surfclam.app.clam-staging`，
+  再换名就位。**绝不 quit 正在跑的实例**（那是 `host/scripts/build.sh` 干的事，
+  它是用户亲手跑的一条命令）：换代由壳右上角那条「壳有新版本 · 重启」提示条驱动。
+  先拷后换名不是讲究——正在跑的 Mach-O 不能被原地覆写，而 `rm -rf` 到 `ditto` 之间
+  那几秒里 `/Applications/Surfclam.app` 根本不存在，用户这时候点 Dock 就是一句
+  "找不到应用程序"。
+- **不自动拉起**：登录时不弹窗口，App 由用户双击（或 `./release` 收尾那一下 `open`）。
+  壳自请重启后的重拉是另一条路径（`app-restart`），不受这一项管。
+- 构建失败：旧壳继续在役，错误落 `clam-app-build.<profile>.Release.log`，
+  **记住失败那次的源码 hash、hash 再变才重试**——不许 2s 一轮空转 xcodebuild。
+- 门控：壳源码目录不在（registry 形态只带 `lib/`）就退回"不构建不盯源码"；
+  没有完整 Xcode 时构建这一步本来就降级成"只探测既有产物"，盯源码也就不会启动。
+
+计划见 `docs/release-install-plan.md` §2.1 与 §2.5。
 
 ## 它还注册一个设置 ns
 

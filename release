@@ -1,0 +1,15 @@
+#!/bin/sh
+# 把 surfclam 装成这台机器上常驻的正式形态（只在主 worktree 可用）。
+#
+#   ./release              装：Release 壳进 /Applications + 常驻 dsh（LaunchAgent）
+#   ./release --status     daemon / plist / endpoint / App 各在什么状态
+#   ./release --stop       停掉常驻 dsh（plist 留着）
+#   ./release --start      把它再起回来
+#   ./release --uninstall  停掉 + 删 plist + 删 /Applications/Surfclam.app
+#
+# 装完之后双击 App 就能用，不必开着终端。改 Swift 插件照样存盘即热替换；
+# 改 node 半边 / 编排表要 launchctl kickstart -k gui/$(id -u)/io.wenbo.surfclam.dsh。
+#
+# 真正的逻辑都在伞包的 bin/surfclam.js 里（--release 那条路径）——这里只是省掉敲路径。
+# 计划文档：docs/release-install-plan.md
+exec node "$(dirname "$0")/surfclam/bin/surfclam.js" --release "$@"
