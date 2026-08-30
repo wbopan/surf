@@ -25,16 +25,16 @@
 - 只有 `origin` 一个远端，本地 `main` 领先它 3 个提交。
 - 本机没有 LaunchAgent 残留（那一层 2026-08-30 已退役）。
 
-### 四个待拍板的小决定（不阻塞开工）
+### 四个小决定（施工时一并拍板）
 
-1. **GitHub 仓库现在叫 `wbopan/dsh`**——不是 surfclam，是比 surfclam 还早一代的
-   名字残留（DSHarness 时期）。要不要一并改成 `surf`？见 §6.2。这是唯一一件
-   **仓库外**的动作，需要单独批准。
-2. **`docs/archive/` 里 8 个文件名带 clam**，改不改是独立决定；改了要同步约 20 处
-   交叉引用。默认不改（正文本来就不改）。
+1. **GitHub 仓库原本叫 `wbopan/dsh`**——不是 surfclam，是比 surfclam 还早一代的
+   名字残留（DSHarness 时期）。**已改名 `wbopan/surf`**，remote 跟着改，见 §6.2。
+2. **`docs/archive/` 里 8 个文件名带 clam**：**跟着改了**（正文仍不改），
+   照 dash → clam 那次的先例，链接因此自然对上。
 3. **`/Applications/Surf.app` 与第三方产品 Deta Surf 在 Dock / LaunchServices 里重名**
-   ——只是本机观感问题，不影响功能。
-4. **三个顺手项**（见 §附注）：删死词汇、修 4 处既有文档漂移、删 `removeLegacyDaemon`。
+   ——只是本机观感问题，不影响功能，**接受**。
+4. **三个顺手项**（见 §附注）：**全做了**——删死词汇、修既有文档漂移、
+   删 `removeLegacyDaemon`。
 
 ## 1. 映射总表
 
@@ -297,3 +297,54 @@ grep -rIn --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=build \
 |---|---|---|
 | 2026-08-30 | 计划成文 | 本文 + `surf-rename-anchors.md`（866 行锚点清单）；决策见 §0 |
 | 2026-08-30 | 补 §6.2 | 发现 GitHub 仓库名是 `wbopan/dsh`（比 surfclam 还早一代的残留），原计划只覆盖了本地目录 |
+| 2026-08-30 | **M1–M7 全部完成** | 见下面「实际怎么做的」。Dev 与 Release 两条路都验证通过 |
+
+### 实际怎么做的（与计划的偏差）
+
+**没有按 M1–M6 分六批走，而是一次性机械替换 + 三个提交。** 分批的前提是每批
+自成原子组，但十个原子组彼此交叠（改包名自动带动 module 名与 bundle 布局），
+分批只会制造大量不可运行的中间态。实际做法：
+
+1. `f40ad13` 一次性替换：内容 168 个文件、路径改名 34 项。替换规则**一律带右
+   边界**（`clam-` / `clam.` / `clam_` / `clam[A-Z]` / `_clam` / `\bclam\b` /
+   `Clam` / `CLAM_`），不做裸 `clam` 全局替换。校验：`clamp` 10 处与
+   `exclamationmark` 5 处原样完好，仓库内 clam 残余为 0。
+2. `e9e7151` 删历史累赘。
+3. `9745850` 修一处被改名暴露出来的既有缺陷。
+
+**两份文档必须排除在替换之外**：`surf-rename-plan.md` 与 `surf-rename-anchors.md`
+描述的就是这次重命名，正文一旦被替换，「clam → surf」就变成了「surf → Surf」。
+
+### 计划漏掉、施工时才发现的
+
+1. **`/clam/bridge` 与 `window.__clam` 不在最初的替换规则里**——`/` 和 `_` 两种
+   边界没考虑到。第一轮跑完靠 residual grep 发现，回滚重来。
+2. **通知权限与辅助功能权限都按 bundle id 授权**，换了 bundle id = 两者全部失效：
+   通知日志里是「Notifications are not allowed for this application」，
+   peekaboo 则完全读不到 AX 树。§5 只写了 UserDefaults 会重置，漏了这两个。
+   **要在系统设置里重新授权**，代码改不了。
+3. **`Sources/Resources/` 目录在新克隆里根本不存在**（只装一个 gitignored 文件，
+   git 不跟踪空目录），prebuild 第一句重定向就失败。既有缺陷，`9745850` 修了。
+4. **`docs/archive/` 的文件名跟着改了**（正文不改）——照 dash → clam 那次的先例，
+   也让 docs/ 里指向档案的链接自然对上。
+
+### 一条未采纳的调研结论
+
+锚点清单说 `--status` 打印的 `managed-dsh.log` 少了 worktree 后缀。核对后**它是对的**：
+Release 产物的 `SurfPaths.instanceTag` 恒为 nil，日志本就无后缀，而 `--status`
+只服务 Release 形态。没改。
+
+### 验证结果
+
+- **Dev**：`BUILD SUCCEEDED` → 托管后端自己 spawn `./dev` → 自举 profile → 桥握手 →
+  5 个 Swift 插件现场编译装载（module 名全是 `Surf*`）→ 177 条会话投影 →
+  11 条命令声明 / 18 条网页键位表 → 界面完整。
+- **Release**：`./release` 装进 `/Applications/Surf.app` → 首次打开自举 profile `surf`
+  与 `.surf/` 镜像（9 个包）→ 5 个插件全部装载 → 界面完整。
+- `codesign -v` 通过（封印没过期）；`node --test` 两处共 47 个用例全过；
+  全仓 JS 语法检查通过；`git check-ignore` 确认 `.gitignore` 的锚点跟着改对了。
+
+**一个把人带偏很久的截图假象**：验证期间屏幕休眠了，此后截到的图里原生侧边栏
+清晰、WebView 那块却是空白——极像「原生化 CSS 把主内容区藏了」。真相是屏幕休眠后
+WKWebView 的 remote layer 停止渲染，而 AppKit 那半边保留了最后一帧。
+`caffeinate -u` 唤醒后一切正常。**排查 WebView 显示问题前先确认屏幕是醒的。**
