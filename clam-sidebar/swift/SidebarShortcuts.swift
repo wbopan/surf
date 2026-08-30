@@ -37,6 +37,7 @@ final class SidebarShortcuts {
         case "archiveSession": archiveCurrent()
         case "renameSession": renameCurrent()
         case "focusSearch": focusSearch()
+        case "clearFilters": clearFilters()
         default: break // 别家的命令（newSession/openSettings 归 clam-layout）
         }
     }
@@ -126,6 +127,19 @@ final class SidebarShortcuts {
         } else {
             completion(alert.runModal())
         }
+    }
+
+    // MARK: - 清除筛选
+
+    /// ⌥⌘K：把筛选恢复成默认（分组方式回「按工作区」、显出全部工作区、收起归档）。
+    /// **搜索词不动**——它在搜索框里看得见，用户自己清得掉；一起清掉会让人以为
+    /// 快捷键按错了。已经是默认状态就 beep：静默无事会被当成没按上。
+    private func clearFilters() {
+        guard filter.isNarrowed else { return NSSound.beep() }
+        filter.hiddenGroups = []
+        filter.showArchived = false
+        filter.hideEmptyWorkspaces = true
+        filter.mode = .workspace
     }
 
     // MARK: - 聚焦搜索

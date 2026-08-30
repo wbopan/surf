@@ -15,15 +15,17 @@ import SwiftUI
 /// 绿点被删掉不是口味问题：绿点的既有语义是"一切正常"（Mail 的在线点那种），
 /// 拿它表示"正在跑"是反的；而且它与橙点、紫点只差色相。
 ///
-/// 尺寸统一 16pt 槽位：`ProgressView().controlSize(.small)` 就是 16pt，
-/// 符号 13pt 居中——两者光学重心对齐，行与行之间不会左右晃。
+/// **槽位 20pt**（官方 `Sidebars/*/Medium/Items/Level 0` 的 Leading - Icon 就是
+/// 20 宽），内部图标尺寸不变：`ProgressView().controlSize(.small)` 是 16pt，
+/// 符号 13pt，都在槽里居中——两者光学重心对齐，行与行之间不会左右晃。
 struct StatusIndicator: View {
     let status: SidebarSessionStatus
     /// 只用来读 AX label——界面上这里一个字都没有，全是符号与转轮。
     let strings: L
 
-    /// 状态槽的宽度。会话行、分组头的图标槽都用它对齐。
-    static let slot: CGFloat = 16
+    /// 状态槽的宽度。会话行的 leading 槽（状态 / 归档）都用它对齐，
+    /// 标题左缘因此恒定落在 14 + 20 + 4 = 38。
+    static let slot: CGFloat = 20
 
     var body: some View {
         content

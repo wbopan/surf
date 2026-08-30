@@ -158,7 +158,8 @@ final class SidebarPlugin: ClamPlugin {
                         MainActor.assumeIsolated {
                             filter.hiddenGroups = []
                             filter.showArchived = false
-                            filter.mode = .all
+                            filter.hideEmptyWorkspaces = true
+                            filter.mode = .workspace
                         }
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
@@ -193,41 +194,129 @@ final class SidebarPlugin: ClamPlugin {
 
     /// 现场填「筛选」菜单。**每次弹出前重建**（`ContributionMenuDelegate`），
     /// 所以这里读到的分组、勾选态都是当场的。
+    ///
+    /// 三段：分组方式 / 工作区 / 全局开关，两条分隔线隔开，末尾一条常显的「清除筛选」。
+    ///
+    /// **分区标题走原生 `NSMenuItem.sectionHeader(title:)`**（macOS 14+），不自绘。
+    /// 这里曾经写着"这一段不加分区标题"，那是三枚胶囊还在的时候——胶囊拿掉之后
+    /// 「按时间」只剩这一个去处，不写清楚"这两行是分组方式、下面那些是工作区"
+    /// 就成了一列意义不明的勾。
+    ///
+    /// 另有一条旧结论要留着：**`NSMenuToolbarItem` 走 pull-down 语义，把第 0 项
+    /// 当自己的标题吃掉**（症状是工作区列表永远少最上面那一个，数据和日志里都在，
+    /// 只有屏幕上没有）。已由 clam-layout 的 `padPullDownTitleSlot` 垫掉，
+    /// **这里照常从第一项填起**。
     @MainActor
     private static func populate(menu: NSMenu, model: AppSidebarModel, filter: SidebarFilterState) {
         let groups = model.groups
         // 每次弹出前现取：菜单内容不是拓扑，不必跟着重新贡献就能跟上语言。
         let strings = model.strings
-        if !groups.isEmpty {
-            // 这一段不加分区标题：带勾的工作区名自己已经说清是什么。
-            //
-            // 这里曾经写着"AppKit 在菜单首项上的分区标题不渲染"，那条结论是**错的**
-            // ——不渲染的不是分区标题，是**整个首项**，因为 `NSMenuToolbarItem` 走
-            // pull-down 语义、把第 0 项当自己的标题吃掉。症状是工作区列表永远少最上面
-            // 那一个（数据和日志里都在，只有屏幕上没有）。已在 clam-layout 收口，
-            // 见 `NSMenuToolbarItem.padPullDownTitleSlot`——**这里照常从第一项填起**。
-            for group in groups {
-                let key = group.workspaceId ?? SidebarFilterState.otherGroupKey
-                menu.addItem(MenuActionTarget.item(group.title, checked: filter.isShown(key)) {
-                    MainActor.assumeIsolated { filter.toggleGroup(key) }
-                })
-            }
-            menu.addItem(.separator())
-        }
 
-        menu.addItem(MenuActionTarget.item(strings.showArchived, checked: filter.showArchived) {
-            MainActor.assumeIsolated { filter.showArchived.toggle() }
-        })
+        // **必须关掉自动启用**：`autoenablesItems` 默认 true，AppKit 会按
+        // "target 认不认这个 action" 重算每一项的 enabled，把我们设的 false 抹掉
+        // ——「显示全部工作区」和「清除筛选」的置灰就是这么静默失效的。
+        menu.autoenablesItems = false
 
-        if filter.isNarrowed {
-            menu.addItem(.separator())
-            menu.addItem(MenuActionTarget.item(strings.clearFilters) {
-                MainActor.assumeIsolated {
-                    filter.hiddenGroups = []
-                    filter.showArchived = false
-                    filter.mode = .all
-                }
+        // 右列的计数对齐到同一条竖线（工作区计数 + 归档计数共用），
+        // 位置按最宽的那条标题算，长名字才不会把数字挤到下一个制表位。
+        let countColumn = countColumnLocation(
+            titles: groups.map(\.title) + [strings.showArchived, strings.hideEmptyWorkspaces])
+
+        menu.addItem(.sectionHeader(title: strings.groupBySection))
+        for mode in SidebarFilterState.Mode.allCases {
+            menu.addItem(MenuActionTarget.item(mode.title(strings), checked: filter.mode == mode) {
+                MainActor.assumeIsolated { filter.mode = mode }
             })
         }
+
+        if !groups.isEmpty {
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: strings.workspacesSection))
+            for group in groups {
+                let key = group.filterKey
+                let count = group.sessions.filter { !$0.archived || filter.showArchived }.count
+                let item = MenuActionTarget.item(group.title, checked: filter.isShown(key)) {
+                    MainActor.assumeIsolated { filter.toggleGroup(key) }
+                }
+                item.attributedTitle = titleWithCount(group.title, count, at: countColumn)
+                menu.addItem(item)
+            }
+            let showAll = MenuActionTarget.item(strings.showAllWorkspaces) {
+                MainActor.assumeIsolated { filter.hiddenGroups = [] }
+            }
+            // 全部已显示时置灰而不是不画：菜单的行数不该跟着状态跳。
+            showAll.isEnabled = !filter.hiddenGroups.isEmpty
+            menu.addItem(showAll)
+        }
+
+        menu.addItem(.separator())
+        // 这一分区收的是"改变可见集合"的开关，和上面那些范围勾选不是一回事。
+        // 先工作区层面，再会话层面。
+        let emptyCount = groups.filter { $0.workspaceId != nil && $0.sessions.isEmpty }.count
+        let hideEmpty = MenuActionTarget.item(strings.hideEmptyWorkspaces,
+                                              checked: filter.hideEmptyWorkspaces) {
+            MainActor.assumeIsolated { filter.hideEmptyWorkspaces.toggle() }
+        }
+        hideEmpty.attributedTitle = titleWithCount(strings.hideEmptyWorkspaces, emptyCount,
+                                                   at: countColumn)
+        menu.addItem(hideEmpty)
+
+        let archivedCount = groups.reduce(0) { $0 + $1.sessions.filter(\.archived).count }
+        let archived = MenuActionTarget.item(strings.showArchived, checked: filter.showArchived) {
+            MainActor.assumeIsolated { filter.showArchived.toggle() }
+        }
+        archived.attributedTitle = titleWithCount(strings.showArchived, archivedCount,
+                                                  at: countColumn)
+        menu.addItem(archived)
+
+        menu.addItem(.separator())
+        let clear = MenuActionTarget.item(strings.clearFilters) {
+            MainActor.assumeIsolated {
+                filter.hiddenGroups = []
+                filter.showArchived = false
+                filter.hideEmptyWorkspaces = true
+                filter.mode = .workspace
+            }
+        }
+        clear.isEnabled = filter.isNarrowed
+        // **键位只是画在这儿给人看的**：`NSMenuToolbarItem` 的菜单不参与主菜单
+        // 键位匹配，真正按得出来的那条是 node 半边 `commands` 声明的 `clearFilters`
+        // （壳装进「显示」菜单，`SidebarShortcuts` 应答）。两处必须是同一个组合。
+        clear.keyEquivalent = "k"
+        clear.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(clear)
+    }
+
+    /// 计数右对齐的那一列在哪。按最宽标题算，再留一段间隔——
+    /// **不要写死**：`dsh-web-search-firecrawl` 这种名字一超过定值，右制表位就
+    /// 失效跳到下一个默认制表位，数字会突然跑远。
+    @MainActor
+    private static func countColumnLocation(titles: [String]) -> CGFloat {
+        let font = NSFont.menuFont(ofSize: 0)
+        let widest = titles
+            .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        return ceil(widest) + 34
+    }
+
+    /// 「名字 ……… 数字」。`NSMenuItem` 没有原生的 trailing 数字槽，
+    /// 用 `attributedTitle` + 右对齐 `NSTextTab` 拼一条出来（自绘视图塞进菜单
+    /// 会丢掉高亮反色、键盘导航和显示模式，不划算）。
+    @MainActor
+    private static func titleWithCount(_ title: String, _ count: Int,
+                                       at location: CGFloat) -> NSAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: location, options: [:])]
+        let text = NSMutableAttributedString(
+            string: title + "\t",
+            attributes: [.font: font, .paragraphStyle: style])
+        text.append(NSAttributedString(string: "\(count)", attributes: [
+            .font: font,
+            .paragraphStyle: style,
+            // 计数是修饰，不该和名字抢：高亮行上系统会自己反色，别写死白。
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]))
+        return text
     }
 }

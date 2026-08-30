@@ -292,7 +292,7 @@ contentHash**（算法在 `clam-bridge/lib/swift-payload.js` 的 `swiftContentHa
 | `clam-bridge` | **唯一的特权插件**。Swift 载荷登记表 + `/clam/bridge` WebSocket + 500ms 盯各 `swift/` 目录。`createSwiftPlugin` 工厂也住这儿 |
 | `clam-layout` | 占 `root` 槽：分栏、WebView 排版、开出 `sidebar` 槽与 `toolbar` 贡献槽。client 半边装 `window.__clam` 动作桥并收起 web 侧边栏 |
 | `clam-sidebar` | 占 `sidebar` 槽：原生会话侧边栏。**数据面在 node 半边**（订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作） |
-| `clam-notify` | 桌面通知。不占槽、不贡献界面，缺席即无通知。同时是"有什么在等着你"的**唯一真相**，经 `clamPending` 服务供给侧边栏那枚「待处理」胶囊 |
+| `clam-notify` | 桌面通知。不占槽、不贡献界面，缺席即无通知。同时是"有什么在等着你"的**唯一真相**，经 `clamPending` 服务供给侧边栏那个置顶的「待处理」分区 |
 | `clam-settings` | 原生设置窗口。不占槽、自己一扇窗；数据面在 dsh 进程里直接消费 `ctx.settings` / `llm` / credentials / `agentPresets` / `pluginInventory` |
 | `clam-nativeify` | 让 dsh Web UI 摸起来像原生 App。三半边，主力是 client 那段 CSS；薄 Swift 载荷把 dsh 的 `ui-theme` 投给原生侧（`NSAppearance` + 窗口底色） |
 | `clam-memory` | 跨会话持久记忆。**纯 node、零 macOS 依赖**——不占槽、不贡献界面、不碰桥，装到任何一台有 dsh 的机器上都跑得动 |

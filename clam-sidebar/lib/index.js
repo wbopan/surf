@@ -170,6 +170,20 @@ export default createSwiftPlugin({
 				en: "Move the cursor to the sidebar search field.",
 			},
 		},
+		{
+			// 工具栏「筛选」菜单末尾那条也叫「清除筛选」，但**那条按不出来**：
+			// NSMenuToolbarItem 的菜单不参与主菜单键位匹配。真正生效的是这一条
+			// ——菜单里那行的 ⌥⌘K 只是画给人看的提示，两处必须写同一个组合。
+			id: "clearFilters",
+			menu: "view",
+			order: 20,
+			label: { zh: "清除筛选", en: "Clear Filters" },
+			key: "cmd+alt+k",
+			description: {
+				zh: "把侧边栏的筛选（分组方式、工作区显隐、显示已归档）恢复成默认。",
+				en: "Reset the sidebar filters (grouping, workspace visibility, archived).",
+			},
+		},
 		// 「会话」是壳没有的菜单，由本插件造：标题取首个声明者的 menuLabel，
 		// 位置夹在「显示」与「窗口」之间（menuOrder 只在多个自定义菜单之间比大小）。
 		{

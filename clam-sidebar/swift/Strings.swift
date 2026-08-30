@@ -69,12 +69,14 @@ struct L {
     /// 没有工作区的那一组。数据层不给标题（文案不归它管），显示层收口。
     var ungrouped: String { t("未分组", "Ungrouped") }
 
-    // MARK: - 搜索与筛选胶囊
+    // MARK: - 搜索与分组
 
     var searchPlaceholder: String { t("搜索", "Search") }
-    var filterAll: String { t("全部", "All") }
-    var filterTime: String { t("按时间", "By Date") }  // 原：按时间（en 按分段的实际维度写：那四段是日期）
-    var filterPending: String { t("待处理", "Pending") }
+    /// 「筛选」菜单里的两个分组档位（三枚胶囊退休后，这是它们唯一的去处）。
+    var groupByWorkspace: String { t("按工作区", "By Workspace") }
+    var groupByTime: String { t("按时间", "By Date") }  // 原：按时间（en 按分段的实际维度写：那四段是日期）
+    /// 置顶那个分区的标题。**它不是筛选档位**，是恒常置顶的一段。
+    var pendingSection: String { t("待处理", "Pending") }
 
     // MARK: - 「按时间」的分段（id 是稳定英文串，见 `TimeBuckets`）
 
@@ -124,7 +126,6 @@ struct L {
     func noSearchResults(_ query: String) -> String {
         t("没有匹配「\(query)」的会话", "No sessions match “\(query)”.")
     }
-    var noPendingSessions: String { t("没有待处理的会话", "Nothing is waiting for you.") }
     var noSessionsInFilter: String {
         t("当前筛选条件下没有会话", "No sessions match the current filters.")
     }  // 原：当前筛选下没有会话
@@ -136,6 +137,12 @@ struct L {
     var filterLabel: String { t("筛选", "Filter") }
     var filterTooltip: String { t("筛选会话", "Filter sessions") }
     var showArchived: String { t("显示已归档", "Show Archived") }
+    var hideEmptyWorkspaces: String { t("隐藏空工作区", "Hide Empty Workspaces") }
+    /// 菜单里的两个原生分区头（`NSMenuItem.sectionHeader`）。
+    var groupBySection: String { t("分组方式", "Group By") }
+    var workspacesSection: String { t("工作区", "Workspaces") }
+    /// 全部已显示时置灰，不隐藏——菜单长度跳变比一行灰字更让人找不着北。
+    var showAllWorkspaces: String { t("显示全部工作区", "Show All Workspaces") }
 
     // MARK: - 写操作失败（node 半边只推动作 id 与原因，文案在这儿组）
 
