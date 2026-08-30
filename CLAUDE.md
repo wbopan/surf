@@ -100,8 +100,9 @@ docs/use/               面向最终使用者：安装、连接、诊断、卸�
 docs/extend/            面向二次开发者：插件作者指南、跨插件契约、原生 ABI、
                         dsh wire 协议、WebView 原生感手册
 docs/internals/         面向本仓库维护者：架构、编排、分发、连接、上游缺口
-docs/archive/           历史计划档案（只读，别据此判断现状——正文是当时的写法，
-                        且 phase2 那份整篇用的是更名前的旧名 dash/Dash*）
+docs/archive/           历史计划档案（只读，别据此判断现状——文件名是新的、正文是
+                        当时的写法：旧名 clam-*/Clam*（更早 dash/Dash*）都读作
+                        surf-*/Surf*，换算表在 docs/README.md 的 archive 那节）
 docs/spikes/            可复跑的隔离验证台，把一条结论钉死在实测上
 docs/design/            设计稿源（.dc.html 画板）
 ```

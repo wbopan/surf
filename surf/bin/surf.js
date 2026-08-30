@@ -43,11 +43,6 @@
  * 这条路径只负责构建并安装壳。两种形态的差别不靠任何环境变量——surf-app 自己看
  * **壳源码在不在包里**（`docs/archive/distribution-plan.md` §3.3）。
  *
- * 2026-08-30 之前这条路径还会装一个 LaunchAgent 常驻跑 dsh，那一层整个退役了
- * ——多一层 launchd 常驻就多一整类互斥死锁（它与托管抢同一个 profile、互抹
- * endpoint 发现文件），而壳对它只有观测权没有控制权。装过旧版的机器跑一次
- * `./release` 会自动把它清掉（`removeLegacyDaemon`）。
- *
  * @module @wenbo/surf/bin
  */
 import { execFileSync, spawnSync } from "node:child_process";
@@ -386,18 +381,8 @@ const RELEASE_PROFILE = "surf";
 /** Release 壳的 bundle id——也是它 `NSUserDefaults` 的域名。 */
 const APP_BUNDLE_ID = "io.wenbo.surf";
 
-/**
- * 旧版那个 LaunchAgent 的 Label。**只用来清掉它**（`removeLegacyDaemon`），
- * 本文件不再写 plist。`.dsh` 后缀把 daemon 和 App 的 bundle id 区分开——
- * 两者是两个东西，共用一个标识迟早出事。
- */
-const DAEMON_LABEL = "io.wenbo.surf.dsh";
-
 /** 壳的 Application Support 根，与 surf-app 的 `APP_SUPPORT`、Swift 的 `SurfPaths.appSupport` 同一个。 */
 const APP_SUPPORT = join(homedir(), "Library", "Application Support", APP_BUNDLE_ID);
-
-/** 旧版那个 LaunchAgent plist 的落点。同上，只用来删它。 */
-const DAEMON_PLIST = join(homedir(), "Library", "LaunchAgents", `${DAEMON_LABEL}.plist`);
 
 /** 这套的 endpoint 发现文件（surf-app 按 profile 名分片写）。 */
 const ENDPOINT_FILE = join(APP_SUPPORT, "endpoints", `${RELEASE_PROFILE}.json`);
@@ -420,9 +405,9 @@ function release(opts, repoRoot) {
  *
  * 后端的生命周期归壳自己管（连接偏好默认 `managed`，见
  * `docs/archive/surf-connection-plan.md` 的 2026-08-30 执行日志）——双击 App，它自己
- * 就会 spawn 一个 dsh、监护它、⌘Q 时收走。**所以这里不再写 LaunchAgent**：
- * 多一层 launchd 常驻，就多一整类互斥死锁（那个 daemon 与托管抢同一个 profile，
- * 会互抹 endpoint 发现文件），而壳对它只有观测权没有控制权。
+ * 就会 spawn 一个 dsh、监护它、⌘Q 时收走。**这台机器上不该有第二个常驻服务**：
+ * 与托管抢同一个 profile 的东西会互抹 endpoint 发现文件，而壳对仓库外的常驻
+ * 进程只有观测权没有控制权。
  */
 function releaseInstall(repoRoot) {
 	// 1. 只许主 worktree。release 安装是"这台机器上那一套"，必须有唯一的真相源。
@@ -434,11 +419,7 @@ function releaseInstall(repoRoot) {
 	}
 	say(`本机安装：${repoRoot} → /Applications（profile ${RELEASE_PROFILE} 由 App 自举）`);
 
-	// 2. 清掉旧版本装的那个常驻 daemon。**迁移逻辑，不是可选项**：它和壳自托管
-	//    抢同一个 profile，留着就是互抹 endpoint 发现文件。
-	removeLegacyDaemon();
-
-	// 3. 装壳。stdio 直通——xcodebuild 是分钟级的，进度要给人看见。
+	// 2. 装壳。stdio 直通——xcodebuild 是分钟级的，进度要给人看见。
 	//
 	//    **这里不再备 profile**（计划 §3.6）：`surf` 的内容由 App 自己自举，
 	//    在这儿再 link 一遍仓库源码等于给它埋一份开发形态的残留——下一次
@@ -449,7 +430,7 @@ function releaseInstall(repoRoot) {
 	ensureXcodegen(repoRoot);
 	buildRelease(repoRoot);
 
-	// 4. 打开它。profile 自举与后端 spawn 都是壳的事，这里不等 endpoint。
+	// 3. 打开它。profile 自举与后端 spawn 都是壳的事，这里不等 endpoint。
 	if (existsSync(INSTALLED_APP)) spawnSync("open", [INSTALLED_APP], { stdio: "inherit" });
 	warnIfNoPayload();
 
@@ -498,20 +479,13 @@ function warnIfNoPayload() {
 }
 
 /**
- * 如实报告两件事：endpoint 文件、App。（外加一句旧 daemon 的残留提醒。）
+ * 如实报告两件事：endpoint 文件、App。
  *
  * **endpoint 文件那一格必须区分"在"和"活"**：后端被 SIGTERM 时 surf-app 的清理
  * 未必来得及跑，会留下一份 pid 已死的文件。壳靠连接失败自然跳过它，不需要额外
  * 清理逻辑——但读状态的人得看得出来。
  */
 function releaseStatus() {
-	const legacy = daemonStatus();
-	if (legacy.loaded || existsSync(DAEMON_PLIST)) {
-		say(`⚠ 旧版的常驻 daemon 还有残留（${DAEMON_LABEL}`
-			+ `${legacy.loaded ? `，已登记 pid=${legacy.pid ?? "?"}` : "，只剩 plist"}）。`
-			+ ` 它会和 App 自托管的后端抢同一个 profile——跑一次 ./release 清掉它。`);
-	}
-
 	const endpoint = readJsonOrUndefined(ENDPOINT_FILE);
 	if (endpoint === undefined) {
 		say(`endpoint ${ENDPOINT_FILE}：不在`);
@@ -528,7 +502,6 @@ function releaseStatus() {
 }
 
 function releaseUninstall() {
-	removeLegacyDaemon();
 	try {
 		rmSync(INSTALLED_APP, { recursive: true, force: true });
 		say(`已删 ${INSTALLED_APP}`);
@@ -538,61 +511,6 @@ function releaseUninstall() {
 	say(`profile ${RELEASE_PROFILE} 与 ~/.dsh 下的会话/设置**原样留着**——`
 		+ `它们不是本命令装的，也不该由它删。`);
 	say(`  想连自举出来的镜像一起清：rm -rf ~/.dsh/profiles/${RELEASE_PROFILE}`);
-}
-
-// ------------------------------------------------------------ launchctl
-//
-// **这一段只剩"清掉旧安装"一个用途。** 早先的 release 形态是"Release 壳进
-// /Applications + 一个 LaunchAgent 常驻跑 dsh"；2026-08-30 那一层整个退役了
-// ——后端归壳自托管（连接偏好默认 `managed`）。留着这几个函数是为了让装过旧版
-// 的机器跑一次 `./release` 就自动迁移，而不是留一个孤儿 plist 在那儿和壳抢
-// profile。**不再有任何地方写 plist。**
-
-/**
- * 清掉旧版本装的那个常驻 daemon（如果有）。**幂等**：没装过就一句话都不说。
- *
- * 为什么非清不可：它和壳自托管的后端抢同一个 profile，而同 profile 的两个 dsh
- * 会互抹 endpoint 发现文件——那正是 2026-08-30 那次「双击 App 连不上、点开启
- * 托管什么也没发生」的一半原因（另一半见 surf-app 的发现文件守护）。
- */
-function removeLegacyDaemon() {
-	const status = daemonStatus();
-	const hasPlist = existsSync(DAEMON_PLIST);
-	if (!status.loaded && !hasPlist) return;
-	if (status.loaded) {
-		bootoutDaemon();
-		say(`已停掉旧版的常驻 dsh（${DAEMON_LABEL}）。`);
-	}
-	if (hasPlist) {
-		rmSync(DAEMON_PLIST, { force: true });
-		say(`已删 ${DAEMON_PLIST}——后端改由 App 自己托管。`);
-	}
-}
-
-/** 当前用户的 launchd 域。LaunchAgent 一律在 `gui/<uid>` 里。 */
-function domain() {
-	return `gui/${process.getuid()}`;
-}
-
-/**
- * daemon 此刻的状态。`launchctl print` 没登记时非零退出（stderr 写
- * "Could not find service"），登记了则吐一大块，其中 `pid` 只在真跑着时才有。
- */
-function daemonStatus() {
-	const result = spawnSync("launchctl", ["print", `${domain()}/${DAEMON_LABEL}`], { encoding: "utf8" });
-	if (result.status !== 0) return { loaded: false, pid: undefined, state: undefined };
-	const out = result.stdout ?? "";
-	const pid = /^\s*pid = (\d+)$/m.exec(out)?.[1];
-	return {
-		loaded: true,
-		pid: pid === undefined ? undefined : Number(pid),
-		state: /^\s*state = (\S+)$/m.exec(out)?.[1],
-	};
-}
-
-/** 卸载 daemon。没登记时 launchctl 非零退出，这里当成"本来就没有"。 */
-function bootoutDaemon() {
-	spawnSync("launchctl", ["bootout", `${domain()}/${DAEMON_LABEL}`], { stdio: ["ignore", "ignore", "ignore"] });
 }
 
 /** 进程还在不在。EPERM = 在（只是不归我管）。 */
@@ -673,7 +591,6 @@ function usage() {
   ./release          Release 壳装进 /Applications，之后双击就能用，
                      不必开着终端。profile surf 由 App 首次打开时自举；
                      后端由 App 自己托管：打开即有、⌘Q 即退
-                     （装过旧版的机器会顺手清掉那个常驻 LaunchAgent）
   ./release --status     endpoint / App 各在什么状态
   ./release --uninstall  删 /Applications/Surf.app
                      （profile 与 ~/.dsh 下的会话、设置不动）

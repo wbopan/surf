@@ -230,13 +230,22 @@ window.webkit.messageHandlers.surf.postMessage({ type: "yourType", ... })
 
 当前在用的：
 
+当前在用的。**注意「主题」那一列**：壳对五个 type 留了特化分支，它们**不进**
+`surf.page.*` 广播——只有落到 `default` 的才广播。
+
 | type | 主题 | 发送方 | 接收方 |
 |---|---|---|---|
 | `ready` | `Topic.pageReady` | 壳注入的引导脚本 | 壳自用（`capabilities`） |
 | `currentSession` | `Topic.pageCurrentSession`（**粘性**） | surf-layout 的 client 半边 | surf-notify |
-| `keymap` | `surf.page.keymap` | surf-layout 的 client 半边（真相是 `surf-shortcuts` 设置） | 壳 |
-| `locale` | `surf.page.locale` | surf-layout 的 client 半边（真相是 dsh 的 `locale` 设置） | 壳（转成 `surf.locale` 粘性广播） |
-| `debug` | `surf.page.debug` | 各 client 半边 | 壳（写日志） |
+| `keymap` | `surf.page.keymap`（走通用广播） | surf-layout 的 client 半边（真相是 `surf-shortcuts` 设置） | 壳 |
+| `locale` | **不产生主题** | surf-layout 的 client 半边（真相是 dsh 的 `locale` 设置） | 壳直接消费，转成 `surf.locale` 粘性广播 |
+| `dragPassthrough` | **不产生主题** | surf-nativeify 的 client 半边（可点矩形） | 壳直接消费（`applyDragPassthrough`） |
+| `debug` | **不产生主题** | 各 client 半边 | 壳直接写日志 |
+
+后四条留特化分支的理由是同一个——**壳自己要用它**：菜单栏 / 引导页 / 诊断面板是
+壳画的（`locale`），顶部拖动条是壳自己的 chrome、插件缺席时也不该失效
+（`dragPassthrough`）。不是因为它们特殊到需要壳批准：第三方接一条新页内消息仍然
+只需「页面 postMessage + 插件 subscribe」，壳与 SDK 一个字都不用改。
 
 `pageCurrentSession` / `pageReady` 之所以在 SDK 里有常量，只因为壳自己也要用它们；
 其余动态主题不逐个加常量。
@@ -318,6 +327,11 @@ host.bridge.send(action: "archive", payload: [...]) // 触发 expose
 丢掉它更糟。WS 帧本身的形状见 `surf-bridge/README.md`——那是壳与桥之间的事，
 插件作者用不到。
 
+**载荷里的哨兵值也是两地各一份的约定**，同样只在一个插件内部成立，但一样会因为
+改一处漏一处而静默失灵。现存一条：surf-sidebar 用 `surf.sidebar.other` 当"未归组"
+那一组的 id——node 半边 `dsh-source.js` 造它，Swift 半边 `SidebarFilter.swift`
+按它判分组。**没有共享常量**，两处必须手工对齐。
+
 ---
 
 ## 9. 持久化（`SurfStore`）
@@ -389,8 +403,11 @@ flag 压过偏好（它由拉起本进程的那个后端亲手递来）；压不
 
 ### 10.3 环境开关
 
-**一个都没有了。** 曾经有一个 `SURF_RELEASE`（`./release` 写的 LaunchAgent plist
-里设它，surf-app 读它切形态），2026-08-30 随
+**形态开关一个都没有了**，只剩一个开发自测钩子：`SURF_NOTIFY_SELFTEST=1 ./dev`
+让 surf-notify 在挂载 3 秒后塞两条假待办。它不影响任何形态判据。
+
+曾经有一个 `SURF_RELEASE`（早先的 release 形态用一个常驻服务设它，surf-app 读它
+切形态），2026-08-30 随
 [`distribution-plan.md`](../archive/distribution-plan.md) 的 M4 删掉：形态判据改成
 **「`surf-app/host-build/` 这个模块 import 得到吗」**——构建那一整套代码住在
 那个目录里，而随 App 分发的那份 surf-app 只有 `lib/`（`files` 白名单与 `SurfNode/`

@@ -57,8 +57,6 @@ public final class SurfEventBus {
     public enum Topic {
         /// 壳完成一次 dsh 接入或换端点。载荷 `["httpBase": String]`。
         public static let endpointChanged = "surf.endpointChanged"
-        /// 请求把窗口带到前台。载荷可带 `["sessionId": String]`。
-        public static let activateWindow = "surf.activateWindow"
         /// 页内桥消息的主题前缀。**壳对页内消息不设白名单**：
         /// `window.webkit.messageHandlers.surf.postMessage({type, ...})` 里的
         /// 任意 `type` 都会原样广播成 `surf.page.<type>`，载荷就是那个字典本身。
