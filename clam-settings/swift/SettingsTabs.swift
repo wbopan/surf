@@ -29,8 +29,11 @@ import Foundation
 /// 2. Web 每个 ns 只露手工挑过的几个字段（`shell` 六个只露两个），这里精选的照露、
 ///    剩下的进「更多设置」折叠。**结构照抄，但不跟着丢字段**——计划 §2.2 的
 ///    零遗漏不变量比一致性优先级高：看不见的字段等于不存在。
+/// **第五栏「连接」不来自 Web**：dsh 的设置对话框里没有这一栏，它管的是"壳去连谁"
+/// ——那是壳自己的偏好，dsh 根本不知道有这回事（`docs/clam-connection-plan.md` §11.2）。
+/// 编排照抄的纪律管的是"同一个设置别在两个地方长得不一样"，不是"不许有我们自己的设置"。
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, models, plugins, presets
+    case general, models, plugins, presets, connection
 
     var id: String { rawValue }
 
@@ -44,6 +47,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .models: return "cpu"
         case .plugins: return "puzzlepiece.extension"
         case .presets: return "wand.and.stars"
+        case .connection: return "network"
         }
     }
 
@@ -76,6 +80,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .models: return 430
         case .plugins: return 520   // 含 TabView 面板的边框与 tab 条
         case .presets: return 360
+        // 纯 `Form`，没有会自己滚的控件——跟着内容长（同「通用」）。
+        case .connection: return nil
         }
     }
 }

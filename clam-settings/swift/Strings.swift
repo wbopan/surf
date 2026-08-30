@@ -104,8 +104,61 @@ struct L {
         case .models: return t("模型", "Models")
         case .plugins: return t("插件", "Plugins")
         case .presets: return t("智能体预设", "Agent Presets")
+        case .connection: return t("连接", "Connection")
         }
     }
+
+    // MARK: - 连接（第五栏，`ConnectionPage.swift`）
+
+    // 口径同壳的连接页：面向最终用户（不出现 worktree / profile / pid），
+    // 短句、事实性，zh 逐字来自画板 `.scratch/design-connection-settings/`。
+
+    /// 三段那一行的标签。**说的是"打开 App 时"而不是"连接方式"**——
+    /// 这一栏写完不当场生效，它定的就是下次启动的行为（§11.2 裁决①）。
+    var connStartup: String { t("打开 App 时", "When opening the app") }
+
+    func connModeLabel(_ mode: ConnectionPrefs.Mode) -> String {
+        switch mode {
+        case .managed: return t("启动后端", "Start a Backend")
+        case .fixed: return t("固定地址", "Fixed Address")
+        case .auto: return t("自动发现", "Auto-discover")
+        }
+    }
+
+    /// 选中项底下那句注解。**nil = 未设置**，如实说会看到什么，
+    /// 不把 unset 描述成"自动发现"。
+    func connModeNote(_ mode: ConnectionPrefs.Mode?) -> String {
+        switch mode {
+        case .managed:
+            return t("启动并管理后端，退出 App 时停止。",
+                     "Starts and manages a backend, then stops it when the app quits.")
+        case .fixed:
+            return t("只连接下方地址。", "Connects only to the address below.")
+        case .auto:
+            return t("接入本机发现的后端。存在多个后端时接入最近启动的。",
+                     "Joins a backend found on this Mac. If several are running, joins the most recently started one.")
+        case nil:
+            return t("打开 App 时显示连接页面。", "Shows the connection screen at launch.")
+        }
+    }
+
+    var connAddress: String { t("后端地址", "Backend Address") }
+    /// 地址范例，两种语言下都是这一串（它不是文案）。
+    var connAddressPlaceholder: String { "http://127.0.0.1:3080" }
+    var connAddressInvalid: String { t("地址无效。", "Invalid address.") }
+
+    var connRestartNow: String { t("立即重启", "Restart Now") }
+    var connRestartHint: String {
+        t("更改将在重启后生效。", "Changes take effect after a restart.")
+    }
+
+    var connCurrent: String { t("当前连接", "Current Connection") }
+    var connNotConnected: String { t("未连接", "Not connected") }
+    var connConnectedManaged: String { t("已连接 · 由本 App 启动", "Connected · started by this app") }
+    /// 地址是机器串，不翻。
+    func connConnectedTo(_ url: String) -> String { t("已连接 · \(url)", "Connected · \(url)") }
+    /// 指路牌：重连轮次、失败分类、候选健康表那些全在诊断面板里。
+    var connDiagnosticsHint: String { t("详细诊断：⌥⌘D", "Detailed diagnostics: ⌥⌘D") }
 
     /// 用默认编辑器打开配置文件失败。路径是机器串，不翻。
     func openFailed(_ path: String) -> String {

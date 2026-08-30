@@ -27,7 +27,11 @@ final class SettingsPlugin: ClamPlugin {
         // （`clam.locale`），所以这一句订上的瞬间就已经是当前值——初值只兜住
         // "壳还没发过"那一刻（决议链见 docs/clam-i18n-plan.md §3）。
         let locale = ClamLocaleStore(bus: host.events)
-        let model = SettingsModel(bridge: bridge, locale: locale, log: { host.log($0) })
+        // 「连接」栏的数据面：壳的 UserDefaults + 粘性主题 `clam.connection.state`。
+        // 与桥无关，dsh 在不在场都成立（这一栏正是给"连不上"时用的）。
+        let connection = ConnectionPrefs(bus: host.events)
+        let model = SettingsModel(bridge: bridge, locale: locale, connection: connection,
+                                  log: { host.log($0) })
         var controller: SettingsWindowController?
 
         // **先收拾上一代留下的窗口**。

@@ -62,6 +62,7 @@ struct SettingsPage: View {
         case .models: ModelsPage(model: model)
         case .plugins: PluginsPage(model: model)
         case .presets: PresetsPage(model: model, openPath: openPath)
+        case .connection: ConnectionPage(model: model)
         }
     }
 

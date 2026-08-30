@@ -191,6 +191,11 @@ final class SettingsModel: ObservableObject {
     /// 这里只是持有者，视图读它就建立了观察依赖（`docs/clam-i18n-plan.md` §3/§5）。
     private let localeStore: ClamLocaleStore
 
+    /// 「连接」栏的数据面。**不经桥、不经 dsh**——它是壳自己的偏好与状态
+    /// （UserDefaults + 粘性主题 `clam.connection.state`），见 `ConnectionPage.swift`。
+    /// 挂在 model 上只为拿一个生命周期锚：model 被视图闭包捕获，它跟着活。
+    let connection: ConnectionPrefs
+
     /// 当前语言。`FieldNotes` / `JSONValue.summary` 这类查表点要它。
     var locale: ClamLocale { localeStore.current }
 
@@ -199,9 +204,11 @@ final class SettingsModel: ObservableObject {
     /// 建立观察依赖，语言一变整扇窗自动重渲。
     var strings: L { L(localeStore.current) }
 
-    init(bridge: SettingsBridge, locale: ClamLocaleStore, log: @escaping (String) -> Void) {
+    init(bridge: SettingsBridge, locale: ClamLocaleStore, connection: ConnectionPrefs,
+         log: @escaping (String) -> Void) {
         self.bridge = bridge
         self.localeStore = locale
+        self.connection = connection
         self.log = log
     }
 

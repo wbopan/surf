@@ -261,8 +261,11 @@ searching / reconnecting 两幕并进各自页面的 spinner 行，不再单独�
 - **M3 偏好模型**（fixed 钉死语义、flag 压制、模式切换落盘重启仍在）。
 - **M4 托管后端**（开托管 → ⌘Q → 重开 App 后端自动拉起；杀 dsh 看退避重启；
   三连败看「已放弃」+ 日志；外部 dsh 在跑时托管按钮禁用）。
-- **M5 settings.pane + 连接 pane**（**缓议**，见 §6）。
+- **M5 settings.pane + 连接 pane**（**缓议**，见 §6；其诉求由 M7 以
+  clam-settings 第五栏形态实现，贡献槽机制继续缓议）。
 - **M6 文档 + 端到端验收**。
+- **M7 连接偏好界面**（§11：unset 不自动接入 + 设置第五栏「连接」+ 引导页
+  上下布局重做；设置改动重启生效）。
 
 依赖：M1 → M2 → M3（M2/M3 同属壳内一条改动线，宜同一代理连做）；
 M4 只依赖 M1/M3。
@@ -286,6 +289,104 @@ M4 只依赖 M1/M3。
   一键切回 auto，别把用户锁死。
 - **托管与 LaunchAgent 并存**（将来 release 计划落地后）：同 profile 互抹 endpoint
   文件，§5 的查重把 launchctl 检查也算进去了，两边文档互相指认。
+
+## §11 M7：连接偏好界面（设计定稿 2026-08-30，用户三轮裁决）
+
+**设计稿是权威**：Artifact「Surfclam 连接偏好」
+（https://claude.ai/code/artifact/2003cc40-b15d-4c16-b0fe-78a02fcaf3d4）+
+`.scratch/design-connection-settings/*.dc.html`。实现截图与它并排比对。
+M5（settings.pane 贡献槽）继续缓议——它想解决的「设置里管连接」由本节以
+**clam-settings 第五栏**的形态实现，不需要发明贡献槽机制。
+
+### §11.1 语义变更（先于界面）：自动接入降级为显式选项
+
+用户裁决：「自动搜索端口并 attach 需要被设置成一个可选项。也许这个机器上会有
+多个端口，但我们并不应该乱 attach。」
+
+- `clam.connection.mode` **未设置不再等于 `auto`**。四态：
+  未设置（unset）/ `auto` / `fixed` / `managed`。
+- **unset**：发现轮询照跑（列表要显示、探活要做），但**绝不 adopt**——壳停在
+  引导页等用户点。`auto` 的"扫描并择优自动接入"必须显式选择才有。
+- `--clam-endpoint` flag 语义不变、仍压过偏好（`./dev` 开发循环因此不受影响：
+  dev 壳总是带 flag 被拉起）。一次性目标（用户当场点的）仍压过 flag（M3 偏差条）。
+- 已判定不兼容 / abandoned 的过滤逻辑不变。
+- **衔接点（本里程碑不做）**：`./release` 场景依赖"双击即自动接入 daemon"，
+  release 线落地时应在安装步骤 `defaults write io.wenbo.surfclam
+  clam.connection.mode -string auto`（或 fixed），否则装完首开停在引导页。
+  在 release 计划里补一句即可。
+
+### §11.2 设置窗口第五栏「连接」（clam-settings）
+
+- `SettingsTab` 加 `case connection`，symbol `network`，排在 presets 之后；
+  标题双语（连接 / Connection）。窗口宽度沿用 720 常量；本页纯 Form 自适应高
+  （height 返 nil，照通用页）。
+- 页内版式照通用页（`Form(.columns)`，标签右对齐全角冒号，注解 caption 压控件下）：
+  1. **「打开 App 时：」** `.tabs` 三段（照外观行的 `.pickerStyle(.tabs)`）：
+     启动后端(`managed`) / 固定地址(`fixed`) / 自动发现(`auto`)。
+     注解按选中项：「启动并管理后端，退出 App 时停止。」/「只连接下方地址。」/
+     「接入本机发现的后端。存在多个后端时接入最近启动的。」
+     unset 时三段都不选中（`.tabs` 允许无选中；不行就退化成加一段灰态占位，
+     实现时定，别把 unset 悄悄画成 auto）。
+  2. `fixed` 选中时出现 **「后端地址：」** 文本框（写 `clam.connection.fixedURL`，
+     沿用 `normalizedURL(from:)` 的宽容解析，坏值红字提示不落盘）。
+  3. **重启生效，不当场切换**：本页只写 UserDefaults，不触碰 ConnectionController
+     的切换路径。与**启动时快照**不一致 → 显示 `[立即重启]` + 小字
+     「更改将在重启后生效。」；改回原值按钮消失。重启 = 壳自我重启
+     （spawn 一个等待本 pid 退出再 `open` 自己 bundle 的小助进程，或等价手法；
+     注意壳有"一个进程只自请重启一次"的保险丝，别复用 app-restart 那条桥路径
+     ——这里没有 dsh 参与）。
+  4. 分隔线 + **「当前连接：」** 只读状态行：绿点 + 「已连接 · <URL>」
+     （managed 时「已连接 · 由本 App 启动」）；未连接灰点 + 「未连接」。
+     下压一行 caption「详细诊断：⌥⌘D」。
+- **数据通道**（clam-settings 的 swift 半边与壳同进程，但 import 不了 Native 类型）：
+  - 偏好：UserDefaults 直接读写（键名字面量 + 注释指向 contracts）。
+  - 状态：壳侧 ConnectionController 在 `projectState()` 里
+    `emitSticky("clam.connection.state", …)`（载荷：`phase` 字符串、`url`、
+    `managed` Bool；粘性——设置窗口晚开也拿得到当前值）。
+  - 重启：设置页 `emit("clam.app.relaunch")`（瞬间消息），壳侧订阅执行。
+  - 两个主题 + 三个 UserDefaults 键登记进 `docs/clam-contracts.md`
+    （该文件工作区混着 release 线未提交改动——**只追加自己的行，别动别人的段落**）。
+
+### §11.3 引导连接页重做（上下布局）
+
+按定稿画板 `Onboarding.dc.html`。中断页不动。
+
+- 标题改 **「尚未连接 dsh 后端」**（用户点名带 dsh——产品名可以出现，
+  要藏的是 worktree/profile 这类开发流程词汇）。扫描 spinner 从标题区移进下面板。
+- **上**：「让 Surfclam 托管」横条卡片（图标 + 说明「后端随 Surfclam 自动启动和
+  退出。」+ 右侧 `[开启托管]` 胶囊）。托管不可用态的现有渲染逻辑保留。
+- **下**：**「连接到已有的后端」一整个面板**（地址输入 + 发现列表本质是同一种方式）：
+  - 地址输入框 + `[连接]`；
+  - 「发现的后端」小节（右上角「正在查找…」spinner）+ 端点行（绿点 · 端口 · 启动
+    时间 · `[连接]`）；
+  - 面板底部 **☐「自动接入发现的后端」** 复选框 = `mode == auto` 的直接投影：
+    勾上 → `setMode(.auto)` 并当场择优接入；取消 → mode 清回 unset。
+    它本身就是落盘的偏好，与下面的「设为默认」无关。
+- 面板下方 **☐「设为默认方式」**（caption「下次打开时直接使用」）：
+  勾着时点 `[开启托管]` → 落 `managed`；点任一 `[连接]`（输入框或发现列表）→
+  落 `fixed` + `fixedURL = 该地址`。不勾 = 一次性动作（现状语义，不落盘）。
+  开启托管本就必须落偏好（M4 接线注记），所以托管卡实际不受此勾影响——
+  勾选框对它恒等于勾上；实现时别做成"不勾就只 start 不落盘"的半吊子托管。
+- 底部「诊断面板 ⌥⌘D · 打开日志目录」链接行不变。
+
+### §11.4 交付物与验收
+
+| 文件 | 改动 |
+|---|---|
+| `clam-settings/swift/SettingsTabs.swift` | +`case connection`（symbol/height/标题） |
+| `clam-settings/swift/ConnectionPage.swift`（新） | §11.2 页面 |
+| `clam-settings/swift/SettingsWindowController.swift` `Strings.swift` | 第五栏接入 + 双语文案 |
+| `clam-app/host/Sources/Native/ConnectionController.swift` | unset 态 + `emitSticky` 状态投影 + relaunch 订阅（订阅也可落 AppDelegate） |
+| `clam-app/host/Sources/ConnectionViewController.swift` | 引导页重做（上下布局 + 两枚勾选框） |
+| `clam-app/host/Sources/Strings.swift` | 新文案双语（标题带 dsh、面板标题、两枚勾选框、查找中） |
+| `docs/clam-contracts.md` | `clam.connection.state` / `clam.app.relaunch` 主题 + mode 值域更新（只追加） |
+| `CLAUDE.md` | 架构速览连接偏好一句更新（unset 不自动接入；同样只动该处） |
+
+验收：壳 `xcodebuild -derivedDataPath build -scheme surfclam` 通过；
+clam-settings 热替换后 ⌘, 出现第五栏，截图与画板并排比对（tools/shot.sh）；
+清掉 mode 键双击冷启动 → 停在引导页、列表照常刷新但不自动接入；
+勾「自动接入」→ 当场接入且重开仍自动；设置里改方式 → 出现重启按钮 →
+点击后壳重启并按新偏好行事。
 
 ## §10 执行日志
 
@@ -380,3 +481,38 @@ M4 只依赖 M1/M3。
   `dsh --profile surfclam`（等宽字）；已判定的地址从「发现的后端」列表滤掉、
   不再自动接回。阈值 3 给"dsh 起桥比起 HTTP 晚一拍"的正常启动窗口留了余地。
   用假 HTTP 服务器（python http.server，WS 一律拒）+ 隔离实例实测通过。
+- 2026-08-30 **M7 设计定稿**（用户三轮裁决）：① 设置第五栏模式行标签定为
+  「打开 App 时：」——它就是下次启动的默认行为；自动发现从隐含默认降为平级
+  选项（多端口不乱 attach）；② 更改重启生效（`[立即重启]` 按钮），不当场切后端，
+  状态行如实显示仍连着旧后端；③ 引导页改上下布局：上=托管卡，下=「连接到已有的
+  后端」整合面板（地址+发现列表+「自动接入发现的后端」勾选框，与设置栏同一偏好）；
+  ④ 引导页标题定为「尚未连接 dsh 后端」（产品名可出现）。设计稿：Artifact
+  「Surfclam 连接偏好」+ `.scratch/design-connection-settings/`。§11 新增。
+- 2026-08-30 **M7 实现**（三块全落）：① **语义**：`clam.connection.mode` 改成
+  `ConnectionMode?`，键不存在/坏值 = unset；`probeRound` 里新加一道 adopt 闸
+  （`adoptsDiscovered`），unset 时发现与探活照跑、列表照显、**一个都不接**。
+  ② **设置第五栏「连接」**：`clam-settings/swift/ConnectionPage.swift`（新，含
+  `ConnectionPrefs` 数据面）+ `SettingsTabs`/`SettingsPage`/`SettingsModel`/
+  `SettingsPlugin`/`Strings` 接线；只写 UserDefaults、不碰切换路径，与壳正跑着的
+  那份不一致就出 `[立即重启]`。③ **引导页上下布局**：托管横条 + 「连接到已有的后端」
+  整合面板（地址 + 发现列表 + 「自动接入发现的后端」）+ 面板下方「设为默认方式」。
+  壳侧新增 `clam.app.relaunch`（emit → spawn 一个"等本进程死透再 open 自己"的
+  助手再退出，走 `ManagedProcess` 拿自成进程组那一条，**不复用 `app-restart`**）。
+  **与 §11 的偏差四条**：① 「设为默认方式」**默认勾上**（画板里它就是勾着的）——
+  unset 语义下不落盘意味着下次打开又停在引导页，而用户刚刚已经明确挑过一个后端了；
+  ② 「停止托管」由 `setMode(.auto)` 改成 `setMode(nil)`：切 auto 等于替用户选了
+  "随便接本机发现的一个"，而他刚表达的是"别自动起后端"；③ 「改了还没重启」的判据
+  取**壳此刻跑着的 mode**（投影里的 `mode`/`fixedURL`）而不是启动时快照——壳自己
+  也会改这两个键（引导页点「开启托管」），拿快照比会冒出一颗永远消不掉的按钮；
+  ④ 托管卡的说明与状态**共用一行**（没起来时说它是干什么的、起来之后说它在干什么），
+  两行常驻会让这张横条比下面整个面板还高。
+  **实测**（Debug 壳接本机 daemon，全程没碰 daemon 与 Release App）：清掉 mode 键
+  冷启动 → 停在引导页且列表里有 daemon 的端点（`.scratch/m7-onboarding.png`）；
+  勾着「设为默认」点连接 → 落 `fixed` + `fixedURL` 并接入；设置第五栏三态各截一张
+  （`m7-settings-fixed/dirty/unset.png`，unset 时三段**真的都不选中**）；
+  改方式 → `[立即重启]` 出现 → 点击 → 壳退出、助手把它拉回来、按新偏好自动接入
+  （`m7-after-restart.png`）；不勾「设为默认」点连接 → 偏好一个字没落盘；
+  勾「自动接入发现的后端」→ 当场落 `auto` 并接入。
+  **留给用户的衔接点**（§11.1 已预告）：`io.wenbo.surfclam`（Release 域）现在没有
+  mode 键，装上新壳后**双击首开会停在引导页**——两下点回来（连接 + 设为默认），
+  或按 §11.1 在 `./release` 的安装步骤里补一句 `defaults write`。
