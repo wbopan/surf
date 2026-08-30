@@ -156,12 +156,27 @@ window.__ModuleLoader__.load({
 		const reduceNeutral = NEUTRAL.map((sel) => ':root[data-clam-reduce] ' + sel).join(",\n");
 		// 真材质接管的第二块表面（P6）：composer 输入卡片。**不是按钮**，所以不进
 		// NEUTRAL —— 它没有 hover / 按下两级层次、不吃 `--clam-tint`，与按钮组共用的
-		// 只有上面那三层门控。选择器与字号那条同源（见 `_card` 的 `:has(textarea)`
-		// 注释：`_card` 后缀跨档复用，光靠它会误伤设置页与警告卡）。
-		const COMPOSER_CARD = '[class*="_card"]:has(textarea)';
+		// 只有上面那三层门控。
+		// **锚一等属性，不锚类名**：dsh 给这张卡（InputBar 的 `_card`）挂了
+		// `data-composer-card`，全站只有它有。曾经写 `[class*="_card"]:has(textarea)`
+		// ——AskUserQuestion 弹窗的卡片（`_card` 后缀 + 自由文本答案的 textarea）
+		// 恰好双双命中，而那张卡**自己不写 `position`**，fx 层的 `inset: 0` 于是
+		// 锚到整宽的已定位祖先上：窗口一激活，弹窗底色退透明、玻璃铺满整个窗口宽，
+		// 失焦（材质门关）又恢复正常——正是"得焦才发作"的幽灵。
+		const COMPOSER_CARD = '[data-composer-card]';
 		// 卡片的座位。sticky bottom + 一层 36px 渐变实底，正是"内容滚到卡片跟前就
 		// 淡出"的那层 —— 材质要采样身后滚过的正文，它必须让位，见块内注释。
 		const COMPOSER_SEAT = '[class*="_composerSeat"]';
+		// 玻璃卡片名单 = 精确锚的 composer 卡 + AskUserQuestion 弹窗卡（用户
+		// 2026-08-29 要的：弹窗和 composer 一样上液态玻璃）。弹窗卡没有一等属性，
+		// 只能拿"座位之内、带答案 textarea 的 `_card`"这组事实收口——锚在
+		// COMPOSER_SEAT 之下，设置页/警告卡那些 `_card` 误伤面就够不着了；
+		// 它也会重复命中 composer 卡本体，声明相同、无害。计划评审面板
+		// （PlanReviewPanel）没有 textarea，刻意不在此列：它保持实底。
+		const GLASS_CARDS = [COMPOSER_CARD, COMPOSER_SEAT + ' [class*="_card"]:has(textarea)'];
+		// 前缀逐条加，理由同 materialNeutral。
+		const materialCard = GLASS_CARDS.map((sel) => MATERIAL_GATE + sel).join(",\n");
+		const materialCardFx = GLASS_CARDS.map((sel) => MATERIAL_GATE + sel + "::before").join(",\n");
 		// **换档只改这一行。** 候选值见 docs/spikes/apple-visual-effect/index.html
 		// 的 `values` 数组（本机九个全 ✔）：
 		//   -apple-system-glass-material                        面板/popover 档
@@ -2128,26 +2143,33 @@ window.__ModuleLoader__.load({
 					//
 					// 横向不用管：正文列 748px，卡片 780px（`--dsh-chat-content-width`
 					// + 32），卡片天然比正文宽 16px/侧，正文不会从两边漏出来。
-					MATERIAL_GATE + COMPOSER_SEAT + " {",
+					// `:has(textarea)` 收口 = "座位里坐着玻璃卡片"（composer 与提问弹窗
+					// 都带 textarea，见 GLASS_CARDS）：材质要采样身后滚过的正文，幕布
+					// 必须让位。计划评审接管时座位里没有 textarea、卡片是实底，幕布交还
+					// 给 dsh 自己的整幅渐变。（不能按 GLASS_CARDS 拼门——弹窗那条自带
+					// `:has()`，`:has()` 里嵌 `:has()` 是非法选择器，整条会被丢弃。）
+					MATERIAL_GATE + COMPOSER_SEAT + ":has(textarea) {",
 					"  background: linear-gradient(to top, var(--dsw-alias-bg-base) 0 36px, transparent 36px);",
 					"}",
-					MATERIAL_GATE + COMPOSER_CARD + " {",
+					materialCard + " {",
 					// dsh 那条是 `background:` 简写、不带 !important，长手同名属性
 					// 特异性更高即可盖住（按钮那组要 !important 是因为被盖的是我们
 					// 自己写的 !important，不是同一回事）。
 					"  background-color: transparent;",
-					// `position: relative` **刻意不重复声明**：dsh 自己就写着，而且是
-					// 承重的 —— `_input`（那个透明的 textarea）与 `_backdrop`（真正
-					// 画出你敲的字的那层）都是 `position:absolute; inset:0`，认的就是
-					// 卡片这个包含块。它不可能在 dsh 自己不先崩掉的情况下消失。
-					// isolation 则必须我们出：让 z-index:-1 的 fx 层落在卡片自己的
+					// `position: relative` 必须显式声明。composer 卡 dsh 自己写着同值
+					// （承重 —— `_input` / `_backdrop` 都是 `position:absolute; inset:0`，
+					// 认的就是卡片这个包含块），重申无害；**弹窗卡片却一个 position 都
+					// 没有** —— 不声明的话 fx 层的 `inset: 0` 会锚到整宽的已定位祖先
+					// （座位）上，玻璃铺满整个窗口宽，正是"得焦才发作"那个 bug 的机理。
+					"  position: relative;",
+					// isolation 必须我们出：让 z-index:-1 的 fx 层落在卡片自己的
 					// 层叠上下文底部，而不是穿到座位那层背后去。
 					"  isolation: isolate;",
 					"}",
 					// fx 层。挂 ::before 的理由同按钮组（材质不认元素 border-radius，
 					// 直接挂卡片会画成一个 22px 圆角外的方块），另加一条：dsh 已经拿
 					// `_cardWorkspaceTrigger::after` 画那圈虚线描边了，::before 才是空位。
-					MATERIAL_GATE + COMPOSER_CARD + "::before {",
+					materialCardFx + " {",
 					"  content: '';",
 					"  position: absolute;",
 					"  inset: 0;",
