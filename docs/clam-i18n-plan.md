@@ -91,10 +91,9 @@
 | 壳·诊断面板正文 | `MainWindowController.diagnosticsText()` L938–996 | 28 行 | 插值密度最高 |
 | 壳·引导页/提示条/Toast | `BootstrapViewController` + `MainWindowController` L287–473、`ShellUpdateBanner`、`ShellToast`、`Native/WebPolicy` L267–333 | ~25 | 含 JS 弹窗按钮「好/取消」 |
 | clam-sidebar Swift | `SidebarView`（38 处）、`StatusIndicator`、`SidebarFilter`、`SidebarPlugin`（toolbar 贡献）、`AppSidebarModel`（动作名表）、`SidebarShortcuts` | ~45 | 「今天/昨天/前 7 天/更早」在 `SidebarView.swift` L714–721（Swift，不在 node） |
-| clam-header Swift | `HeaderPlugin`（四格 label）、`HeaderToolbar`（「N 个子代理」等）、`HeaderFormatting`（时长拼装 L45–67） | ~25 | 时长/复数是最难机械替换的一处 |
 | clam-settings Swift | `FieldNotes`（28 条 Note + 7 条 ns 摘要）、`SettingsTabs`、`ModelsPage`（23 处）、`PluginInventoryList`、`SettingsModel` 相位词典、其余散落 | ~90 | FieldNotes 是现成的集中表，双语化最顺 |
 | clam-notify node | `lib/inbox.js`（标题/正文/按钮）、`lib/mux-source.js` L225 | ~15 | **唯一写在 JS 里的用户文案**；Swift 侧只有「其他…」「发送」两处 |
-| node 错误泄漏路径 | `clam-sidebar/lib/dsh-source.js` 的 `what` 参数 → `push("error")` → `SidebarView` L419 alert；`clam-header/lib/index.js` 同构 | ~10 | 见 §8 第 4 条，要改推结构化 action id |
+| node 错误泄漏路径 | `clam-sidebar/lib/dsh-source.js` 的 `what` 参数 → `push("error")` → `SidebarView` L419 alert；原生 header 插件的 `lib/index.js` 同构 | ~10 | 见 §8 第 4 条，要改推结构化 action id |
 | dsh 页内 description | `clam-notify`（9 条）、`clam-app`/`clam-shortcuts`（~17 条）、`clam-bridge`（2 条） | ~28 | 到不了原生窗口，只进 dsh 页内设置对话框，§7 处理 |
 
 client.js 注入的文案：**没有**（全是 CSS 规则文本）。node 投影通道里也基本
@@ -237,7 +236,7 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
 | i0 | **管线**：SDK `ClamLocale` + sticky 主题；clam-layout client 投影 `locale`；壳特化分支 + UserDefaults 缓存 + 决议链；clam-notify node 侧决议助手 | dsh 设置里切语言，壳日志/诊断面板里看到 sticky 事件与新值；冷启动用缓存值 |
 | i1 | **壳**：`Strings.swift` + 菜单可重入重建 + 引导页/提示条/Toast/WebPolicy 弹窗/诊断面板/快捷键面板（含对齐修理） | 两种语言截图：菜单栏、⌘/ 面板、引导页 |
 | i2 | **clam-sidebar**：全部 Swift 文案进表 + toolbar 贡献重注册 + 断根 node 错误泄漏（坑 4） | 两种语言截图：侧边栏、右键菜单、空态、alert |
-| i3 | **clam-header**：四格 label + 弹层 + `HeaderFormatting` 时长重写 | 两种语言截图：工具栏、子代理 catalog、任务菜单 |
+| i3 | **原生 header 插件**（已于 2026-08-30 整个删除）：四格 label + 弹层 + 时长重写 | 两种语言截图：工具栏、子代理 catalog、任务菜单 |
 | i4 | **clam-settings**：`FieldNotes` 双语化（Note 表加 en 列）+ 各 Page 散落文案 + 相位词典 | 两种语言截图：设置窗口四栏 |
 | i5 | **clam-notify**：`lib/strings.js` + inbox 文案 + Swift 侧两处 + description 按注册时 locale（§7 推广到 clam-app/clam-bridge） | 两种语言各发一轮四类通知截图 |
 | i6 | **收尾**：全仓 grep 中文字面量清查（区分注释/日志/UI）；文案审校表 + 全表面双语截图集，交用户裁决语气拿不准的条目 | 审校表 + 截图集 |
@@ -331,8 +330,9 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   `Identifiable.id`，中文串会随语言变。AX identifier 一个都没动（`sidebar.group.*`
   取的是 workspaceId，与分段无关），但**本 worktree 没有在跑的实例，没能 dump 一次
   AX 复核分组头的 `.accessibilityElement(children: .ignore)` 收口，留待 i6 截图验收**。
-- **2026-08-28 · i3（clam-header 文案双语化）· 完成。** 新增
-  `clam-header/swift/Strings.swift`（`struct L`，20 条：9 个属性 + 11 个方法，
+- **2026-08-28 · i3（原生 header 插件文案双语化）· 完成。**
+  （**2026-08-30 补记：这个插件此后整个删除了**，本条只作记录。）新增
+  它的 `swift/Strings.swift`（`struct L`，20 条：9 个属性 + 11 个方法，
   其中 4 个是时长拼装、2 个各带一小张二选一表，实际串数约 24）。四格工具栏 label /
   窗口标识（标题兜底词 + 后台任务副标题）/ 会话谱系菜单（祖先段、子代理项、
   次要行、空态、tooltip）/ 模式菜单（当前 preset、不可用标注、「默认」）全部改从
@@ -359,7 +359,7 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   验证：`swiftc` 按壳 `CompilerService` 的参数形状**全量编出 dylib**
   （`-emit-library`，ClamSDK + 现编的 ClamLayout module 都接上）**成功、无警告**
   （改动前跑过同一条命令做对照）；`node --check` 三个 JS 通过；
-  `node --test clam-sidebar/test/*.test.js` 18/18 绿；`clam-header/` 除注释、
+  `node --test clam-sidebar/test/*.test.js` 18/18 绿；那个插件除注释、
   日志与 `Strings.swift` 外已无中文字符串字面量（grep 核过）。
   **偏离计划三处**：
   ① **段控开局那两个名字（`Chat` / `Trajectory`）不进表**，原样留在贡献 metadata 里
@@ -524,7 +524,7 @@ zh/en 并排同一行（审校时一眼对照）；插值/单复数/量词是普
   内建 preset 改查自己的词典。结果是 en 界面下窗口副标题、mode 那格的菜单、
   设置「通用」页的预设选择器、「智能体预设」页的清单与说明**全是中文**，
   与同一屏上英文的网页对不上——正是不变量 2 禁止的分叉。照上游规则修：
-  node 侧只多投一个 `trust`（clam-header 的桥 `SCHEMA_VERSION` 3 → 4；
+  node 侧只多投一个 `trust`（header 插件的桥 `SCHEMA_VERSION` 3 → 4；
   clam-settings 本来就投了），**显示词照旧全在 Swift 侧组装**，
   `L.builtInPreset` / `L.builtInPresetSummary` 各收一张四条的表，
   id 与措辞逐字对齐 `dsh-client-ui-agent-preset`；用户自己写的 preset 不翻

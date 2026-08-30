@@ -104,7 +104,7 @@ final class SettingsPlugin: ClamPlugin {
         //
         // 窗口还没建出来时什么都不用做：`setupWindow` 本来就按当前语言贴标签。
         // 闭包只捕获 `controller` 那个盒子，**没捕获 `handle`**，所以不成环
-        // （clam-header 那条"订阅与 handle 互相按住"的坑，在这里天然不存在）。
+        // （"订阅与 handle 互相按住"那种环，在这里天然不存在）。
         host.events.subscribe(ClamEventBus.Topic.locale) { payload in
             guard let raw = payload["locale"] as? String,
                   let next = ClamLocale(rawValue: raw) else { return }

@@ -58,8 +58,8 @@ extension LayoutSplitController {
     ///
     /// 空标题 = 交回给壳（`titleVisibility` 复位成 `.hidden`）。
     ///
-    /// **粘性**：本控制器每换一代都会重订一次，而标识的生产方（clam-header）
-    /// 不会因为我们换代就重推一遍。叠加 deinit 里那道"归还标识"的兜底，
+    /// **粘性**：本控制器每换一代都会重订一次，而标识的生产方不会因为我们换代
+    /// 就重推一遍。叠加 deinit 里那道"归还标识"的兜底，
     /// 不粘的话窗口会卡在没有标题的透明态，直到用户碰巧切个会话才自愈。
     /// 粘性总线替新订阅者补最后一份，所以这里不需要一条"现在报一次"的反向通道。
     static let windowTitleTopic = LayoutToolbar.windowTitleTopic
@@ -271,7 +271,7 @@ extension LayoutSplitController {
     }
 
     /// 兜底：托管贡献自己的 SwiftUI 视图。**只给真的没法用原生表达的东西用**
-    /// （clam-header 的面包屑就是——它挂着一棵可展开的子代理树，菜单表达不了）。
+    /// （比如一枚挂着可展开树的面包屑——那是菜单表达不了的形状）。
     private func makeViewItem(
         _ identifier: NSToolbarItem.Identifier,
         _ contribution: ClamContributions.Contribution
@@ -446,7 +446,8 @@ extension LayoutSplitController {
         // 它采得到，两个并排实测过），但那是 Mail 滚动时才出现的 scroll edge
         // effect，常驻着看就是一块发光的板子，比朴素的标题栏背景吵得多。
         // **"能做到"不等于"该做"**——工具栏天然有背景，缺的只是没把它打开。
-        // **标题栏一直保持透明**，那条带子由页面画（见 clam-header 的 client.js）。
+        // **标题栏一直保持透明**，那条带子由页面画
+        // （见 clam-nativeify/lib/client.js 的 HEADER 段）。
         //
         // 原生这边三条路全试过了，没有一条能给出"纯模糊、无装饰"：
         // `titlebarAppearsTransparent = false` 给的是**不透明**背景，模糊就没了；

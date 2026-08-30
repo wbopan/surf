@@ -46,8 +46,8 @@ clam-bridge/       唯一特权插件：Swift 载荷登记表 + /clam/bridge WS 
                    swiftDir 不存在/空、重复登记，三种都当场抛而不是 warn
 clam-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放的 `toolbar` 贡献槽
                    （工具栏按钮全部来自贡献，本插件自己一颗都不放；**眼下整条工具栏
-                   只有 clam-sidebar 的「筛选」这一条**——clam-header 停用后它那四格
-                   也没了，⌘N「新建会话」是 commands 声明的菜单项而不是工具栏按钮。
+                   只有 clam-sidebar 的「筛选」这一条**，⌘N「新建会话」是 commands
+                   声明的菜单项而不是工具栏按钮。
                    贡献的拓扑用 `ToolbarSpec`（clam-layout/swift/LayoutContracts.swift，
                    契约的权威；汇总表在 docs/clam-contracts.md）：
                    region=sidebar|content 决定落在分隔线哪侧、align=leading|trailing
@@ -59,20 +59,6 @@ clam-layout/       占 root 槽：分栏 + WebView 排版 + sidebar 槽 + 开放
 clam-sidebar/      占 sidebar 槽：原生会话侧边栏（搜索 + 全部/按时间/待处理三枚胶囊 +
                    两行会话行 + 工具栏「筛选」菜单）。**数据面在 node 半边**
                    （订宿主服务与事件，投影经桥推 JSON；Swift 只管画和发动作）
-clam-header/       **2026-08-29 起在编排表里注释停用**（效果不满意，退回 web header；
-                   代码原样保留，解开 cordis.patch.yml 那两行即恢复）。
-                   把主内容区的 web header 搬进原生：**标识走 window.title/subtitle**
-                   （Mail / Notes 那条裸文字），工具栏只剩四格可操作的原生
-                   `NSToolbarItem` 子类（段控=ItemGroup / 子代理与 mode=MenuToolbarItem
-                   +badge / 导出=按钮），排版、显示模式、溢出全归 AppKit。
-                   **判据是一条设计原则：圆胶囊是"可操作"的承诺**——锁定后的
-                   agent preset、只读的后台任务都退进 subtitle，不做成假按钮。
-                   **两条通道同时用**：
-                   active view 走页内桥（真相在浏览器），会话与 preset 走 node 半边
-                   （真相在 dsh）。web header 由 client 半边折叠，插件退休就自动还原。
-                   面包屑不只是文字：末段带**子代理计数下拉**、子代理段是**兄弟切换器**，
-                   点开是原生重画的 catalog 树——**子代理会话不进侧边栏，这是唯一入口**
-                   （docs/native-subagent-catalog.md）
 clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。**数据面在 node 半边**
                    （订 apiProxy.events.mux 的只读广播流，维护一份待办清单；按钮答案
                    经 apiProxy.respond 回去，先到先得）；Swift 只管发通知、判"要不要
@@ -807,7 +793,7 @@ BackendManager 自己那套退避管不了这一段——它只监护自己亲�
   `NSVisualEffectView` **采不到** WKWebView 那层 remote layer 的像素（和
   `NSGlassEffectView` 并排压在 WebView 上实测，只有后者糊得动网页文字）；
   `NSGlassEffectView` 采得到，但自带一圈边缘高光，那是液态玻璃的造型语言、关不掉。
-  所以带子是 `clam-header/lib/client.js` 的 `backdrop-filter` ——
+  所以带子是 `clam-nativeify/lib/client.js`（HEADER 段）的 `backdrop-filter` ——
   **页面 compositor 是唯一看得见内层滚动的东西**，这不是将就。
 - **macOS 26 的 scroll edge effect 不是"一条带子"，是"浮元素的形状"**：
   Apple 原话是效果 "applied underneath toolbar items / titlebar accessories"、
@@ -864,7 +850,8 @@ BackendManager 自己那套退避管不了这一段——它只监护自己亲�
 - **`withObservationTracking` 的观察者没人强持有就静默死掉**，而且**只在冷启动
   露馅**：热替换时 model 从保管箱拿到种子，构造时那一次同步 push 就把该显示的
   都显示了，看起来完全正常；冷启动没有种子，第一推全是「藏起来」，界面一片空白，
-  日志却写着「上线 5 格」。见 clam-header 的 `HeaderToolbarSync.start()`。
+  日志却写着「上线 N 格」。（原始案发地是一个已删除的工具栏同步器；同一个形状在
+  任何"model 有保管箱种子、冷启动没有"的地方都会重演。）
 - **`NSHostingView` 的默认压缩阻力（750）会把别的工具栏项挤进溢出菜单**：
   这块矩形一步不让，AppKit 只好去收别人。要它先自己截断就把
   compressionResistance 降到 `.defaultLow`、hugging 拉到 `.defaultHigh`。

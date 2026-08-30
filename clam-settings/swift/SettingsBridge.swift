@@ -60,7 +60,7 @@ final class SettingsBridge {
             self.log("动作 \(action) 超时（桥断了？）")
             // **只报 code，不带文案**：这一条失败是我们自己合成的（上游根本没回话），
             // 显示成什么字由 `L.failureMessage` 查表决定——桥这一层不认识界面语言，
-            // 也不该认识（与 clam-sidebar / clam-header 的 `error` 帧同一套办法，
+            // 也不该认识（与 clam-sidebar 的 `error` 帧同一套办法，
             // 计划 §8-4）。
             callback(Ack(ok: false, error: nil, code: "TIMEOUT", value: nil))
         }

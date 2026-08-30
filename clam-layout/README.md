@@ -90,6 +90,6 @@ host.events.emit(LayoutToolbar.updateTopic,
 槽名 `sidebar` 从 `public enum LayoutSlots` 引。
 
 **「新建会话」不在工具栏上**：那一格让给了 clam-sidebar 的「筛选」，眼下整条工具栏
-只有这一条贡献（clam-header 停用后它那四格也没了）。⌘N 走的是 clam-layout 自己的
+只有这一条贡献。⌘N 走的是 clam-layout 自己的
 `commands` 声明 → 壳 emit `menuCommand` → 本插件应答；`LayoutPlugin.newSessionTopic`
 这条主题仍然在，留给第三方按钮。

@@ -63,7 +63,7 @@
    clam-notify ──不占槽、应答 system.notification.* hook、provide clamPending
    clam-settings ──不占槽、写 clam.settingsOwner
    clam-nativeify ──不占槽、读 clam.webView
-   clam-header（停用）──贡献 toolbar 四条、订 clam.page.currentSession
+   （原生 header 插件，当时已停用，后于 2026-08-30 删除）──贡献 toolbar 四条
 ```
 
 五条跨插件通道及其当前用量：
@@ -204,7 +204,7 @@ header 停用后 `clam.toolbar.*` 与 `clam.window.title` 五条通道当前只�
 |---|---|---|---|---|
 | 1 | `clam-bridge/lib/index.js:126-141` `bridge.app.{announce,onRestartRequest}` + `:225` `app-restart` 帧分支 | clam-app | 无害（warn 一句） | **可以**：降级成普通 `expose`/`push` 频道 |
 | 2 | `clam-app/lib/index.js:154-192` 九个快捷键 + `MainWindowController.swift:1379-1398` 默认表 + `:630-650` 词汇 + `:1072-1105` 九个发布点 | layout(2) / sidebar(7) / settings(1) | 静默无事（设计如此） | **可以**：§2.1 的命令注册表 |
-| 3 | `clam-layout/swift/ToolbarContribution.swift:60-70` `clam.window.title` + `requestTitle` / `requestTitlebarMetrics` 两条 request 通道 | clam-header（注释 `:64` 直接点名） | 通道空转 | **可以**：`emitSticky` 就是为此设计的，迁过去即可删掉两条 request 通道，纯减法 |
+| 3 | `clam-layout/swift/ToolbarContribution.swift:60-70` `clam.window.title` + `requestTitle` / `requestTitlebarMetrics` 两条 request 通道 | 原生 header 插件（注释 `:64` 直接点名） | 通道空转 | **可以**：`emitSticky` 就是为此设计的，迁过去即可删掉两条 request 通道，纯减法 |
 | 4 | `clam-layout/swift/LayoutPlugin.swift:36` `settingsOwner == nil` 才弹页内 modal | clam-settings | 退回 dsh 页内 modal（正确降级） | 已是通用机制（存在性令牌，非插件名），保留 |
 | 5 | `SystemDelegateRelay.swift:43-46` 两个 hook 名 | clam-notify | 走系统默认 | 机制已通用；只需把名字收成一处常量 |
 | 6 | `clam-settings/swift/FieldNotes.swift:122/128/248/254` 为 `clam-nativeify`/`clam-notify` 写死的中英文案 | 那两个插件 | 退回机械美化（`humanize`） | **可以**：schema 已有 `.description()`，缺 ns 级 title/summary/featured 三个元数据字段，加上即可让插件自带文案 |
@@ -366,10 +366,10 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 | 桥帧表漏 `app-build` / `app-restart`；`createSwiftPlugin` 样例漏 `sharedModules` / `Config`；只教相对路径未提 `./plugin` | `clam-bridge/README.md:24-60` |
 | toolbar metadata 只列 4 键（实际 12），全文未提 `clam.toolbar.update` | `clam-layout/README.md:50-55` |
 | **"连自家新建会话也是一条普通贡献"**：`clam-layout/swift/` 里一个 `contribute` 调用都没有，工具栏眼下只剩 sidebar 的「筛选」一条 | CLAUDE.md |
-| `clam-header/README.md` 通篇现在时，从不说自己已停用 | 全文 |
+| 原生 header 插件的 `README.md` 通篇现在时，从不说自己已停用 | 全文 |
 | DSHKit 作为现行选项出现 | `clam-settings/README.md:142`、`lib/index.js:6`、`docs/clam-settings-plan.md:136` |
 | `ClamHooks.swift:99` "⌥⌘D 面板会列它"——零调用方 | `ClamHooks.swift:99` |
-| 根 README 仓库结构漏 `clam-notify/` `clam-settings/` `clam-header/` **`surfclam/`** `tools/` | `README.md:68-79` |
+| 根 README 仓库结构漏 `clam-notify/` `clam-settings/`、当时那个 header 插件、**`surfclam/`** `tools/` | `README.md:68-79` |
 
 ---
 
@@ -461,7 +461,7 @@ dsh 源码随包发布，`~/.dsh/profiles/node_modules/@deepseek-ai/cordis/src/`
 **§5.4 那张过时表的每一项都已修**（表本身原样保留，它记录的是审计当时的事实）：
 根 `README.md` 的 macOS 版本与仓库结构、`clam-app/README.md` 的通知线措辞/目录职责表/
 配置表、`clam-bridge/README.md` 的帧表与样例、`clam-layout/README.md` 的 metadata 一节、
-`clam-header/README.md` 顶部的停用提示、clam-settings 两处的 DSHKit 措辞、
+header 插件 README 顶部的停用提示、clam-settings 两处的 DSHKit 措辞、
 `ClamHooks.swift:99` 那句假话、CLAUDE.md 的四处。
 
 P1 / P2 尚未开工。`clam.activateWindow`、`Key.conversationSurface`、`Key.settingsOwner`

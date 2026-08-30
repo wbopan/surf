@@ -86,7 +86,7 @@
 - 不碰 `LayoutPlugin.swift`（A 在改它）。
 
 文件归属：`clam-layout/swift/{LayoutContracts,LayoutSplitController,ToolbarContribution}.swift`、
-`clam-sidebar/swift/SidebarPlugin.swift`、`clam-header/swift/{HeaderPlugin,HeaderToolbar}.swift`。
+`clam-sidebar/swift/SidebarPlugin.swift`、原生 header 插件的 `swift/{HeaderPlugin,HeaderToolbar}.swift`。
 
 ### Wave 2
 
@@ -104,7 +104,7 @@
   对应的 request 逻辑。**`bridge.app` 保留不动**（它是壳的自更新通道，clam-app 本质是壳的 node 半身，审计判为可接受）。
 
 文件归属：`clam-bridge/lib/index.js`（Wave 1 已合入，可以动全文）、`clam-bridge/package.json`、`surfclam/bin/surfclam.js`、
-`clam-layout/swift/ToolbarContribution.swift`、`clam-header/swift/{HeaderPlugin,HeaderToolbar}.swift`、`clam-layout/swift/LayoutSplitController.swift`（若 title 发布点在这里）。
+`clam-layout/swift/ToolbarContribution.swift`、原生 header 插件的 `swift/{HeaderPlugin,HeaderToolbar}.swift`、`clam-layout/swift/LayoutSplitController.swift`（若 title 发布点在这里）。
 
 **D. 文档（P0 #6）**
 
@@ -117,7 +117,7 @@
   源码里对应的注释改成一句"约定见 docs/clam-contracts.md"，不再各自维护一份长注释。
 - 修审计 §5.4 那张过时表里的每一项（各 README、CLAUDE.md、`ClamHooks.swift:99` 那句假话）。
   CLAUDE.md 里 clam-layout 那段"连自家新建会话也是一条普通贡献"改成事实；`macOS 26+` → `27`；
-  clam-header README 顶部加"已停用"；`clam-app/README.md` 的目录表与配置表补全。
+  原生 header 插件的 README 顶部加"已停用"；`clam-app/README.md` 的目录表与配置表补全。
 - 审计文档 `docs/architecture-coupling-audit.md` 末尾加"§7 执行日志"，记 P0 各项的落地 commit。
 
 文件归属：`docs/**`、各 `README.md`、`CLAUDE.md`、`clam-app/host/Sources/ClamSDK/ClamHooks.swift`（**只改注释**）。
@@ -144,7 +144,7 @@ xcrun swiftc -emit-module -module-name ClamLayout -emit-module-path "$TMP/ClamLa
   -I "$MODS" -target arm64-apple-macos27.0 -language-mode 5 clam-layout/swift/*.swift
 xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   -target arm64-apple-macos27.0 -language-mode 5 clam-sidebar/swift/*.swift
-# clam-header / clam-notify / clam-settings / clam-nativeify 同理
+# clam-notify / clam-settings / clam-nativeify 同理
 
 # 壳（只有 A 需要）：xcodegen + xcodebuild，命令照 clam-app/host/scripts/dev.sh，务必 -derivedDataPath build
 ```
@@ -176,7 +176,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   验证：三份 metadata 与改前**逐键等价**（唯一差别是 subagents/export 两格不再写
   `spaced: false`，消费方读的是 `== true`，且 `refreshToolbarSnapshot` 的签名走的是
   `Self.spaced(of:)` 归一化后的值，签名也不变）。离线 typecheck 全绿：
-  `ClamLayout` `-emit-module` 通过，`ClamSidebar` / `ClamHeader` `-typecheck` 通过
+  `ClamLayout` `-emit-module` 通过，`ClamSidebar` 与当时那个 header module `-typecheck` 通过
   （sidebar 只剩 `SidebarFilter.swift:79` 那条 Swift 6 actor 隔离警告，先于本次改动存在）。
 
   遗留：① 没跑 `./dev` 的整合验收（归 Wave 3）；② `ToolbarItemState` 那条**活通道**的
@@ -290,7 +290,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
 
   **request 通道删干净**：`clam.window.requestTitle` 与
   `clam.layout.requestTitlebarMetrics` 两条常量、clam-layout 对后者的订阅、
-  clam-header 对前者的订阅（`HeaderToolbar.start()`）与对后者的发送
+  header 插件对前者的订阅（`HeaderToolbar.start()`）与对后者的发送
   （`HeaderPlugin` activate 里那句 `emit`）全部删除；两条正向通道
   （`clam.window.title` 在 `HeaderToolbar.emitWindow`、`titlebarMetrics` 在
   `LayoutSplitController.publishTitlebarMetrics`）改 `emitSticky`，
@@ -302,13 +302,13 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   CLAUDE.md 那句描述是过时的，已告知 D）。`bridge.app` 原样未动。
 
   验证：`node --check` 两个改过的 JS 全绿；`node --test clam-sidebar/test/*.test.js`
-  18/18；离线 typecheck `ClamLayout` `-emit-module` 通过，`ClamHeader` /
-  `ClamSidebar` `-typecheck` 通过（sidebar 仍只有 `SidebarFilter.swift:79`
+  18/18；离线 typecheck `ClamLayout` `-emit-module` 通过，`ClamSidebar`
+  与当时那个 header module `-typecheck` 通过（sidebar 仍只有 `SidebarFilter.swift:79`
   那条先于本次存在的 actor 警告）；`register()` 的三条 fail-loud 各写了最小
   node 脚本，六种坏输入全部如期抛、合法登记照常通过。
 
   遗留：① 没跑 `./dev` 的整合验收（归 Wave 3）——特别是"header 已停用但必须能
-  编译"只验到 typecheck 这一级；② **粘性标识有一个窄口子**：clam-header 退休时
+  编译"只验到 typecheck 这一级；② **粘性标识有一个窄口子**：header 插件退休时
   不推空标识，所以总线上会留着它最后那份 title；此后若 clam-layout 换代，
   新一代会从总线捡回这个属于过气插件的标题（旧代码那时是空标题）。没在
   `dispose` 里补一句"还回标识"是因为热替换的顺序是**新的先启、旧的后清**，
@@ -346,7 +346,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   一个字没动，是文档去指它们。
 
   修过时项（审计 §5.4 逐项）：根 `README.md`（macOS 26+ → 27+ 并注明部署目标出处；
-  仓库结构补 `surfclam/` `clam-notify/` `clam-settings/` `clam-header/` `tools/`；
+  仓库结构补 `surfclam/` `clam-notify/` `clam-settings/` `tools/`（当时还有一份 header 插件）；
   加一节指向两份新文档）；`clam-app/README.md`（"通知线已丢弃"改成事实——
   它以 clam-notify 的形态落地了，壳里只剩不认识通知语义的中转站；目录职责表补
   `GenerationLedger` / `WebPolicy` / `SystemDelegateRelay` 并给后两者各写一段
@@ -359,7 +359,7 @@ xcrun swiftc -typecheck -module-name ClamSidebar -I "$MODS" -I "$TMP" \
   （metadata 一节重写成"拓扑 `ToolbarSpec` / 流量 `clam.toolbar.update`"两小节，
   指向 `LayoutContracts.swift`；末尾"新建会话不在工具栏上"补上现状——
   整条工具栏眼下只有「筛选」一条，⌘N 走 commands 声明）；
-  `clam-header/README.md` 顶部加停用提示块（并说明"下文全是现在时"）；
+  header 插件的 `README.md` 顶部加停用提示块（并说明"下文全是现在时"）；
   `clam-settings/README.md` 与 `lib/index.js` 顶注的 DSHKit 措辞改成事实
   （随 M10 退役，眼下唯一共享 module 是 ClamSDK）；`ClamHooks.swift:99`
   那句"⌥⌘D 面板会列它"改成"眼下全仓零调用方，遍历它是 P1-11 的事"

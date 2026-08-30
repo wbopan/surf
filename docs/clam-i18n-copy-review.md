@@ -5,7 +5,7 @@
 
 **只列改过的**。没改中文的条目不在这里——各插件完整的字符串表在
 `clam-app/host/Sources/Strings.swift`、`clam-sidebar/swift/Strings.swift`、
-`clam-header/swift/Strings.swift`、`clam-settings/swift/Strings.swift`、
+`clam-settings/swift/Strings.swift`、
 `clam-notify/lib/strings.js`。判据是计划 §6：zh 对照 macOS 系统 App 用词、菜单项动词开头、
 全角标点、不用「您」、不卖萌；en 菜单与按钮 Title Case、描述句 Sentence case、
 单复数正确、对齐系统既有英文。
@@ -43,14 +43,6 @@
 | 将把「X」从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在「未分组」下。（删除工作区对话框正文） | 将把「X」从工作区列表中移除。文件夹与会话记录保留，其中的会话会显示在「未分组」下。 | “X” will be removed from the workspace list. The folder and its session history are kept, and its sessions move under “Ungrouped”. | 一句话里两个「会」读着别扭；「其会话」写成「其中的会话」 |
 | 选择要作为工作区的文件夹（NSOpenPanel 说明） | 选取要作为工作区的文件夹 | Choose a folder to use as a workspace. | macOS 简中把 choose 译作「选取」 |
 | 当前筛选下没有会话（空态） | 当前筛选条件下没有会话 | No sessions match the current filters. | 补「条件」，「筛选」在中文里是动词，直接当名词读不顺 |
-
-## clam-header
-
-| 原文 | 新 zh | en | 改动理由 |
-|---|---|---|---|
-| 未命名会话（没有标题的会话在 window.title 里的称呼） | 新会话 | New Session | ⚠️ 与 clam-sidebar、dsh 的 `session.new` 同词，但没有标题的会话未必是新的 |
-| N/M 个任务运行中（window.subtitle） | 2/5 个后台任务运行中 | 2 of 5 background jobs running | 补上「后台」，与 dsh `ui-jobs` 词典同词 |
-| 运行中 / 已停止（子代理菜单项的次要行） | 正在运行 / 已停止 | Running / Stopped | 抄 dsh 的 `activity.running`，也与 clam-sidebar 的状态词对齐 |
 
 ## clam-settings
 
@@ -112,14 +104,14 @@
 选项也一起翻了：`cmd` / `cmd+alt` / `off` 在界面上显示成 `⌘1–9` / `⌥⌘1–9` / 「关闭」`Off`
 ——这一格挑的是修饰键，把配置值 `cmd` 当标签既不像键也不像话。
 
-### 出厂 preset 的名字与说明（clam-header + clam-settings，4×2 条）
+### 出厂 preset 的名字与说明（clam-settings，4×2 条）
 
 `agentPresets.list` 给的 `name` 是 preset 目录里那份文件写死的字（这台机器上是中文），
 **不随语言变**；而 dsh 的网页对 `trust === "system"` 的四个内建 preset 改查自己的词典
 （`dsh-client-ui-agent-preset` 的 `presetDisplayText`）。不照做就会出现
 「网页写 Standard mode、原生写『标准模式』」——正是不变量 2 禁止的分叉。
-所以 i6 把上游那张表**照抄**进 `L.builtInPreset` / `L.builtInPresetSummary`
-（clam-header 与 clam-settings 各一份），**id 与措辞逐字对齐上游**：
+所以 i6 把上游那张表**照抄**进 `L.builtInPreset` / `L.builtInPresetSummary`，
+**id 与措辞逐字对齐上游**：
 
 | id | zh | en |
 |---|---|---|
@@ -144,9 +136,6 @@
   zh 要不要跟着改成「按日期」没定，改了两处胶囊文案都得动。
 - **clam-sidebar** · 出错了 → 已出错 / Failed —— 选「已出错」是为了与同组
   「已归档／已完成」句式统一，但状态词用「失败」更常见，二选一。
-- **clam-header** · 未命名会话 → 新会话 / New Session ——
-  与 clam-sidebar、dsh 的 `session.new` 统一是硬要求，但「新会话」对一个
-  跑了很久却始终没有标题的会话是不准确的；要么三处一起改成别的词。
 - **clam-settings** · llm / agentPresets 服务不在场，这一页填不了。→ …未在场，这一页暂时不可用。
   —— 「暂时」暗示等一等就好，而服务不在场通常要重启 dsh 才变；去掉「暂时」也成立。
 - **clam-settings** · 还没有 → 暂无 / None ——「暂无」偏公文腔，
@@ -162,9 +151,6 @@
   照抄 dsh 上游 `LOCALES` 的写法。语言选择器列出各门语言时用那门语言自己的自述名是
   通行做法（macOS 的「语言与地区」亦然）；写成「中文／英文」反而会让只认得 English
   的人找不到自己那项。
-- **clam-header 段控开局的 `Chat` / `Trajectory`**（`HeaderPlugin.swift`）：
-  它们只是「页面还没报上来」那一瞬的占位，真名单是 `model.tabs`——由 dsh 的
-  ui-conversation 按它自己的 locale 给。翻了会出现「原生写『对话』、页面写『Chat』」的分叉。
 - **`SettingsFormat.humanize` 的兜底标题两种语言共用一份**（`JSONValue.swift` / `FieldNotes.title`）：
   它出的是 `maxOutputBytes` → `Max Output Bytes` 这种由真 key 机械拆出来的词，
   本来就不是「中文文案的英文版」。zh 界面下露出英文字段名是可接受的——那正是配置文件里

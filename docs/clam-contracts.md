@@ -193,7 +193,7 @@ host.events.emit(LayoutToolbar.updateTopic,
 | 主题 | 常量 | 粘性 | 发布方 | 订阅方 | 载荷 |
 |---|---|---|---|---|---|
 | `clam.menu.command` | `Topic.menuCommand` | 否 | 壳 | layout / sidebar / settings | `command`（+ `digits` 的 arg） |
-| `clam.locale` | `Topic.locale` | ✅ | 壳 | layout / sidebar / settings / header | `locale`（`zh`\|`en`） |
+| `clam.locale` | `Topic.locale` | ✅ | 壳 | layout / sidebar / settings | `locale`（`zh`\|`en`） |
 | `clam.web.query` | 两侧各有一份 internal 常量：壳的 `MainWindowController.webQueryTopic`、layout 的 `LayoutPlugin.webQueryTopic` | ✅ | 占 `root` 的插件 | 壳 | `[参数名: 值]`。壳不设白名单也不解释，只拼进 URL；变了就重载页面 |
 | `clam.endpointChanged` | `Topic.endpointChanged` | 否 | 壳 | **当前无人** | `httpBase` |
 | `clam.connection.state` | `ConnectionController.stateTopic` | ✅ | 壳（连接状态机） | clam-settings「连接」栏 | `phase`（`searching`\|`connecting`\|`connected`\|`disconnected`\|`unreachable`\|`idle`）/ `mode`（`unset`\|`auto`\|`fixed`\|`managed`，**此刻生效中的那份**）/ `managed`（Bool）/ `attempts` / `bridgeConnected` / `pageReady` /（可选）`url`（= `endpoint`，给只认字符串的消费方）·`fixedURL`·`endpoint`·`endpointSource`·`isOwn`·`reason`·`failure`·`statusCode` / `candidates[]`（`url`·`healthy`·`port`·`startedAt`·`source`·`failure`）|
@@ -201,7 +201,7 @@ host.events.emit(LayoutToolbar.updateTopic,
 | `clam.page.<type>` | `Topic.pagePrefix + type` | 视消息 | 壳（页内桥转发） | 各插件 | 见 §5 |
 | `clam.toolbar.update` | `LayoutToolbar.updateTopic` | 否 | 贡献方 | clam-layout | 见 §2.2 |
 | `clam.toolbar.activate` / `.menuSelect` / `.menuOpen` | `LayoutToolbar.*` | 否 | clam-layout | 贡献方 | 见 §2.3 |
-| `clam.window.title` | `LayoutToolbar.windowTitleTopic` | ✅ | 标识生产方（clam-header，**已停用**） | clam-layout | `title` / `subtitle`。空标题 = 交回给壳 |
+| `clam.window.title` | `LayoutToolbar.windowTitleTopic` | ✅ | 标识生产方（**眼下无人生产**：主内容区回到 web header 之后没有插件在产标识） | clam-layout | `title` / `subtitle`。空标题 = 交回给壳 |
 | `clam.layout.titlebarMetrics` | `LayoutToolbar.titlebarMetricsTopic` | ✅ | clam-layout | 标识生产方 | `inset`（pt）。显示模式一变就变 |
 | `clam.layout.newSession` | `LayoutPlugin.newSessionTopic`（internal，外部照抄字符串） | 否 | 任何人 | clam-layout | — |
 | `clam.activateWindow` | `Topic.activateWindow` | — | **无** | **无** | **死词汇**，P1 清 SDK 时删 |
@@ -233,11 +233,10 @@ window.webkit.messageHandlers.clam.postMessage({ type: "yourType", ... })
 | type | 主题 | 发送方 | 接收方 |
 |---|---|---|---|
 | `ready` | `Topic.pageReady` | 壳注入的引导脚本 | 壳自用（`capabilities`） |
-| `currentSession` | `Topic.pageCurrentSession`（**粘性**） | clam-layout 的 client 半边 | clam-notify / clam-header |
+| `currentSession` | `Topic.pageCurrentSession`（**粘性**） | clam-layout 的 client 半边 | clam-notify |
 | `keymap` | `clam.page.keymap` | clam-layout 的 client 半边（真相是 `clam-shortcuts` 设置） | 壳 |
 | `locale` | `clam.page.locale` | clam-layout 的 client 半边（真相是 dsh 的 `locale` 设置） | 壳（转成 `clam.locale` 粘性广播） |
 | `debug` | `clam.page.debug` | 各 client 半边 | 壳（写日志） |
-| `headerTabs` / `headerReady` / `headerDiag` | `clam.page.header*` | clam-header 的 client 半边（**已停用**） | clam-header 的 Swift 半边 |
 
 `pageCurrentSession` / `pageReady` 之所以在 SDK 里有常量，只因为壳自己也要用它们；
 其余动态主题不逐个加常量。
@@ -251,9 +250,9 @@ window.webkit.messageHandlers.clam.postMessage({ type: "yourType", ... })
 
 | 键 | 常量 | 类型 | 谁写 | 谁读 |
 |---|---|---|---|---|
-| `clam.webView` | `ClamObjects.Key.webView` | `WKWebView` | 壳 | layout / nativeify / header |
+| `clam.webView` | `ClamObjects.Key.webView` | `WKWebView` | 壳 | layout / nativeify |
 | `clam.endpoint` | `.endpoint` | `NSURL` | 壳 | **当前无人** |
-| `clam.conversationSurface` | `.conversationSurface` | `ClamConversationSurface`（协议定义在 **clam-layout**，读者要 `import ClamLayout`） | clam-layout | sidebar / notify / header |
+| `clam.conversationSurface` | `.conversationSurface` | `ClamConversationSurface`（协议定义在 **clam-layout**，读者要 `import ClamLayout`） | clam-layout | sidebar / notify |
 | `clam.settingsOwner` | `.settingsOwner` | `NSWindow`（**只看在不在**） | clam-settings | clam-layout（有主就不弹页内 modal） |
 
 上面四个是 SDK 里有常量的。**其余键是插件私有的跨代锚**，键名写在各自的 Swift 文件里，
@@ -263,7 +262,6 @@ window.webkit.messageHandlers.clam.postMessage({ type: "yourType", ... })
 |---|---|---|
 | `clam.sidebar.snapshot` | clam-sidebar | 上一代收到的最后一份 snapshot（`NSDictionary`），新代先拿它渲染再要 fresh |
 | `clam.notify.inbox` / `.presented` / `.currentSession` / `.swept` | clam-notify | 待办清单、已发通知账、当前会话、"这个进程已经清过一次"的标记 |
-| `clam.header.snapshot` / `.tabs` | clam-header | 同 sidebar |
 
 > **`.conversationSurface` 与 `.settingsOwner` 是业务词汇寄居 SDK**（协议本身都不在
 > SDK 里），P1 清 SDK 时会挪进 clam-layout 的 `.swiftmodule`。别再往 `ClamObjects.Key`

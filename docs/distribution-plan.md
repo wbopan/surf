@@ -1421,7 +1421,7 @@ M5 才涉及外部成本。
   新增 `host/scripts/pack-payload.sh`（门卫：`$CONFIGURATION != Release` 直接 exit 0）
   + `pack-payload.mjs`（全部逻辑），挂在 `project.yml` 的 `postBuildScripts`
   里 `embed-modules.sh` 之后。装哪些包**解析 `surfclam/cordis.patch.yml`**
-  （只认没被注释的 `name: "@wenbo/…"` 行，所以停用的 `clam-header` 自动不进包），
+  （只认没被注释的 `name: "@wenbo/…"` 行，所以停用的插件自动不进包），
   module 名 `import` 自新抽出的 `clam-bridge/lib/module-name.js`。
   实测产物：**9 个包 / 5 个 Swift module / 75 个文件 / 853 KB**，
   `ClamNode` 516 KB + `ClamPlugins` 492 KB，与 §2.1 的预算（512 KB / ~490 KB）吻合；

@@ -4,6 +4,10 @@
 > 正文里的 `dash` / `dash-*` / `Dash*` 一律是当时的名字,未作替换。项目已于 2026-08
 > 整体更名:App/项目 → **surfclam**(伞包 `@wenbo/surfclam`),内部插件 →
 > **`@wenbo/clam-*`**,Swift → **`Clam*`**(DashSDK→ClamSDK)。当前事实以根 CLAUDE.md 为准。
+>
+> **2026-08-30 补记**:文中那个原生 header 插件(`dash-header`)与它的计划文档
+> `docs/native-header-plan.md` 已整个删除——主内容区回到 dsh 自己的 web header,
+> 权威计划是 `docs/web-header-native-match-plan.md`。相关执行日志原样保留。
 
 > 本文档面向执行者(人或模型),假设对本仓库无前置了解。所有上游事实均已对照
 > harness `0.1.1-rc.2`(`~/Library/Application Support/io.wenbo.dsharness/harness/current`)

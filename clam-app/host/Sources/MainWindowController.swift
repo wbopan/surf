@@ -1151,7 +1151,7 @@ final class MainWindowController: NSWindowController, WKNavigationDelegate, NSWi
         keymapSubscription = nativeHost.events
             .subscribe(ClamEventBus.Topic.pagePrefix + "keymap") { [weak self] payload in
                 // 总线的约定是"只在主线程 emit/subscribe"，但它的回调类型不带隔离，
-                // 得自己声明一次（与 clam-header 那边同款）。
+                // 得自己声明一次。
                 MainActor.assumeIsolated {
                     // 载荷就是页面 postMessage 的那个字典本身（含 type 字段）。
                     self?.applyKeymap(payload["values"] as? [String: Any] ?? [:])

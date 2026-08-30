@@ -28,7 +28,7 @@ struct LocalizedText {
 
 /// clam-settings 的全部**用户可见**文案，zh 与 en 并排写在同一行（审校时一眼对照）。
 ///
-/// ## 纪律（`docs/clam-i18n-plan.md` §4/§5/§8，与壳、clam-sidebar、clam-header 同一套）
+/// ## 纪律（`docs/clam-i18n-plan.md` §4/§5/§8，与壳、clam-sidebar 同一套）
 ///
 /// - **只收用户看得见的字**。`host.log(...)` 与 node 半边的日志一律留在原地、
 ///   保持中文：日志的读者是蹲在终端前的开发者与 agent，跟着界面语言变只会让

@@ -119,7 +119,7 @@ export default createSwiftPlugin({
 				// **关 ≠ 裸穿**：关掉退到官方 Hard 形态（不透明底 + 细线），
 				// 细线两种形态都在、不设开关——内容穿过边缘时那根线是"这里有
 				// 边界"的最低限度陈述。CSS 侧的消费在 client 半边
-				// `data-clam-header-noblur` 那几条规则。
+				// `data-clam-webheader-noblur` 那几条规则。
 				headerScrollBlur: z.boolean().default(true),
 			}), {
 				// 改完立刻重画，不需要重启：client 半边订着这个 ns，值一变就重写

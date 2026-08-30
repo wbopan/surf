@@ -1,14 +1,24 @@
 # web header 贴合 macOS 27 工具栏——计划
 
-> 2026-08-29。clam-header（原生重画）已在编排表里停用，主内容区回到 dsh 自己的 web header。
+> 2026-08-29。原生重画那条路（曾经的 header 插件）已停用，主内容区回到 dsh 自己的 web header。
+> （2026-08-30 补记：那个插件的代码已整个删除，本文是主内容区 header 的唯一计划。）
 > 本计划不再重做原生，而是**只用 CSS** 把 web header 调到 Apple 官方工具栏的几何、字体与控件形态。
 > 官方数值全部来自 Apple 的 macOS 27 UI Kit（Sketch 版，`.scratch/apple-design/`，`lookup.py` 可查），
 > 现状数值来自 dsh 0.1.1-rc.2 的 CSS 源码与运行中 App 的截图。设计稿见本文末尾的画布链接。
 
 ## 0. 为什么走 CSS 而不是原生
 
-- 原生重画（clam-header）要自己复刻 dsh header 的**全部内容**——面包屑、子代理目录、preset、后台任务、导出——
+- 原生重画（做过一版，已删）要自己复刻 dsh header 的**全部内容**——面包屑、子代理目录、preset、后台任务、导出——
   内容一变就漂移、一升级就过时。CSS 只改**形**，内容和行为仍归 dsh。
+- **连"占 `conversation.session.header` 槽自己画"都不可行**（当年读 dsh 源码得的三条证据，
+  与那个插件在不在无关，仍然成立）：① 那个槽共享的 `chatStore` 是
+  `dsh-client-ui-conversation` 的 `apply` 里的**局部变量**，从不导出，对外服务面
+  `ctx.conversation` 一个 view 相关的成员都没有；② `SlotRegistry` 对 `store:` 工厂是
+  "铸新 handle"，实例缓存的键是 handle × scope key，第三方自己 `createChatStore()`
+  拿到的是另一个实例，写进去内置会话体读不到；③ 框架发给 session 域槽组件的只有
+  `useSession` / `sessionId` / `useProjection`，`view` 住在私有的 `ChatStoreState` 里。
+  `createChatStore` 的 `persist: "dsh.conversation.chat"` 也不是通道——rehydrate 只在
+  实例创建时发生，外部写 storage 不即时生效。
 - 页面里已经能画出接近原生的质感：clam-nativeify 的玻璃胶囊四态（浅/深 × 激活/失活）、
   `-apple-visual-effect` 真材质（`docs/spikes/apple-visual-effect/`）。剩下的差距是几何与字体，正是 CSS 的事。
 - 判据不变：**圆胶囊是"可操作"的承诺**。不可点的东西（锁定的 preset）退成副标题，不做假按钮。
@@ -164,8 +174,9 @@ clam-nativeify 现有的字号层（`typeTokens()`）够不着它们，必须逐
 
 把 header 从文档流拿出来：`position: absolute; top: 0; left: 0; right: 0; z-index: 10`，
 `[data-conversation-scroll] { padding-top: 52px }`（只改滚动起点，不 inset 内容——
-`docs/native-header-plan.md` §6.5 的裁定沿用），背景 = `bg-base` 55% + `backdrop-filter: blur(8px) saturate(180%)`
-（clam-header client 半边那条带子的配方原样搬来，`:269-292`），底边 1px `rgba(0,0,0,.05)`。
+**内容就该从工具栏底下穿过**，那是 macOS 26 想要的样子；当年做过一版让内容避让的
+top inset，整体回退了），背景 = `bg-base` 55% + `backdrop-filter: blur(8px) saturate(180%)`
+（配方原样搬自当年那版原生 header 插件的 client 半边），底边 1px `rgba(0,0,0,.05)`。
 套件的 Hard 风格是**纯色**；Soft（渐变糊）是 Safari 专用 SPI，页面里 backdrop-filter 就是最接近的。
 风险：内容穿过时 header 上的胶囊与文字要保证对比度——胶囊有玻璃底没问题，标题需要
 `text-shadow: 0 0 8px var(--bg)` 之类兜底；做完截图看长回复滚过标题时的可读性再决定留不留。
@@ -194,9 +205,9 @@ clam-nativeify 现有的字号层（`typeTokens()`）够不着它们，必须逐
 ## 6. 执行日志
 
 - 2026-08-29：**§3.0～§3.4 落地**（§3.5 滚动穿透按约定不做）。三笔提交：
-  `cf61b7a` 编排表停用 clam-header · `bd7cefe` §3.0 壳侧放行 · `ff4ac8a` §3.1–3.4 CSS。
+  `cf61b7a` 编排表停用原生 header 插件 · `bd7cefe` §3.0 壳侧放行 · `ff4ac8a` §3.1–3.4 CSS。
 
-  **前提被推翻**：本文开头写的「clam-header 已在编排表里停用」是错的——那两行从来
+  **前提被推翻**：本文开头写的「原生 header 插件已在编排表里停用」是错的——那两行从来
   没被注释过（`git log -- surfclam/cordis.patch.yml` 只有两笔改名提交）。它一上线就
   `scope=full` 把整条 web header 折掉，CSS 那套无处落脚。按计划的前提把它停用了，
   原生那条路的代码一行没删，去掉两行注释即可回去。

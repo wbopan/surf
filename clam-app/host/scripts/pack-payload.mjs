@@ -10,7 +10,7 @@
  * 四条不变量：
  *
  * 1. **装哪些包以 `surfclam/cordis.patch.yml` 为准**（编排表是唯一真相）。
- *    注释掉的行不算——`clam-header` 眼下就是这个状态，不该进 bundle。
+ *    注释掉的行不算——停用的插件不该进 bundle。
  * 2. **`ClamNode/` 的目录结构与仓库根一一对应**：clam-* 之间用相对路径 import
  *    （`../../clam-bridge/lib/plugin.js`），兄弟关系一破那些 import 全部落空。
  *    **`clam-app/host/` 不进包**——那是壳自己的源码，进 bundle 就是自我嵌套。
@@ -233,8 +233,8 @@ if (existsSync(stampPath) && existsSync(nodeRoot)) {
 
 // ------------------------------------------------------------ 写盘
 
-// 整体重建而不是增量覆盖：上一轮打进去、这一轮不再在册的包（比如编排表里注释掉的
-// clam-header）必须消失，否则 bundle 里会留一份没人加载的陈尸。
+// 整体重建而不是增量覆盖：上一轮打进去、这一轮不再在册的包（编排表里被注释掉或
+// 整个删掉的那些）必须消失，否则 bundle 里会留一份没人加载的陈尸。
 // **`ClamPlugins/` 不归这里**：它是 prebuild-plugins.mjs 的地盘，那边自己收拾。
 rmSync(nodeRoot, { recursive: true, force: true });
 rmSync(stampPath, { force: true });

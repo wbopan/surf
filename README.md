@@ -91,8 +91,6 @@ clam-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node �
 clam-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。同时是「有什么在等着你」
                    的唯一真相，经 clamPending 服务供给侧边栏那枚「待处理」胶囊
 clam-settings/     原生设置窗口：不占槽、自己一扇窗，编排照抄 dsh 的 Web 设置对话框
-clam-header/       原生会话 header（标识走 window.title/subtitle + 四格工具栏贡献）。
-                   **2026-08-29 起在编排表里注释停用**，代码原样保留
 clam-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS（有 HMR），
                    另有一个薄 Swift 载荷让原生侧跟随 dsh 的 ui-theme
 tools/             跨包的开发工具（shot.sh 截图）。只服务一个插件的工具归那个插件

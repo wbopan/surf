@@ -478,8 +478,9 @@ window.__ModuleLoader__.load({
 		 * 权威计划 `docs/web-header-native-match-plan.md`，数值出自 Apple 官方
 		 * macOS 27 UI Kit（Sketch）的 `Unified Toolbar + Title + Sidebar`。
 		 *
-		 * **为什么是 CSS 而不是原生重画**：原生那条路（clam-header）要自己复刻 header
-		 * 的全部内容——面包屑、子代理目录、preset、后台任务、导出——内容一变就漂移。
+		 * **为什么是 CSS 而不是原生重画**：原生那条路（试过，2026-08 弃了）要自己
+		 * 复刻 header 的全部内容——面包屑、子代理目录、preset、后台任务、导出
+		 * ——内容一变就漂移。
 		 * CSS 只改**形**，内容与行为仍归 dsh。判据不变：**圆胶囊是"可操作"的承诺**，
 		 * 不可点的 preset 退成副标题，不做假按钮。
 		 *
@@ -525,24 +526,24 @@ window.__ModuleLoader__.load({
 				// 特异性：`${S}` 是 (0,1,0)，深色 (0,2,1)，失活 (0,2,1) 排在深色之后
 				// 所以浅色失活赢；深色失活单列一条 (0,3,2) 压住它。
 				S + " {",
-				"  --clam-header-title: rgb(54, 54, 54);",
-				"  --clam-header-subtitle: rgb(178, 178, 178);",
-				"  --clam-header-seg-fill: rgba(0, 0, 0, 0.07);",
-				"  --clam-header-seg-sep: rgba(0, 0, 0, 0.05);",
+				"  --clam-webheader-title: rgb(54, 54, 54);",
+				"  --clam-webheader-subtitle: rgb(178, 178, 178);",
+				"  --clam-webheader-seg-fill: rgba(0, 0, 0, 0.07);",
+				"  --clam-webheader-seg-sep: rgba(0, 0, 0, 0.05);",
 				"}",
 				"body[data-ds-dark-theme] " + S + " {",
-				"  --clam-header-title: rgba(255, 255, 255, 0.96);",
-				"  --clam-header-subtitle: rgb(138, 138, 138);",
-				"  --clam-header-seg-fill: rgba(255, 255, 255, 0.08);",
-				"  --clam-header-seg-sep: rgba(255, 255, 255, 0.06);",
+				"  --clam-webheader-title: rgba(255, 255, 255, 0.96);",
+				"  --clam-webheader-subtitle: rgb(138, 138, 138);",
+				"  --clam-webheader-seg-fill: rgba(255, 255, 255, 0.08);",
+				"  --clam-webheader-seg-sep: rgba(255, 255, 255, 0.06);",
 				"}",
 				":root[data-clam-blur] " + S + " {",
-				"  --clam-header-title: rgb(178, 178, 178);",
-				"  --clam-header-seg-fill: rgba(0, 0, 0, 0.05);",
+				"  --clam-webheader-title: rgb(178, 178, 178);",
+				"  --clam-webheader-seg-fill: rgba(0, 0, 0, 0.05);",
 				"}",
 				":root[data-clam-blur] body[data-ds-dark-theme] " + S + " {",
-				"  --clam-header-title: rgba(255, 255, 255, 0.55);",
-				"  --clam-header-seg-fill: rgba(255, 255, 255, 0.06);",
+				"  --clam-webheader-title: rgba(255, 255, 255, 0.55);",
+				"  --clam-webheader-seg-fill: rgba(255, 255, 255, 0.06);",
 				"}",
 
 				// ── 几何：一行 52 ───────────────────────────────────────────────
@@ -603,7 +604,7 @@ window.__ModuleLoader__.load({
 				"  font-size: 11px;",
 				`  line-height: ${lh(11)}px;`,
 				"  font-weight: 500;",
-				"  color: var(--clam-header-subtitle);",
+				"  color: var(--clam-webheader-subtitle);",
 				"}",
 				// preset 自己那枚图标跟着副标题走。**这是 web header，不受原生
 				// `window.subtitle` 塞不进图标那条限制**（SF Symbols 是图片资源，
@@ -662,7 +663,7 @@ window.__ModuleLoader__.load({
 				"  font-size: 15px;",
 				`  line-height: ${lh(15)}px;`,
 				"  font-weight: 600;",
-				"  color: var(--clam-header-title);",
+				"  color: var(--clam-webheader-title);",
 				"}",
 				// 段间分隔：dsh 写的是一个 `/` 字符，换成 `chevron.right`。
 				// 走 mask + currentColor，深浅色自动跟随。
@@ -671,7 +672,7 @@ window.__ModuleLoader__.load({
 				"  width: 9px;",
 				"  height: 9px;",
 				"  font-size: 0;",
-				"  color: var(--clam-header-subtitle);",
+				"  color: var(--clam-webheader-subtitle);",
 				"  background: currentColor;",
 				`  -webkit-mask: ${chevron} center / 9px 9px no-repeat;`,
 				`  mask: ${chevron} center / 9px 9px no-repeat;`,
@@ -722,7 +723,7 @@ window.__ModuleLoader__.load({
 				"  font-size: 13px;",
 				`  line-height: ${lh(13)}px;`,
 				"  font-weight: 500;",
-				"  color: var(--clam-header-title);",
+				"  color: var(--clam-webheader-title);",
 				"  transition: background-color var(--clam-dur-fast) linear;",
 				"}",
 				S + ' [role="tab"]::after { display: none; }',
@@ -730,8 +731,8 @@ window.__ModuleLoader__.load({
 				"  background: var(--clam-tint-hover);",
 				"}",
 				S + ' [role="tab"][aria-selected="true"] {',
-				"  background: var(--clam-header-seg-fill);",
-				"  color: var(--clam-header-title);",
+				"  background: var(--clam-webheader-seg-fill);",
+				"  color: var(--clam-webheader-title);",
 				"}",
 				// 段间那道 1×16 细线。**选中段两侧不画**——Apple 的分隔只出现在
 				// 两个未选段之间（今天只有两个段，所以它实际上永远不显示；
@@ -744,7 +745,7 @@ window.__ModuleLoader__.load({
 				"  translate: 0 -50%;",
 				"  width: 1px;",
 				"  height: 16px;",
-				"  background: var(--clam-header-seg-sep);",
+				"  background: var(--clam-webheader-seg-sep);",
 				"}",
 				S + ' [role="tab"][aria-selected="true"]::before,',
 				S + ' [role="tab"][aria-selected="true"] + [role="tab"]::before { display: none; }',
@@ -761,7 +762,7 @@ window.__ModuleLoader__.load({
 				"  font-size: 13px;",
 				`  line-height: ${lh(13)}px;`,
 				"  font-weight: 500;",
-				"  color: var(--clam-header-title);",
+				"  color: var(--clam-webheader-title);",
 				"}",
 				// **子代理那枚是例外：24 高，不是 36。**
 				//
@@ -789,7 +790,7 @@ window.__ModuleLoader__.load({
 				"  width: 9px;",
 				"  height: 9px;",
 				"  font-size: 0;",
-				"  color: var(--clam-header-subtitle);",
+				"  color: var(--clam-webheader-subtitle);",
 				"  background: currentColor;",
 				`  -webkit-mask: ${chevron} center / 9px 9px no-repeat;`,
 				`  mask: ${chevron} center / 9px 9px no-repeat;`,
@@ -807,7 +808,7 @@ window.__ModuleLoader__.load({
 				"  gap: 0;",
 				"  border: 0;",
 				"  border-radius: 18px;",
-				"  color: var(--clam-header-title);",
+				"  color: var(--clam-webheader-title);",
 				"}",
 				S + ' button[class*="_sessionLogButton"] span { font-size: 0; }',
 				S + ' button[class*="_sessionLogButton"] svg { width: 16px; height: 16px; }',
@@ -868,10 +869,10 @@ window.__ModuleLoader__.load({
 				"}",
 				// 退到 Hard 形态——不透明底、无模糊、齐边收口不渐出。两个入口：
 				// 系统「减少透明度」，以及设置里把 headerScrollBlur 关掉
-				// （品味开关，node 半边注册；client 侧 sync 翻成 data-clam-header-noblur）。
+				// （品味开关，node 半边注册；client 侧 sync 翻成 data-clam-webheader-noblur）。
 				// 细线（下面那条 ::after）在两种形态下都在，不跟着开关走。
 				":root[data-clam-reduce] " + S + ' > header:not([class*="_headerHidden"])::before,',
-				":root[data-clam-header-noblur] " + S + ' > header:not([class*="_headerHidden"])::before {',
+				":root[data-clam-webheader-noblur] " + S + ' > header:not([class*="_headerHidden"])::before {',
 				"  height: 100%;",
 				"  background: var(--dsw-alias-bg-base);",
 				"  -webkit-backdrop-filter: none;",
@@ -2256,8 +2257,8 @@ window.__ModuleLoader__.load({
 					// 一撤就没有规则再读这个属性（同 --clam-scroll-edge 的理由）。
 					const blur = ready ? snap.value?.headerScrollBlur !== false : true;
 					const root = document.documentElement;
-					if (blur) root.removeAttribute("data-clam-header-noblur");
-					else root.setAttribute("data-clam-header-noblur", "");
+					if (blur) root.removeAttribute("data-clam-webheader-noblur");
+					else root.setAttribute("data-clam-webheader-noblur", "");
 				};
 				scoped.effect(() => scope.subscribe(sync));
 				sync();
