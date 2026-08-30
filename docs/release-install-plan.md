@@ -1,6 +1,13 @@
-# `./release`：把 surfclam 装成本机常驻的正式形态
+# `./release`：把 surfclam 装成本机的正式形态
 
 > 计划文档，2026-08-29。执行日志见 §6。
+>
+> **⚠️ 2026-08-30 大修订：LaunchAgent 那一层整个退役了。** 本文正文写的是当初
+> 那个「Release 壳 + 常驻 daemon」的方案，**§0 的第二条目标、§2.3 的
+> `--start`/`--stop`、§2.4 的 `./dev` 互斥、§5 里 launchd 那几条风险都已作废**。
+> 现在 `./release` **只装 App**，后端归壳自托管（连接偏好默认 `managed`）。
+> 权威的收尾说明见 §7；改动的来龙去脉在 `docs/clam-connection-plan.md` 的
+> 2026-08-30 执行日志里。读正文时把 daemon 相关的段落当历史看。
 > 讨论定调：**不设第二个 profile**——`surfclam`（主 worktree 的那个）就是本机安装的身份；
 > release 与 dev 的差别用「每次运行的开关」（环境变量）表达，不用第二张编排表。
 
@@ -369,3 +376,51 @@ emit 出去无人订阅、静默没反应。**壳源码落后是静默的，且�
     10s 一轮。按 `./dev` 的 provision 同款补了 profile 里那条符号链接
     （`~/.dsh/profiles/surfclam/node_modules/@wenbo/clam-memory`）就恢复了；
     那条线自己跑一次安装流程即可，不必保留这个手工补丁。
+
+
+## §7 daemon 层退役（2026-08-30，用户裁决）
+
+> 「清除常驻 daemon，设置默认是自管理后端，这样我们才能更好在以后管理生命周期。」
+
+### 为什么
+
+判据是**谁能管好生命周期**。壳自托管时，后端的启动、退避重启、⌘Q 收尾都在
+`BackendManager` 一处可见可控；交给 launchd 之后，壳对它只有观测权没有控制权
+——`KeepAlive` 的重启循环、plist 的环境变量、`launchctl kickstart` 全是壳够不着的
+另一套机制。
+
+而且两者**互斥**：常驻 daemon 与壳托管抢同一个 profile，会互抹 endpoint 发现文件。
+这不是理论风险——2026-08-30 那次「双击 App 说没有后端、点『开启托管』小字闪一下
+就没了」正是它促成的死锁（daemon 活着但发现文件被同 profile 的另一个 dsh 覆盖后
+带走，壳既发现不了它、又因为『daemon 在跑』拒绝 spawn）。少一层外部常驻服务，
+就少一整类这样的死锁。
+
+### 改了什么
+
+- **`surfclam.js` 净删 ~190 行**：`writeDaemonPlist` / `xml` / `bootstrapDaemon` /
+  `releaseStop` / `releaseStart` / `waitForEndpoint` / `assertNoForegroundDsh` /
+  `assertNoDaemon` / `ensureConnectionModeDefault` 全部删除。子命令从五个减到三个
+  （装 / `--status` / `--uninstall`）。
+- **`removeLegacyDaemon()`**：唯一保留的 launchctl 用途。装过旧版的机器跑一次
+  `./release` 就 bootout + 删 plist，`--status` 见到残留也会警告。**幂等**，
+  没装过就一句话不说。
+- **`ensureConnectionModeDefault` 删掉而不是改成写 `managed`**：默认档已经由
+  `ConnectionController.fallbackMode` 定死，安装脚本再写一次 UserDefaults 就是
+  第二真相源——正是「安装脚本顺手写配置」那类伤害。
+- **`CLAM_RELEASE=1` 改由壳 spawn 后端时带上**（`exec /usr/bin/env CLAM_RELEASE=1
+  dsh …`）。它原先由 plist 提供，daemon 一退役就没人设了；缺了它 clam-app 按 dev
+  形态跑——构建 Debug 产物、**再拉起一个 Surfclam Dev**（实测：双击 Release 却多出
+  一个 Dev 窗口），发现文件里的 `appPath` 也会指向 Dev 产物、壳认不出那是自己的后端。
+- **§2.4 的 `./dev` 互斥检查删掉**：没有 daemon 就没有那个互斥。安装本身不再冲突
+  （`./release` 只构建装 App，不起后端）。运行时两边同开仍共用 profile 的发现文件，
+  但壳 spawn 前会查重，多数时候是「Release App 接上了 `./dev` 的那个 dsh」而不是
+  起两个；要干净分开就用侧 worktree。
+
+### 实测
+
+- `./release --status`：只报 endpoint + App 两格，endpoint 那格区分「活着 / 已死
+  陈旧文件」，另附托管后端的日志路径。本机 daemon 已清除，未触发残留警告。
+- `./release --help`：三条命令，文案与本节一致。
+- 端到端（全程无 daemon）：清空 mode 键 + 杀光 dsh + 清空 endpoints 模拟首次运行
+  → 双击 Release，壳自己 spawn、2s 后接入、五个插件装载、157 条会话；托管日志头
+  一行是 `exec /usr/bin/env CLAM_RELEASE=1 …`，后端自报 release 形态，再没拉起过 Dev。

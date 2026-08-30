@@ -28,7 +28,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 dev                一行启动本 worktree 的整套 surfclam（薄封装，逻辑在 surfclam/bin/surfclam.js）
-release            把本机装成常驻正式形态（同一个 js 的 --release 路径；只在主 worktree 可用）
+release            把本机装成正式形态：只装 App 进 /Applications（同一个 js 的
+                   --release 路径；只在主 worktree 可用。后端归壳自托管，不装常驻服务）
 surfclam/          伞 bundle `@wenbo/surfclam`：**本仓库唯一的编排表**，不含运行时代码
   cordis.patch.yml 装哪些插件、什么顺序、什么配置——改编排只改这里
   bin/surfclam.js  安装器 + 开发启动器 + 本机安装器（registry / link / release 三条路径）
@@ -126,46 +127,44 @@ profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。clam-a
 
 `dsh --profile surfclam --no-open` 仍然可以直接用——`./dev` 只是替你把安装那步做了。
 
-### `./release`：装成本机常驻的正式形态
+### `./release`：装成本机的正式形态（只装 App）
 
 `./dev` 是"开着终端才有"的开发形态。想让这台机器上**随时双击就能用**，在主
 worktree 跑（权威计划 `docs/release-install-plan.md`）：
 
 ```sh
-./release              # Release 壳进 /Applications + 常驻 dsh（LaunchAgent），装完 open 一次
-./release --status     # daemon / plist / endpoint / App 各在什么状态
-./release --stop       # 停掉常驻 dsh（plist 留着）
-./release --start      # 再起回来
-./release --uninstall  # 停掉 + 删 plist + 删 /Applications/Surfclam.app（~/.dsh 数据不动）
+./release              # Release 壳进 /Applications，装完 open 一次
+./release --status     # endpoint / App 各在什么状态
+./release --uninstall  # 删 /Applications/Surfclam.app（~/.dsh 数据不动）
 ```
 
-它复用 `./dev` 的全部安装函数，只是装完之后**把 dsh 交给 launchd 而不是终端**：
-LaunchAgent `io.wenbo.surfclam.dsh` 跑 `dsh --profile surfclam --port 0 --no-open`，
-`RunAtLoad` + `KeepAlive`，日志在
-`<AppSupport>/io.wenbo.surfclam/logs/dsh-daemon.log`。
+它复用 `./dev` 的全部安装函数，但**只装 App，不装任何常驻服务**：后端归壳自己
+托管（连接偏好默认 `managed`，打开即有、⌘Q 即退）。
+
+**2026-08-30 之前这里还会装一个 LaunchAgent `io.wenbo.surfclam.dsh` 常驻跑 dsh，
+那一层整个退役了。** 理由是生命周期：壳自托管时后端的启动、退避重启、⌘Q 收尾都在
+`BackendManager` 一处可见可控；交给 launchd 之后壳对它只有观测权没有控制权，而且
+两者抢同一个 profile、会互抹 endpoint 发现文件——那正是「双击 App 连不上、点开启
+托管什么也没发生」那次死锁的一半原因。装过旧版的机器跑一次 `./release` 会自动把它
+清掉（`removeLegacyDaemon`），`--status` 见到残留也会警告。
 
 **不设第二个 profile**：`surfclam` 就是本机安装的身份（会话与设置本来就是全局的，
-不随 profile 分片）。两种形态的差别由 plist 里的环境变量 `CLAM_RELEASE=1` 表达，
+不随 profile 分片）。两种形态的差别由环境变量 `CLAM_RELEASE=1` 表达——**现在由壳
+spawn 后端时带上**（`exec /usr/bin/env CLAM_RELEASE=1 dsh …`，以前由 plist 提供）。
 clam-app 读到它就切成"配置用 Release、构建完装进 `/Applications`、从不自动拉起"
 ——**编排表一字不改**。
 
 装好之后的开发循环，三行都不一样：
 
-| 改什么 | 常驻形态下怎么生效 |
+| 改什么 | 正式形态下怎么生效 |
 |---|---|
 | 插件的 `swift/` | 存盘即热替换，什么都不用做（桥盯 `swift/` 与这条路无关） |
-| **壳源码 `clam-app/host/`** | **daemon 自己重建**：Release 配置、编译仍在 worktree 的 `build/` 里，成功后装进 `/Applications/Surfclam.app`，正跑的窗口右上角挂「壳有新版本 · 重启」。**它不 quit 你的 App**——先拷到暂存名再换名就位，点不点归你 |
-| node 半边 / 编排表 | `launchctl kickstart -k gui/$(id -u)/io.wenbo.surfclam.dsh`，或者 `./release --stop` 回到 `./dev` |
-
-**改坏 node 半边时 `KeepAlive` 会进 10s
-一轮的重启循环**——症状全在 `dsh-daemon.log` 里，属预期行为，所以改 node 半边
-优先用侧 worktree 的 `./dev` 验。**加插件也算改编排表**：只往
-`cordis.patch.yml` 里添一行而没把包 link 进 profile，下一次 kickstart 就是
-`Cannot find package '@wenbo/clam-…'` 的重启循环（实测踩过）。
+| **壳源码 `clam-app/host/`** | **托管的后端自己重建**：Release 配置、编译仍在 worktree 的 `build/` 里，成功后装进 `/Applications/Surfclam.app`，正跑的窗口右上角挂「壳有新版本 · 重启」。**它不 quit 你的 App**——先拷到暂存名再换名就位，点不点归你 |
+| node 半边 / 编排表 | ⌘Q 再打开一次（壳退出时带走后端，重开按新代码拉起） |
 
 `./release` 那条路本身不再多编一次：`build.sh` 收尾会顺手写下 `clam-app` 认的那份
 源码 hash marker（算法的唯一真相是 `clam-app/lib/source-hash.js`，bash 只负责把
-它吐出来的 hash 写进它吐出来的路径），所以装完再 kickstart 是**零次 xcodebuild**。
+它吐出来的 hash 写进它吐出来的路径），所以装完重开 App 是**零次 xcodebuild**。
 
 **已知缺口**：那条提示条是壳的内存状态，**断连重连之后就没了**（桥不给后来者补发
 `app-build`，这条铁律见下）。所以"daemon 重启过一轮"之后，正跑的窗口有可能比
@@ -424,12 +423,12 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-**常驻的那套（`./release`）与主 worktree 的 `./dev` 互斥**，两边都会 fails loud：
-它们抢同一个 profile `surfclam`，也就抢同一份 endpoint 发现文件（一个 profile 一份、
-覆盖写），先起的那个会被后起的抹掉、再也接不到手动双击的壳。daemon 在跑时
-`./dev` 拦你并给两条出路（`./release --stop`，或直接用它 + `launchctl kickstart -k`）；
-前台 dsh 在跑时 `./release` 拦你。**侧 worktree 不受影响**——profile 名不同，天然并存，
-所以"常驻着用、侧 worktree 开发"是推荐的组合。
+**装好的那个 App 与主 worktree 的 `./dev` 仍然共用 profile `surfclam`**，也就共用
+同一份 endpoint 发现文件（一个 profile 一份、覆盖写）。`./release` 不再装常驻服务
+之后，安装本身不冲突了（它只构建装 App），但**运行时**两边同开仍会互相覆盖那份
+文件——壳自托管前会查重（探得到健康的 isOwn 端点就不 spawn），所以多数时候是
+"Release App 接上了 `./dev` 的那个 dsh"，而不是起两个。要干净地分开就用侧 worktree：
+profile 名不同，天然并存，"装好的那套日常用、侧 worktree 开发"是推荐的组合。
 
 **`<AppSupport>/io.wenbo.surfclam/` 下的四样东西都已经按实例分片**，别再假设"日志只有一份"：
 
@@ -643,16 +642,16 @@ BackendManager 自己那套退避管不了这一段——它只监护自己亲�
 
 ## 踩坑记录
 
-- **launchd 的默认 PATH 只有 `/usr/bin:/bin`**，而 `dsh` 的 shebang 是
-  `#!/usr/bin/env node`——LaunchAgent 的 plist 里不显式给 `PATH`，daemon 就秒退，
-  `KeepAlive` 每 10s 重试一次，日志里只有一句 `env: node: No such file or directory`
-  （看上去像 dsh 坏了，其实它一次都没被执行到）。`./release` 写 plist 时把
-  **跑它的那个 node 的目录**（`dirname(process.execPath)`，必然可用）排在最前，
-  再补 `/opt/homebrew/bin` 与系统三条。另外 launchd 的 `Program*` **不走 PATH 查找**，
-  所以 dsh 自己的绝对路径是 `which dsh` 现场解析后写死进 plist 的。
-  同一族的第二个坑：**`bootout` 之后立刻 `bootstrap` 会撞竞态**
+- **GUI 进程拿不到你终端里的 PATH**，而 `dsh` 的 shebang 是 `#!/usr/bin/env node`
+  ——解不出 node 就是"起不来"，且看上去像 dsh 坏了，其实它一次都没被执行到。
+  壳自托管走 `zsh -lc` 补 PATH（**它读 `.zshenv`/`.zprofile`/`.zlogin` 而不读
+  `.zshrc`**，node 只配在 `.zshrc` 里的机器仍然解不出来）。
+  **这条以前是 LaunchAgent 的坑**（plist 不显式给 PATH，daemon 秒退 + `KeepAlive`
+  每 10s 重试，日志里只有一句 `env: node: No such file or directory`）；那一层
+  2026-08-30 退役了，写 plist 的代码已经删掉，只留 `removeLegacyDaemon` 清旧安装。
+  同族第二个坑一并记在这儿备查：**`bootout` 之后立刻 `bootstrap` 会撞竞态**
   （"Bootstrap failed: 5: Input/output error"、"Service is in the process of exiting"），
-  旧进程还在收摊、label 还占着。小退避重试几次即可，别误判成 plist 写错了。
+  旧进程还在收摊、label 还占着，得小退避重试。
 - **换了 App 图标却还是旧图标，八成不是图标做错了，是 bundle 的 mtime 没变**：
   两条安装路径（`build.sh` 与 clam-app 的 `installBuiltProduct`）都用 `ditto`，
   而 `ditto` 连同源目录的 mtime 一起拷；`build/` 里那个 bundle 目录的 mtime 停在

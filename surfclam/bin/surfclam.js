@@ -27,16 +27,22 @@
  * 互不打扰。
  *
  * **第三条路径 `--release`**（仓库根的 `./release`，计划见
- * `docs/release-install-plan.md`）：把这台机器装成"常驻"形态——Release 壳进
- * `/Applications`，一个 LaunchAgent 常驻跑 `dsh --profile surfclam`，登录即起、
- * 崩了重拉。它与上面两种模式共用全部安装函数，只是**不前台跑 dsh**，
- * 改为交给 launchd；profile 仍然只有 `surfclam` 一个（不设第二张编排表，
- * 形态差别由环境变量 `CLAM_RELEASE=1` 表达，clam-app 读它）。
+ * `docs/release-install-plan.md`）：把这台机器装成正式形态——**只装 App**，
+ * Release 壳进 `/Applications`，之后双击就能用，不必开着终端。它与上面两种
+ * 模式共用全部安装函数，只是**不前台跑 dsh**，也**不再装任何常驻服务**：
+ * 后端归壳自己托管（连接偏好默认 `managed`，打开即有、⌘Q 即退）。
+ * profile 仍然只有 `surfclam` 一个（不设第二张编排表，形态差别由环境变量
+ * `CLAM_RELEASE=1` 表达，clam-app 读它，壳 spawn 后端时带上）。
+ *
+ * 2026-08-30 之前这条路径还会装一个 LaunchAgent 常驻跑 dsh，那一层整个退役了
+ * ——多一层 launchd 常驻就多一整类互斥死锁（它与托管抢同一个 profile、互抹
+ * endpoint 发现文件），而壳对它只有观测权没有控制权。装过旧版的机器跑一次
+ * `./release` 会自动把它清掉（`removeLegacyDaemon`）。
  *
  * @module @wenbo/surfclam/bin
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -362,7 +368,6 @@ function realpath(path) {
  * `--clam-endpoint` 直接递给它拉起的壳。
  */
 function start(profile, opts) {
-	assertNoDaemon(profile);
 	const args = ["--profile", profile, "--port", String(opts.port), "--no-open", ...opts.passthrough];
 	say(`启动：dsh ${args.join(" ")}\n`);
 	const result = spawnSync("dsh", args, { stdio: "inherit" });
@@ -382,28 +387,23 @@ function start(profile, opts) {
  */
 const RELEASE_PROFILE = "surfclam";
 
-/**
- * LaunchAgent 的 Label。`.dsh` 后缀把 **daemon** 和 **App** 的 bundle id
- * （`io.wenbo.surfclam`）区分开：两者是两个东西，共用一个标识迟早出事。
- */
-const DAEMON_LABEL = "io.wenbo.surfclam.dsh";
-
-/** Release 壳的 bundle id——也是它 `NSUserDefaults` 的域名（写首开偏好用）。 */
+/** Release 壳的 bundle id——也是它 `NSUserDefaults` 的域名。 */
 const APP_BUNDLE_ID = "io.wenbo.surfclam";
 
-/** 连接偏好的键，权威在 `docs/clam-contracts.md` §10.2 与 Swift 侧 ConnectionController。 */
-const CONNECTION_MODE_KEY = "clam.connection.mode";
+/**
+ * 旧版那个 LaunchAgent 的 Label。**只用来清掉它**（`removeLegacyDaemon`），
+ * 本文件不再写 plist。`.dsh` 后缀把 daemon 和 App 的 bundle id 区分开——
+ * 两者是两个东西，共用一个标识迟早出事。
+ */
+const DAEMON_LABEL = "io.wenbo.surfclam.dsh";
 
 /** 壳的 Application Support 根，与 clam-app 的 `APP_SUPPORT`、Swift 的 `ClamPaths.appSupport` 同一个。 */
 const APP_SUPPORT = join(homedir(), "Library", "Application Support", APP_BUNDLE_ID);
 
-/** LaunchAgent plist 的落点。 */
+/** 旧版那个 LaunchAgent plist 的落点。同上，只用来删它。 */
 const DAEMON_PLIST = join(homedir(), "Library", "LaunchAgents", `${DAEMON_LABEL}.plist`);
 
-/** daemon 的 stdout/stderr 都往这儿追加（launchd 自己不轮转，坏了就看它）。 */
-const DAEMON_LOG = join(APP_SUPPORT, "logs", "dsh-daemon.log");
-
-/** 常驻那套的 endpoint 发现文件（clam-app 按 profile 名分片写）。 */
+/** 这套的 endpoint 发现文件（clam-app 按 profile 名分片写）。 */
 const ENDPOINT_FILE = join(APP_SUPPORT, "endpoints", `${RELEASE_PROFILE}.json`);
 
 /** Release 壳的安装位置，与 build.sh 的 `INSTALL_DIR` 和 clam-app 的 `INSTALLED_RELEASE` 一致。 */
@@ -414,16 +414,19 @@ const BUILD_SCRIPT_REL = "clam-app/host/scripts/build.sh";
 
 /** `./release` 的入口：先分派四个子命令，都不是才走安装流程。 */
 function release(opts, repoRoot, pluginNames) {
-	if (opts.releaseCommand === "stop") return releaseStop();
-	if (opts.releaseCommand === "start") return releaseStart();
 	if (opts.releaseCommand === "status") return releaseStatus();
 	if (opts.releaseCommand === "uninstall") return releaseUninstall();
 	releaseInstall(repoRoot, pluginNames);
 }
 
 /**
- * 装成常驻形态。六步，任何一步失败都当场停——**尤其是壳构建失败时不写 plist**：
- * 让 launchd 去伺候一个装不出来的 App 只会把失败推迟到没人看的地方。
+ * 把这台机器装成正式形态：**只装 App，不装后端**。
+ *
+ * 后端的生命周期归壳自己管（连接偏好默认 `managed`，见
+ * `docs/clam-connection-plan.md` 的 2026-08-30 执行日志）——双击 App，它自己
+ * 就会 spawn 一个 dsh、监护它、⌘Q 时收走。**所以这里不再写 LaunchAgent**：
+ * 多一层 launchd 常驻，就多一整类互斥死锁（那个 daemon 与托管抢同一个 profile，
+ * 会互抹 endpoint 发现文件），而壳对它只有观测权没有控制权。
  */
 function releaseInstall(repoRoot, pluginNames) {
 	// 1. 只许主 worktree。release 安装是"这台机器上那一套"，必须有唯一的真相源；
@@ -438,8 +441,9 @@ function releaseInstall(repoRoot, pluginNames) {
 	}
 	say(`本机安装：${repoRoot} → profile ${RELEASE_PROFILE}`);
 
-	// 2. 互斥：同一个 profile 的两个 dsh 会互抹 endpoint 文件。
-	assertNoForegroundDsh();
+	// 2. 清掉旧版本装的那个常驻 daemon。**迁移逻辑，不是可选项**：它和壳自托管
+	//    抢同一个 profile，留着就是互抹 endpoint 发现文件。
+	removeLegacyDaemon();
 
 	// 3. 备 profile（与 ./dev 同一套函数，同一份真相）。
 	provision(RELEASE_PROFILE, repoRoot, pluginNames);
@@ -447,32 +451,15 @@ function releaseInstall(repoRoot, pluginNames) {
 	// 4. 装壳。stdio 直通——xcodebuild 是分钟级的，进度要给人看见。
 	buildRelease(repoRoot);
 
-	// 5. 写并加载 LaunchAgent。**加载前记下时刻**：等 endpoint 的判据是"文件比这一刻新"，
-	//    上一次运行留下的陈旧文件不算数。
-	writeDaemonPlist(repoRoot);
-	const since = Date.now();
-	bootstrapDaemon({ reload: true });
-
-	// 6. 首开偏好。装完那一下 `open` 之前写好，否则壳按 unset 语义停在引导页
-	//    ——与"装完 open 一次即用"矛盾。**已有值一个字不动**（见函数注释）。
-	ensureConnectionModeDefault();
-
-	// 7. 收尾。等不到 endpoint 只警告：壳自己有 2s 重连轮询，早晚会接上。
-	if (waitForEndpoint(since)) {
-		say(`常驻 dsh 已就绪：${readJsonOrUndefined(ENDPOINT_FILE)?.httpBase ?? "(端点未知)"}`);
-	} else {
-		say(`⚠ 等了几秒没见到 ${ENDPOINT_FILE}——daemon 可能还在起，或者起失败了。`
-			+ ` 看日志：${DAEMON_LOG}`);
-	}
+	// 5. 打开它。后端由壳自己拉起来，这里不等 endpoint——那是壳的事。
 	if (existsSync(INSTALLED_APP)) spawnSync("open", [INSTALLED_APP], { stdio: "inherit" });
 
 	say("");
 	say(`装好了。App：${INSTALLED_APP}`);
-	say(`  plist：${DAEMON_PLIST}`);
-	say(`  日志：${DAEMON_LOG}`);
-	say(`  常用：./release --status | --stop | --start | --uninstall`);
+	say(`  后端由 App 自己托管：打开即有，⌘Q 即退。`);
+	say(`  常用：./release --status | --uninstall`);
 	say(`  改 Swift 插件：存盘即热替换，什么都不用做。`);
-	say(`  改 node 半边 / 编排表：launchctl kickstart -k ${domain()}/${DAEMON_LABEL}`);
+	say(`  改 node 半边 / 编排表：⌘Q 再打开一次（壳会按新代码重新拉起后端）。`);
 }
 
 /**
@@ -489,152 +476,27 @@ function buildRelease(repoRoot) {
 	const result = spawnSync(script, [], { cwd: repoRoot, stdio: "inherit" });
 	if (result.error !== undefined) fail(`跑 ${script} 失败：${result.error.message}`);
 	if (result.status !== 0) {
-		fail(`壳构建失败（退出码 ${result.status}）。plist 没写——修好再跑一次 ./release。`);
+		fail(`壳构建失败（退出码 ${result.status}）。修好再跑一次 ./release。`);
 	}
 	if (!existsSync(INSTALLED_APP)) {
-		fail(`build.sh 报成功，但 ${INSTALLED_APP} 不在。别写 plist 了，先查上面的输出。`);
+		fail(`build.sh 报成功，但 ${INSTALLED_APP} 不在。先查上面的输出。`);
 	}
 }
 
 /**
- * 首开的连接偏好：`clam.connection.mode = auto`（`docs/clam-contracts.md` §10.2）。
+ * 如实报告两件事：endpoint 文件、App。（外加一句旧 daemon 的残留提醒。）
  *
- * **只在这个键压根不存在时写**。它是用户可以自己改的偏好（`fixed` 钉死一个地址、
- * `managed` 让壳自己托管一个后端），重跑一次 `./release` 就把人家的选择抹掉，
- * 是这类"安装脚本顺手写配置"最经典的伤害。`defaults read` 读得到就一个字不动。
- *
- * 为什么非写不可：壳那边 unset 是有语义的（引导页），而这里下一句就要 `open`
- * ——装完第一次打开停在"请选择后端"上，和"装完就能用"是矛盾的。
- */
-function ensureConnectionModeDefault() {
-	const read = spawnSync("defaults", ["read", APP_BUNDLE_ID, CONNECTION_MODE_KEY], { stdio: "pipe" });
-	if (read.status === 0) {
-		say(`连接偏好已有（${CONNECTION_MODE_KEY} = ${String(read.stdout).trim()}），不动它。`);
-		return;
-	}
-	const write = spawnSync("defaults",
-		["write", APP_BUNDLE_ID, CONNECTION_MODE_KEY, "-string", "auto"], { stdio: "pipe" });
-	if (write.status === 0) {
-		say(`首开连接偏好：${CONNECTION_MODE_KEY} = auto（自动找本机的后端）。`);
-	} else {
-		// 写不上不该拦住安装：最坏结果是首开停在引导页，点一下"连接"就好了。
-		say(`⚠ 写首开连接偏好失败（${String(write.stderr).trim() || `退出码 ${write.status}`}）。`
-			+ ` 首次打开可能停在连接页，点一下"连接"即可。`);
-	}
-}
-
-/**
- * 写 LaunchAgent plist。
- *
- * **两条非写不可的东西**：
- *
- *  1. `PATH`。launchd 给的默认 PATH 只有 `/usr/bin:/bin`，而 `dsh` 的 shebang 是
- *     `#!/usr/bin/env node`——找不到 node 就是"daemon 秒退 + KeepAlive 每 10s
- *     重试一次"，日志里只有一句 `env: node: No such file or directory`。
- *     所以把**当前这个 node** 的目录排在最前（跑 ./release 的这一个必然可用）。
- *  2. `CLAM_RELEASE=1`。clam-app 读它切成 release 形态：配置用 `Release`、
- *     重建成功后安装进 `/Applications`、从不自动拉起（计划 §2.5）。
- *     少了它，常驻 dsh 会在后台 xcodebuild 一个 **Debug** 壳、还会在你登录时
- *     把它弹出来。
- *
- * dsh 的绝对路径现场解析后写死进 plist：launchd 的 `Program*` 不走 PATH 查找。
- */
-function writeDaemonPlist(repoRoot) {
-	const dsh = whichOrFail("dsh", "dsh 没装？npm i -g @deepseek-ai/dsh");
-	const path = [dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
-		.filter((dir, i, all) => all.indexOf(dir) === i)
-		.join(":");
-
-	const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>Label</key>
-	<string>${xml(DAEMON_LABEL)}</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>${xml(dsh)}</string>
-		<string>--profile</string>
-		<string>${xml(RELEASE_PROFILE)}</string>
-		<string>--port</string>
-		<string>0</string>
-		<string>--no-open</string>
-	</array>
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>CLAM_RELEASE</key>
-		<string>1</string>
-		<key>PATH</key>
-		<string>${xml(path)}</string>
-	</dict>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>KeepAlive</key>
-	<true/>
-	<key>WorkingDirectory</key>
-	<string>${xml(repoRoot)}</string>
-	<key>StandardOutPath</key>
-	<string>${xml(DAEMON_LOG)}</string>
-	<key>StandardErrorPath</key>
-	<string>${xml(DAEMON_LOG)}</string>
-</dict>
-</plist>
-`;
-	mkdirSync(dirname(DAEMON_PLIST), { recursive: true });
-	mkdirSync(dirname(DAEMON_LOG), { recursive: true });
-	writeFileSync(DAEMON_PLIST, plist);
-	say(`plist 已写入：${DAEMON_PLIST}`);
-}
-
-/** plist 里的文本转义。路径来自本机（用户名可以是任何东西），不做假设。 */
-function xml(text) {
-	return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-// ------------------------------------------------------------ 子命令
-
-function releaseStop() {
-	const before = daemonStatus();
-	if (!before.loaded) {
-		say(`常驻 dsh 没在跑（${DAEMON_LABEL} 未登记）。`);
-		return;
-	}
-	bootoutDaemon();
-	say(`已停：${DAEMON_LABEL}（plist 留着，./release --start 可以再起）。`);
-}
-
-function releaseStart() {
-	if (!existsSync(DAEMON_PLIST)) {
-		fail(`没有 ${DAEMON_PLIST}——先在主 worktree 跑一次 ./release 装上。`);
-	}
-	// **判据是"登记了没有"而不是"有没有 pid"**：`KeepAlive` 下没有 pid 只说明
-	// launchd 正在两次重启之间（多半是 dsh 起不来），那时该去看日志，不是再 bootstrap 一次。
-	const status = daemonStatus();
-	if (status.loaded) {
-		say(`已经登记着了（${DAEMON_LABEL}，state=${status.state ?? "?"}`
-			+ `${status.pid === undefined ? "，没有 pid——起不来？看日志" : `, pid=${status.pid}`}）。`
-			+ ` 要换新代码就重跑 ./release。`);
-		return;
-	}
-	const since = Date.now();
-	bootstrapDaemon({ reload: false });
-	if (waitForEndpoint(since)) say(`常驻 dsh 已就绪：${readJsonOrUndefined(ENDPOINT_FILE)?.httpBase ?? "(端点未知)"}`);
-	else say(`⚠ 起了但几秒内没见到 endpoint 文件。看日志：${DAEMON_LOG}`);
-}
-
-/**
- * 如实报告四件事：daemon、plist、endpoint 文件、App。
- *
- * **endpoint 文件那一格必须区分"在"和"活"**：daemon 被 bootout（SIGTERM）时
- * clam-app 的清理未必来得及跑，会留下一份 pid 已死的文件。壳靠连接失败自然
- * 跳过它，不需要额外清理逻辑——但读状态的人得看得出来。
+ * **endpoint 文件那一格必须区分"在"和"活"**：后端被 SIGTERM 时 clam-app 的清理
+ * 未必来得及跑，会留下一份 pid 已死的文件。壳靠连接失败自然跳过它，不需要额外
+ * 清理逻辑——但读状态的人得看得出来。
  */
 function releaseStatus() {
-	const status = daemonStatus();
-	say(`daemon ${DAEMON_LABEL}：${status.loaded
-		? `已登记（state=${status.state ?? "?"}${status.pid === undefined ? "" : `, pid=${status.pid}`}）`
-		: "未登记"}`);
-	say(`plist ${DAEMON_PLIST}：${existsSync(DAEMON_PLIST) ? "在" : "不在"}`);
+	const legacy = daemonStatus();
+	if (legacy.loaded || existsSync(DAEMON_PLIST)) {
+		say(`⚠ 旧版的常驻 daemon 还有残留（${DAEMON_LABEL}`
+			+ `${legacy.loaded ? `，已登记 pid=${legacy.pid ?? "?"}` : "，只剩 plist"}）。`
+			+ ` 它会和 App 自托管的后端抢同一个 profile——跑一次 ./release 清掉它。`);
+	}
 
 	const endpoint = readJsonOrUndefined(ENDPOINT_FILE);
 	if (endpoint === undefined) {
@@ -648,13 +510,11 @@ function releaseStatus() {
 
 	say(`App ${INSTALLED_APP}：${existsSync(INSTALLED_APP)
 		? (isAppRunning() ? "在，且正在运行" : "在，未运行") : "不在"}`);
-	say(`日志：${DAEMON_LOG}`);
+	say(`后端日志（App 托管的那个）：${join(APP_SUPPORT, "logs", "managed-dsh.log")}`);
 }
 
 function releaseUninstall() {
-	if (daemonStatus().loaded) bootoutDaemon();
-	rmSync(DAEMON_PLIST, { force: true });
-	say(`已删 ${DAEMON_PLIST}`);
+	removeLegacyDaemon();
 	try {
 		rmSync(INSTALLED_APP, { recursive: true, force: true });
 		say(`已删 ${INSTALLED_APP}`);
@@ -666,6 +526,33 @@ function releaseUninstall() {
 }
 
 // ------------------------------------------------------------ launchctl
+//
+// **这一段只剩"清掉旧安装"一个用途。** 早先的 release 形态是"Release 壳进
+// /Applications + 一个 LaunchAgent 常驻跑 dsh"；2026-08-30 那一层整个退役了
+// ——后端归壳自托管（连接偏好默认 `managed`）。留着这几个函数是为了让装过旧版
+// 的机器跑一次 `./release` 就自动迁移，而不是留一个孤儿 plist 在那儿和壳抢
+// profile。**不再有任何地方写 plist。**
+
+/**
+ * 清掉旧版本装的那个常驻 daemon（如果有）。**幂等**：没装过就一句话都不说。
+ *
+ * 为什么非清不可：它和壳自托管的后端抢同一个 profile，而同 profile 的两个 dsh
+ * 会互抹 endpoint 发现文件——那正是 2026-08-30 那次「双击 App 连不上、点开启
+ * 托管什么也没发生」的一半原因（另一半见 clam-app 的发现文件守护）。
+ */
+function removeLegacyDaemon() {
+	const status = daemonStatus();
+	const hasPlist = existsSync(DAEMON_PLIST);
+	if (!status.loaded && !hasPlist) return;
+	if (status.loaded) {
+		bootoutDaemon();
+		say(`已停掉旧版的常驻 dsh（${DAEMON_LABEL}）。`);
+	}
+	if (hasPlist) {
+		rmSync(DAEMON_PLIST, { force: true });
+		say(`已删 ${DAEMON_PLIST}——后端改由 App 自己托管。`);
+	}
+}
 
 /** 当前用户的 launchd 域。LaunchAgent 一律在 `gui/<uid>` 里。 */
 function domain() {
@@ -691,73 +578,6 @@ function daemonStatus() {
 /** 卸载 daemon。没登记时 launchctl 非零退出，这里当成"本来就没有"。 */
 function bootoutDaemon() {
 	spawnSync("launchctl", ["bootout", `${domain()}/${DAEMON_LABEL}`], { stdio: ["ignore", "ignore", "ignore"] });
-}
-
-/**
- * 加载 daemon。`reload` 时先 bootout——plist 变了必须重登记，launchd 不会自己重读。
- *
- * **bootout 后立刻 bootstrap 会撞竞态**（"Bootstrap failed: 5: Input/output error"
- * 或 "Service is in the process of exiting"）：旧进程还在收摊，那个 label 就还占着。
- * 小退避重试几次即可，别把它误判成 plist 写错了。
- */
-function bootstrapDaemon({ reload }) {
-	if (reload) bootoutDaemon();
-	for (let attempt = 1; attempt <= 5; attempt += 1) {
-		const result = spawnSync("launchctl", ["bootstrap", domain(), DAEMON_PLIST], { encoding: "utf8" });
-		if (result.status === 0) {
-			say(`已加载 ${DAEMON_LABEL}（登录即起、崩了重拉）。`);
-			return;
-		}
-		const text = `${result.stderr ?? ""}${result.stdout ?? ""}`.trim();
-		if (attempt === 5) fail(`launchctl bootstrap 失败：${text}`);
-		say(`bootstrap 第 ${attempt} 次没成（${text}），退避重试…`);
-		sleepMs(attempt * 400);
-	}
-}
-
-/**
- * 等常驻 dsh 把 endpoint 文件写出来。判据是**文件比本次加载新**——
- * 上一次运行留下的陈旧文件不算数。
- */
-function waitForEndpoint(since, timeoutMs = 15000) {
-	while (Date.now() - since < timeoutMs) {
-		const stats = statSync(ENDPOINT_FILE, { throwIfNoEntry: false });
-		if (stats !== undefined && stats.mtimeMs >= since) return true;
-		sleepMs(500);
-	}
-	return false;
-}
-
-// ------------------------------------------------------------ 互斥
-
-/**
- * `./release` 那一侧的互斥：主 worktree 的前台 `./dev` 正跑着就别装。
- *
- * 同一个 profile 的两个 dsh 会互抹 endpoint 文件（一个 profile 一份、覆盖写），
- * 于是先起的那个再也接不到手动双击的壳。**daemon 自己不算冲突**——重装本来
- * 就要把它 bootout 再拉起来。
- */
-function assertNoForegroundDsh() {
-	const endpoint = readJsonOrUndefined(ENDPOINT_FILE);
-	const pid = endpoint?.pid;
-	if (typeof pid !== "number" || !isAlive(pid)) return;
-	if (daemonStatus().pid === pid) return;
-	fail(`profile ${RELEASE_PROFILE} 已经有一个 dsh 在跑（pid ${pid}，${endpoint.httpBase ?? "?"}），`
-		+ `多半是主 worktree 的前台 ./dev。先 Ctrl-C 它，再跑 ./release。`);
-}
-
-/**
- * `./dev` 那一侧的互斥（计划 §2.4）。只有主 worktree 会撞——侧 worktree 的
- * profile 名不同，与常驻那套天然并存。
- */
-function assertNoDaemon(profile) {
-	if (profile !== RELEASE_PROFILE) return;
-	const status = daemonStatus();
-	if (!status.loaded || status.pid === undefined) return;
-	fail(`常驻 surfclam 在跑（LaunchAgent ${DAEMON_LABEL}，pid ${status.pid}）。二选一：
-  ./release --stop   停掉它再 ./dev（前台开发）
-  直接用它           Swift 插件改动对常驻 dsh 一样热生效；
-                     改 node 半边后 launchctl kickstart -k ${domain()}/${DAEMON_LABEL}`);
 }
 
 /** 进程还在不在。EPERM = 在（只是不归我管）。 */
@@ -794,8 +614,8 @@ function whichOrFail(command, hint) {
 	return path;
 }
 
-/** release 的四个子命令。`--release` 由仓库根的 `./release` 薄封装加在最前。 */
-const RELEASE_COMMANDS = new Set(["stop", "start", "status", "uninstall"]);
+/** release 的两个子命令。`--release` 由仓库根的 `./release` 薄封装加在最前。 */
+const RELEASE_COMMANDS = new Set(["status", "uninstall"]);
 
 function parseArgs(argv) {
 	const opts = {
@@ -846,13 +666,11 @@ function usage() {
   -- <args...>       其余参数透传给 dsh
 
 本机安装（--release，仓库根的 ./release，只在主 worktree 可用）
-  ./release          Release 壳装进 /Applications + 常驻 dsh（LaunchAgent
-                     ${DAEMON_LABEL}，登录即起、崩了重拉），
-                     之后双击 App 就能用，不必开着终端
-  ./release --status  daemon / plist / endpoint / App 各在什么状态
-  ./release --stop    停掉常驻 dsh（plist 留着）
-  ./release --start   把它再起回来
-  ./release --uninstall  停掉 + 删 plist + 删 /Applications/Surfclam.app
+  ./release          Release 壳装进 /Applications，之后双击就能用，
+                     不必开着终端。后端由 App 自己托管：打开即有、⌘Q 即退
+                     （装过旧版的机器会顺手清掉那个常驻 LaunchAgent）
+  ./release --status     endpoint / App 各在什么状态
+  ./release --uninstall  删 /Applications/Surfclam.app
                      （profile 与 ~/.dsh 下的会话、设置不动）
 `);
 }
