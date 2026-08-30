@@ -1,5 +1,4 @@
-# files 白名单已经把 host/build、host/tools、host/build-sdk 挡在外面了，
-# 这里只收拾白名单**内部**的构建残留（npm 只认包根的忽略文件，
-# 仓库根那份 .gitignore 对本包不生效）。
-host/Packages/**/.build/
-host/Sources/Resources/BuildTimestamp.txt
+# `files` 白名单只收 `lib/`——**壳的 Xcode 工程（`host/`）不随包分发**
+# （`docs/distribution-plan.md` §3.3：壳不再自己构建自己，签名会自毁）。
+# 白名单已经挡住了一切，这里没有需要额外收拾的东西；留着这份文件只为说明
+# "host/ 的缺席是有意的"，别下次看见包里没有源码就以为漏打了。

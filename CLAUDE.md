@@ -34,8 +34,11 @@ surfclam/          伞 bundle `@wenbo/surfclam`：**本仓库唯一的编排表*
   cordis.patch.yml 装哪些插件、什么顺序、什么配置——改编排只改这里
   bin/surfclam.js  安装器 + 开发启动器 + 本机安装器（registry / link / release 三条路径）
 clam-app/          壳源码为载荷的 cordis 插件：构建 + 写 endpoint 发现文件 + 拉起 app
-  lib/index.js     node 半边（inject webServer）
-  host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/
+  lib/             **随包分发的那一半**：发现文件、拉起、clamApp 服务、快捷键设置面
+  host-build/      **不随包分发**：源码 hash + xcodegen/xcodebuild + 盯源码重建。
+                   `lib/index.js` 顶层 `await import` 它，**拿不到 = 这份 clam-app
+                   没有构建能力**（正式形态就是这样，见「分发形态」）
+  host/            Xcode 工程载荷：project.yml / Sources/ / scripts/ / tools/（不随包分发）
 clam-bridge/       唯一特权插件：Swift 载荷登记表 + /clam/bridge WS + 盯文件轮询
                    子出口 `./plugin` = createSwiftPlugin 工厂（`CommandDeclaration`
                    的权威文档也在那个文件里）、`./locale` = 语言决议小工具。
@@ -125,7 +128,9 @@ dsh-web-search-firecrawl/   邻居插件：本地运行时所有，已 gitignore
 profile、校正 `bundles`、然后前台跑 dsh（Ctrl-C 直达 dsh）。clam-app 随之
 按需构建并拉起 App。**不需要手动 `dsh plugin add`，也不需要记 profile 名。**
 
-`dsh --profile surfclam --no-open` 仍然可以直接用——`./dev` 只是替你把安装那步做了。
+`dsh --profile surfclam-dev --no-open` 仍然可以直接用——`./dev` 只是替你把安装那步做了。
+（**主 worktree 的 profile 叫 `surfclam-dev`**；无后缀的 `surfclam` 归装在
+`/Applications` 的那个 App，由它自己自举，见「多 worktree」。）
 
 ### `./release`：装成本机的正式形态（只装 App）
 
@@ -148,27 +153,33 @@ worktree 跑（权威计划 `docs/release-install-plan.md`）：
 托管什么也没发生」那次死锁的一半原因。装过旧版的机器跑一次 `./release` 会自动把它
 清掉（`removeLegacyDaemon`），`--status` 见到残留也会警告。
 
-**不设第二个 profile**：`surfclam` 就是本机安装的身份（会话与设置本来就是全局的，
-不随 profile 分片）。两种形态的差别由环境变量 `CLAM_RELEASE=1` 表达——**现在由壳
-spawn 后端时带上**（`exec /usr/bin/env CLAM_RELEASE=1 dsh …`，以前由 plist 提供）。
-clam-app 读到它就切成"配置用 Release、构建完装进 `/Applications`、从不自动拉起"
-——**编排表一字不改**。
+**`surfclam` 这个 profile 名归安装形态专属**（`docs/distribution-plan.md` §3.6）：
+开发一律带后缀（主 worktree `surfclam-dev`，侧 worktree `surfclam-<目录名>`），
+于是"装好的那套日常用 + 主 worktree 开发"天然并存。`./release` **不备这个 profile**
+——它的内容（`<profile>/.surfclam/` 那份镜像 + `link:` 行 + 符号链接）由 App 首次
+打开时自举出来（`Native/ProfileBootstrap.swift`）。
+
+**壳不再自己构建自己**（2026-08-30 M4，计划 §3.3）。判据不是旋钮，而是
+**`clam-app/host-build/` 这个模块 import 得到吗**——构建那一整套代码住在那个目录里，
+而随 App 分发的那份 clam-app 只有 `lib/`（`files` 白名单与 `ClamNode/` 镜像都只收它）。
+于是那边天然只做"探测既有产物 + 写 endpoint 发现文件 + provide `clamApp`"。
+**曾经的环境变量 `CLAM_RELEASE` 一并删了**——
+正式形态根本不该有"要不要构建"这个开关：发布的 App 是 Developer ID 签名 + 公证过的，
+自己 xcodebuild 重建自己产出的是 ad-hoc 签名，**当场把自己降级成"来路不明"**，
+Hardened Runtime 与 entitlements 随之对不上，**所有热插件突然装载失败**，
+而症状完全不像签名问题。
 
 装好之后的开发循环，三行都不一样：
 
 | 改什么 | 正式形态下怎么生效 |
 |---|---|
 | 插件的 `swift/` | 存盘即热替换，什么都不用做（桥盯 `swift/` 与这条路无关） |
-| **壳源码 `clam-app/host/`** | **托管的后端自己重建**：Release 配置、编译仍在 worktree 的 `build/` 里，成功后装进 `/Applications/Surfclam.app`，正跑的窗口右上角挂「壳有新版本 · 重启」。**它不 quit 你的 App**——先拷到暂存名再换名就位，点不点归你 |
-| node 半边 / 编排表 | ⌘Q 再打开一次（壳退出时带走后端，重开按新代码拉起） |
+| **壳源码 `clam-app/host/`** | **没有任何自动路径**——正式形态不构建壳。在仓库里跑一次 `./release`（或 `host/scripts/build.sh`），它 quit 旧实例、装新的进 `/Applications` |
+| node 半边 / 编排表 | 在仓库里跑一次 `./release`（换掉 App 里的镜像），⌘Q 再打开一次让自举重拷 |
 
-`./release` 那条路本身不再多编一次：`build.sh` 收尾会顺手写下 `clam-app` 认的那份
-源码 hash marker（算法的唯一真相是 `clam-app/lib/source-hash.js`，bash 只负责把
-它吐出来的 hash 写进它吐出来的路径），所以装完重开 App 是**零次 xcodebuild**。
-
-**已知缺口**：那条提示条是壳的内存状态，**断连重连之后就没了**（桥不给后来者补发
-`app-build`，这条铁律见下）。所以"daemon 重启过一轮"之后，正跑的窗口有可能比
-`/Applications` 里的产物旧而界面上什么都不说——拿不准就 ⌘Q 再打开一次。
+`./release` 那条路本身不多编一次：`build.sh` 收尾会顺手写下 `clam-app` 认的那份
+源码 hash marker（算法的唯一真相是 `clam-app/host-build/source-hash.js`，bash 只负责把
+它吐出来的 hash 写进它吐出来的路径），所以后面 `./dev` 起来时是**零次 xcodebuild**。
 
 ## 两个截然不同的开发循环
 
@@ -178,7 +189,7 @@ clam-app 读到它就切成"配置用 Release、构建完装进 `/Applications`�
 | 插件的 `lib/*.js`、`package.json`、增删插件 | **必须重启 dsh**（官方在 web bundle 下 disable 了 node 侧 HMR）。**菜单项/快捷键的 `commands` 声明也在这一行**——它住在 node 半边，而且不进 contentHash，所以单独改它连 snapshot 都不会推 | 秒级 |
 | `surfclam/cordis.patch.yml`（编排表） | 同上，**必须重启 dsh** | 秒级 |
 | `lib/client.js`（clam-nativeify / clam-layout） | client 半边有 HMR，约 0.5s 自动重载；壳里 ⌘R 也行 | 秒级 |
-| **壳源码 `clam-app/host/`** | clam-app 盯着它：改了后台重建，窗口右上角提示「重启生效」，点一下就换代 | 重建 2s + 重启 |
+| **壳源码 `clam-app/host/`** | clam-app 盯着它：改了后台重建，窗口右上角提示「重启生效」，点一下就换代。**只有仓库 / `./dev` 那份有这条**——随 App 分发的那份连 `clam-app/host-build/` 都没有，构建能力压根不存在 | 重建 2s + 重启 |
 
 **改 Swift 插件不需要碰 dsh，也不需要重启 App。** 编译失败会带文件行号打进 dsh 终端，
 旧世代继续在役，界面不变也不崩。
@@ -188,9 +199,11 @@ clam-app 读到它就切成"配置用 Release、构建完装进 `/Applications`�
 **必须用 `-derivedDataPath build`**——用户从 `build/Build/Products/Debug/` 启动 App，
 输出到其它位置（如 `build/DerivedData/`）会导致"BUILD SUCCEEDED 但改动永远不生效"。
 
-**app 由 dsh 拉起**：终端跑 `./dev`，clam-app 插件会按需构建并 open 出 App
+**开发形态下 app 由 dsh 拉起**：终端跑 `./dev`，clam-app 插件会按需构建并 open 出 App
 （源码没变则跳过构建，App 已在运行则跳过拉起）。`./dev` 总是替你带上 `--no-open`，
 免得 dsh 另开一个重复的浏览器标签页。`dev.sh` 仍在，作为同一套逻辑的手动捷径。
+**正式形态方向是反的**（App 双击 → 它自己 spawn 后端），而且那边一次都不构建
+——`clam-app/host-build/` 不随包走，见「分发形态」。
 
 **改壳源码不必手动做什么**：clam-app 每 2s 比一次源码签名，变了就后台重建，
 经桥播 `app-build`，壳在右上角挂一条「壳有新版本 · 重启 / 稍后」。点重启 = 壳发
@@ -415,7 +428,7 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 
 | | 怎么错开的 |
 |---|---|
-| profile | 主 worktree 用 `surfclam`，其余用 `surfclam-<目录名>`（`bin/surfclam.js` 比对 `--git-dir` 与 `--git-common-dir` 判定） |
+| profile | 主 worktree 用 **`surfclam-dev`**，其余用 `surfclam-<目录名>`（`bin/surfclam.js` 比对 `--git-dir` 与 `--git-common-dir` 判定）。**无后缀的 `surfclam` 不发给任何 worktree**——那是装在 `/Applications` 的 App 的身份，内容由它自己自举 |
 | 端口 | 默认 `--port 0`，OS 挑空闲的。App 不受影响：实际端口由 clam-app 用 `--clam-endpoint` 直接递给它拉起的壳 |
 | App 实例 | 产物路径是 `<worktree>/clam-app/host/build/...`，**本就随 worktree 不同**。实测 macOS 26 的 LaunchServices 按 bundle **路径**去重而不是 bundle id，所以同 id 的两个 App 能并存，`open` 连 `-n` 都不用 |
 
@@ -423,12 +436,12 @@ profile 的 `node_modules`。**两种形态下 `bundles` 都只有那三行**，
 （互相覆盖，无害）。要彻底隔离就给 `xcodebuild` 传 `PRODUCT_BUNDLE_IDENTIFIER=` 覆盖，
 但那样 Dock 里会多一个图标，开发期不值当。
 
-**装好的那个 App 与主 worktree 的 `./dev` 仍然共用 profile `surfclam`**，也就共用
-同一份 endpoint 发现文件（一个 profile 一份、覆盖写）。`./release` 不再装常驻服务
-之后，安装本身不冲突了（它只构建装 App），但**运行时**两边同开仍会互相覆盖那份
-文件——壳自托管前会查重（探得到健康的 isOwn 端点就不 spawn），所以多数时候是
-"Release App 接上了 `./dev` 的那个 dsh"，而不是起两个。要干净地分开就用侧 worktree：
-profile 名不同，天然并存，"装好的那套日常用、侧 worktree 开发"是推荐的组合。
+**装好的那个 App 与主 worktree 的 `./dev` 现在可以同时跑**（2026-08-30 M2 起）：
+前者是 profile `surfclam`、后者是 `surfclam-dev`，两份 endpoint 发现文件并存互不覆盖。
+从前它们共用 `surfclam` 这个名字，运行时互抹发现文件；分片之后那条互斥没了。
+**两个 profile 的内容也不一样**：`surfclam` link 的是 App 自举出来的镜像
+（`<profile>/.surfclam/`），`surfclam-dev` link 的是本 worktree 的源码
+——所以别把它们再合并回去，App 一自举就会把仓库从运行链上摘掉。
 
 **`<AppSupport>/io.wenbo.surfclam/` 下的四样东西都已经按实例分片**，别再假设"日志只有一份"：
 
@@ -465,20 +478,24 @@ profile 名不同，天然并存，"装好的那套日常用、侧 worktree 开�
 
 ### 分发形态
 
-用户装是一行：
+**`/Applications/Surfclam.app` 是唯一分发实体**，三半边（node / client / swift）
+全部随它走（权威计划 `docs/distribution-plan.md`，进度见它的 §9 执行日志）。
+用户路径三步、没有第四步：装 dsh（`npm i -g @deepseek-ai/dsh@0.1.1-rc.2`，**这一步
+我们不接管**）→ 下载 `Surfclam.dmg` 拖进「应用程序」→ 双击。
+**用户机器上不需要 Xcode、不需要 pnpm、不需要知道 profile 是什么。**
 
-```sh
-npx @wenbo/surfclam
-```
-
-`bin/surfclam.js` 靠"伞包的兄弟目录里有没有插件源码"自动判别模式——npx 缓存里没有兄弟，
-于是走 registry 模式装 `@wenbo/surfclam`；在本仓库里跑就走 link 模式。同一个入口，
-不需要用户记任何 flag。
-
-**发布前还没解决的一件事**：`clam-app` 的模型是"从源码 xcodebuild 构建壳"，
-而用户多半没有 Xcode（`hasXcode()` 失败会优雅缺席，结果就是没有壳）。真要分发
-得 ship 预编译产物。包体积已经准备好了——`files` 白名单只收 `HASHED_ROOTS` 那几项，
-`.npmignore` 再挡一道，2.8MB（不设的话 `host/build` 一个人就 393MB）。
+- node 半边随 bundle 走 `Contents/Resources/ClamNode/`，App 首次打开时**自举**
+  进 `~/.dsh/profiles/surfclam/.surfclam/`（拷镜像 + 手写 `link:` 行与符号链接，
+  不调 pnpm）；Swift 载荷走 `Contents/Resources/ClamPlugins/`。
+- **`npx @wenbo/surfclam` 那条 registry 路径 2026-08-30 随 M4 删了**：它要求用户机器上
+  有完整 Xcode（十几 GB）加一个不入库的 `xcodegen` 二进制，缺一样就**优雅缺席**
+  ——dsh 起、HTTP 200、壳一声不响地不存在。`bin/surfclam.js` 此后只服务开发者，
+  不在仓库里跑就当场 fails loud。
+- **壳不再自己构建自己**，而且**构建那一整套代码根本不随包走**：它住在
+  `clam-app/host-build/`（389 行 = `index.js` 257 + `source-hash.js` 132），
+  `files` 白名单只收 `lib/`。判据因此是**「`host-build/` import 得到吗」**
+  而不是任何旋钮、也不是探路径。`npm pack --dry-run`：**20.2 KB / 4 个文件**
+  （收 `host/` 那几项时是 2.8 MB，不设白名单的话 `host/build` 一个人就 393 MB）。
 
 ## 架构速览
 
@@ -525,13 +542,15 @@ worktree 根本没有的插件名）。自己那套没在跑时仍然会退到�
 
 **托管形态**（偏好 `clam.connection.mode = managed`）：壳自己 spawn 一个后端并盯着它
 ——`Native/BackendManager.swift` + `Native/ManagedProcess.swift`，语义照 Docker
-Desktop（打开即有、⌘Q 即退）。Dev 壳跑**本 worktree 的 `./dev`**、Release 壳跑
-`env CLAM_RELEASE=1 dsh --profile surfclam --port 0 --no-open`，都经 `zsh -lc`
-（GUI App 的 PATH 里没有 node）。**那个 `CLAM_RELEASE=1` 不能省**：它原先由常驻
-LaunchAgent 的 plist 提供，daemon 退役后没人设了，缺了它 clam-app 会按 dev 形态跑
-——构建 Debug 产物、**再拉起一个 Surfclam Dev**，于是双击 /Applications 里的
+Desktop（打开即有、⌘Q 即退）。Dev 壳跑**本 worktree 的 `./dev`**、Release 壳**先自举
+profile 再**跑 `dsh --profile surfclam --port 0 --no-open`，都经 `zsh -lc`
+（GUI App 的 PATH 里没有 node）。**这条命令行上没有任何形态环境变量**——2026-08-30
+的 M4 把 `CLAM_RELEASE` 删了，形态改由 clam-app 自己看「壳源码在不在包里」判定
+（自举出来的镜像只有 `lib/`）。它防的是同一件事：从前缺了那个变量，clam-app 会按
+dev 形态跑——构建 Debug 产物、**再拉起一个 Surfclam Dev**，于是双击 /Applications 里的
 Release 却多出一个 Dev 窗口（实测踩过），而且发现文件里的 `appPath` 指向 Dev 产物，
-壳认不出那是自己的后端（日志里那句「⚠️ 不是本 worktree 那一套」）。
+壳认不出那是自己的后端。**现在这个失败模式在结构上不可能了**：镜像里没有 `host/`，
+构建这条路根本不存在。
 **spawn 之前一定先查重**：发现文件里 isOwn 的端点探得通、或
 `io.wenbo.surfclam.dsh` 那个常驻 LaunchAgent 在跑，就不 spawn——同一个 profile
 的两个 dsh 会互抹 endpoint 发现文件。子进程自成进程组，⌘Q 时 SIGTERM 整组、
@@ -652,14 +671,33 @@ BackendManager 自己那套退避管不了这一段——它只监护自己亲�
   同族第二个坑一并记在这儿备查：**`bootout` 之后立刻 `bootstrap` 会撞竞态**
   （"Bootstrap failed: 5: Input/output error"、"Service is in the process of exiting"），
   旧进程还在收摊、label 还占着，得小退避重试。
+- **构建脚本往 bundle 里写文件，就必须在 project.yml 里给它声明 `outputFiles`**，
+  否则 Xcode 的依赖图里没有那些文件，**壳的可执行文件没变时 `CodeSign` 阶段会被
+  跳过**——而脚本每轮都跑、每轮都改 bundle 内容，封印就此过期。
+  「只改了插件的 node/swift 半边」正是最常见的触发条件。症状恶劣：
+  `BUILD SUCCEEDED` 一切正常，`codesign -v` 才报 `a sealed resource is missing
+  or invalid` 并点名那个文件，而且**是间歇性的**（取决于 Xcode 那一轮怎么判断）。
+  它砸中的是发布那一步——公证直接拒收封印不匹配的包。
+  验的时候**别用 clean build**（那必然重签、测不出来）：改一个插件的 `.swift`
+  再构建，看日志里有没有 `CodeSign`。
+- **往 profile 里手建符号链接，相对目标多一层就会静默降级成"一个插件都没有"**：
+  `ls -l` 看着完全正常（软链本身是活的），但 node 解析不到，于是
+  `dsh plugin add` 的 reconcile **把解析不到的伞包从 `bundles` 里摘掉**，
+  全程无人报错。判据不是看 `ls`，是 `node -e 'import("@wenbo/surfclam")'`。
+  这和上面「`dsh plugin add` 和 `--dump-config` 都过、真 import 时才炸」是同一族。
+- **`execFile` 的 cwd 不存在时，报的 ENOENT 说的是 cwd，不是那个二进制**：
+  症状链极误导——`pgrep` 静默失败 → 判定"App 没在跑" → 明明开着还要再 `open`
+  一次 → `open` 自己也 ENOENT → 日志只留一句"拉起失败"，而 App 好端端开着。
+  所以给子进程传 cwd 一律传一个**必然存在**的目录（`homedir()`），
+  只有真需要那个目录的命令才传它。
 - **换了 App 图标却还是旧图标，八成不是图标做错了，是 bundle 的 mtime 没变**：
-  两条安装路径（`build.sh` 与 clam-app 的 `installBuiltProduct`）都用 `ditto`，
+  安装路径（`build.sh`；M4 之前 clam-app 也有一条，随壳自构建一起删了）用 `ditto`，
   而 `ditto` 连同源目录的 mtime 一起拷；`build/` 里那个 bundle 目录的 mtime 停在
   它第一次被创建的那一刻（后续增量构建只改内部文件），于是 `/Applications` 里
   这份的 mtime 也是旧的。**LaunchServices 按 bundle 目录的 mtime 判断"要不要
   重读图标"**，看到没变就继续画缓存里那张。症状彻底静默：bundle 内容、
   `Info.plist`、`Assets.car` 全是新的，`NSWorkspace.icon(forFile:)` 查出来也是
-  新的，只有 Dock / Finder 顽固地画旧的。两处安装都已在收尾 `touch` 目标 bundle
+  新的，只有 Dock / Finder 顽固地画旧的。安装脚本已在收尾 `touch` 目标 bundle
   再 `lsregister -f`；手上遇到就是 `touch <bundle> && lsregister -f <bundle> &&
   killall Dock`。**验的时候注意 `killall Dock` 之后要等它重绘完再截图**——
   紧跟着截到的是陈旧帧，会让人误判成"清了缓存也没用"。

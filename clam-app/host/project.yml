@@ -70,9 +70,42 @@ targets:
       - script: scripts/build-modules.sh
         name: Build shared modules (ClamSDK)
     postBuildScripts:
-      # 把共享 module 摆进 bundle 并重新签名（拷贝晚于 Xcode 的签名步骤）。
+      # 下面三个脚本都往 bundle 里写文件，所以**每一个都必须声明 outputFiles**。
+      #
+      # 不声明的后果是间歇性的、而且正好砸在发布那一步（2026-08-30 实测复现）：
+      # Xcode 的依赖图里没有这些文件，于是当壳的可执行文件本身没变时
+      # （只改了插件的 node/swift 半边就是这种情况），**CodeSign 阶段被判定为
+      # 不必重跑**——可脚本每一轮都跑、每一轮都改 bundle 内容，于是封印过期。
+      # 症状是 `codesign -v` 报 `a sealed resource is missing or invalid`
+      # 并点名那个 JSON，而 `BUILD SUCCEEDED` 一切正常。**公证会直接拒收这种包。**
+      #
+      # 声明代表性产物（各自的 manifest / 主产物）就够了：Xcode 只需要知道
+      # "这个阶段会产出它"，就会把 CodeSign 排到它后面并跟着它的新鲜度走。
+      # Debug 配置下后两个脚本直接 exit 0、不产出文件，output 缺失会让 Xcode
+      # 每轮都调用它们——正是想要的（它们自己两行就退出了）。
+
+      # 把共享 module 摆进 bundle 并重新签名。
       - script: scripts/embed-modules.sh
         name: Embed shared modules
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Frameworks/libClamSDK.dylib
+
+      # 分发载荷（node 半边 + Swift 源码 + 版本对齐）。**只在 Release 跑**，
+      # Debug 直接 exit 0，开发循环耗时不变。排在 embed-modules 之后：Xcode 自己的
+      # CodeSign 阶段在全部 postBuildScripts 之后才封外层 bundle（计划 §4.1），
+      # 所以这一步不破封印、不需要重签。
+      - script: scripts/pack-payload.sh
+        name: Pack distribution payload
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/ClamPayload.json
+
+      # 预编译各插件的 Swift 半边（M3，计划 §3.2）。**只在 Release 跑**。
+      # 排在 pack-payload 之后：源码从刚打好的 Resources/ClamNode/<pkg>/swift/ 读，
+      # "编的就是发的"因此是结构性的。用户机器上因此一次 swiftc 都不用跑。
+      - script: scripts/prebuild-plugins.sh
+        name: Prebuild native plugins
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/ClamPrebuilt.json
     entitlements:
       path: Sources/surfclam.entitlements
       properties:

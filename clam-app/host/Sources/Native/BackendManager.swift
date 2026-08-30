@@ -11,6 +11,11 @@ import Observation
 ///    xcodegen 兜底那一整套安装逻辑），Release 壳跑
 ///    `dsh --profile surfclam --port 0 --no-open`。两者都经 login shell
 ///    ——GUI App 的 PATH 里没有 node 也没有 homebrew（计划 §1.7）。
+///    **Release 那条路上还多一步：profile 自举**（`ProfileBootstrap`，分发计划
+///    §2.2），在 spawn 之前跑完——镜像不在位时 dsh 会因为
+///    `ClientPackageCompositionError` 整个起不来，顺序反了就是必崩。
+///    **Dev 壳不走这一步**：它的 profile 由 `./dev` 自己备（link 仓库源码），
+///    而且两者的 profile 名不同（`surfclam-dev` vs `surfclam`，计划 §3.6）。
 /// 2. **查重**：spawn 之前先确认没有别人在管这个 profile（健康的 isOwn 端点 /
 ///    `io.wenbo.surfclam.dsh` 那个 LaunchAgent）。同一个 profile 的两个 dsh 会
 ///    **互抹 endpoint 发现文件**（计划 §1.11），抢起来是安静的数据损坏，
@@ -28,7 +33,7 @@ final class BackendManager {
 
     /// 拉不起来的原因。**分类是为了说人话**："缺什么"和"已经有人在管"是两件
     /// 完全不同的事，混成一句"不可用"会让人去查错方向。
-    enum Unavailable: Equatable, Sendable {
+    enum Unavailable: Error, Equatable, Sendable {
         /// login shell 里都找不到 `dsh`。**不代装**，只如实说缺什么。
         case missingRuntime
         /// 已经有一个后端在管这个 profile，而且**探得通**（附上它是谁）。
@@ -44,6 +49,11 @@ final class BackendManager {
         /// spawn 本身失败（posix_spawn 报错、命令拼不出来）。
         case launchFailed(String)
 
+        /// profile 自举没过（`ProfileBootstrap`）。**和 `launchFailed` 分开**：
+        /// 它发生在 spawn 之前，说的是"后端的家还没备好"，而且多半要人动手
+        /// （旧 profile 残留、磁盘不可写）——混进 launchFailed 会把人指向进程管理。
+        case bootstrapFailed(String)
+
         /// 诊断面板与日志用的稳定标识（不随界面语言变）。
         var key: String {
             switch self {
@@ -51,6 +61,7 @@ final class BackendManager {
             case .externalBackend: return "externalBackend"
             case .externalBackendUnreachable: return "externalBackendUnreachable"
             case .launchFailed: return "launchFailed"
+            case .bootstrapFailed: return "bootstrapFailed"
             }
         }
 
@@ -60,6 +71,7 @@ final class BackendManager {
             case .externalBackend(let who): return "已由外部管理：\(who)"
             case .externalBackendUnreachable(let who): return "已由外部管理但探不通：\(who)"
             case .launchFailed(let why): return why
+            case .bootstrapFailed(let why): return "profile 自举失败：\(why)"
             }
         }
     }
@@ -244,16 +256,18 @@ final class BackendManager {
                 self.setState(.unavailable(external))
                 return
             }
-            // ② 命令。探不到 dsh 就如实说缺什么，不盲拉。
-            let plan = await Self.resolvePlan()
+            // ② 命令（Release 那条路上顺带把 profile 自举完）。探不到 dsh、
+            //    或自举没过，都如实说是哪一步，不盲拉。
+            let resolved = await Self.resolvePlan()
             guard generation == self.launchToken else { return }
             self.launching = false
-            guard let plan else {
-                Log.write("不 spawn：login shell 里找不到 dsh", to: ClamPaths.logURL, tag: "backend")
-                self.setState(.unavailable(.missingRuntime))
-                return
+            switch resolved {
+            case .failure(let why):
+                Log.write("不 spawn：\(why.detail)", to: ClamPaths.logURL, tag: "backend")
+                self.setState(.unavailable(why))
+            case .success(let plan):
+                self.spawn(plan)
             }
-            self.spawn(plan)
         }
     }
 
@@ -388,33 +402,52 @@ final class BackendManager {
         let describe: String
     }
 
-    /// 这台机器上该拉起什么。nil = 缺 dsh。
+    /// 主 worktree 的开发 profile。**只用在一处兜底**：Dev 壳而 bundle 路径
+    /// 推不出 worktree（产物被搬走了）。分发计划 §3.6 把无后缀的 `surfclam`
+    /// 收窄成安装形态专属，Dev 壳无论如何都不该去动它。
+    private static let devProfile = "surfclam-dev"
+
+    /// 这台机器上该拉起什么。失败方是"为什么拉不起来"，直接进状态与界面。
     ///
     /// **两种形态**：Dev 壳（bundle 路径推得出 worktree）跑那个 worktree 的
     /// `./dev`——安装、link、profile 判定、xcodegen 兜底全在里面，壳一件都不必抄；
-    /// Release 壳跑全局 dsh。两者都 `exec`，让 pid 落在真身上（多一层 zsh
-    /// 只会让日志里的 pid 对不上人）。
-    private static func resolvePlan() async -> SpawnPlan? {
+    /// Release 壳**先自举 profile 再**跑全局 dsh。两者都 `exec`，让 pid 落在真身上
+    /// （多一层 zsh 只会让日志里的 pid 对不上人）。
+    private static func resolvePlan() async -> Swift.Result<SpawnPlan, Unavailable> {
         if let override = commandOverride {
-            return SpawnPlan(command: override, describe: "实测钩子")
+            return .success(SpawnPlan(command: override, describe: "实测钩子"))
         }
-        guard let dsh = await which("dsh") else { return nil }
+        guard let dsh = await which("dsh") else { return .failure(.missingRuntime) }
         if let worktree = worktreeRoot(),
            FileManager.default.isExecutableFile(atPath: worktree + "/dev") {
-            return SpawnPlan(command: "cd \(quote(worktree)) && exec ./dev",
-                             describe: "\(worktree)/dev")
+            return .success(SpawnPlan(command: "cd \(quote(worktree)) && exec ./dev",
+                                      describe: "\(worktree)/dev"))
         }
-        // **Release 壳必须把形态传给后端**：`CLAM_RELEASE=1` 原先由常驻
-        // LaunchAgent 的 plist 提供，那个 daemon 退役之后就没人设它了。缺了它
-        // clam-app 会按 dev 形态跑——构建 Debug 产物、**再拉起一个
-        // Surfclam Dev**（实测：双击 /Applications 里的 Release，屏幕上却多出
-        // 一个 Dev 窗口，两个壳连着同一个后端）。
-        // 走 `env` 而不是 `VAR=x exec`：exec 是特殊内建，前缀赋值的语义微妙，
-        // 显式一层 env 没有歧义。
-        let cmd = isDevShell
-            ? "exec \(quote(dsh)) --profile surfclam --port 0 --no-open"
-            : "exec /usr/bin/env CLAM_RELEASE=1 \(quote(dsh)) --profile surfclam --port 0 --no-open"
-        return SpawnPlan(command: cmd, describe: "\(dsh) --profile surfclam")
+        if isDevShell {
+            // Dev 壳但找不到自己那个 worktree 的 `./dev`。退到主 worktree 的开发
+            // profile——**不自举**（开发形态的 profile 由 `./dev` 备，内容是
+            // link 仓库源码，自举一插手就把仓库从运行链上摘掉了）。
+            return .success(SpawnPlan(
+                command: "exec \(quote(dsh)) --profile \(devProfile) --port 0 --no-open",
+                describe: "\(dsh) --profile \(devProfile)"))
+        }
+        // Release 壳：**先把家备好**。镜像不在位时 dsh 起不来（计划 §1.3 事实 5），
+        // 所以这一步必须在 spawn 之前、而且失败要 fails loud。
+        do {
+            try await Task.detached { _ = try ProfileBootstrap.run() }.value
+        } catch {
+            let reason = (error as? ProfileBootstrap.Failure)?.message
+                ?? error.localizedDescription
+            return .failure(.bootstrapFailed(reason))
+        }
+        // **不传任何形态环境变量**（2026-08-30 M4 删掉了 `CLAM_RELEASE`）：
+        // 形态由 clam-app 自己看"壳源码在不在包里"判定，而自举出来的镜像
+        // （`<profile>/.surfclam/clam-app/`）只有 `lib/` + `package.json`——
+        // 没有 `host/` 就构建不了，也就不会去构建 Debug 产物、更不会拉起一个
+        // Surfclam Dev。判据在包的内容里，不在这条命令行上。
+        let profile = ProfileBootstrap.profileName
+        let cmd = "exec \(quote(dsh)) --profile \(profile) --port 0 --no-open"
+        return .success(SpawnPlan(command: cmd, describe: "\(dsh) --profile \(profile)"))
     }
 
     /// `<worktree>/clam-app/host` → `<worktree>`。Release 安装包为 nil。

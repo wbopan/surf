@@ -141,6 +141,25 @@ struct L {
     var connManagedNoRuntime: String {
         t("未找到后端程序（dsh）。", "Backend program (dsh) not found.")
     }
+    /// 装 dsh 的那一行命令。**两种语言下都是这一串**：它是命令，不是文案。
+    /// 版本钉死（dsh 没有任何版本协商机制，钉版本就是全部机制）。
+    var connInstallDshCommand: String { "npm i -g @deepseek-ai/dsh@0.1.1-rc.2" }
+    /// 命令下面那一行。**这句非有不可**：`zsh -lc` 读 `.zshenv`/`.zprofile`/
+    /// `.zlogin` 而不读 `.zshrc`，node 只配在 `.zshrc` 里的机器上 dsh 就是查不到
+    /// ——不说清楚的话用户会坚称"我明明装了"。
+    var connInstallDshHint: String {
+        t("已经装过？登录 Shell 不读 ~/.zshrc。把 node 的路径写进 ~/.zprofile 再重新检测。",
+          "Already installed? Login shells don't read ~/.zshrc. Add node's path to ~/.zprofile, then check again.")
+    }
+    var connCopyCommand: String { t("拷贝", "Copy") }
+    var connCopiedCommand: String { t("已拷贝", "Copied") }
+    /// 缺 dsh 那一态下换掉「开启托管」的按钮标题：这一下的意思是"再查一次"。
+    var connManagedRecheck: String { t("重新检测", "Check Again") }
+    /// profile 自举没过（`BackendManager.Unavailable.bootstrapFailed`）。
+    /// 原因五花八门（旧 profile 残留、磁盘不可写），一句话说不完，指向日志。
+    var connManagedBootstrapFailed: String {
+        t("后端环境准备失败，详见日志。", "Couldn't prepare the backend environment — see the log.")
+    }
     /// 已经有一个后端在管这个 profile：托管不该去抢（会互抹 endpoint 发现文件）。
     var connManagedExternal: String {
         t("后端已在运行，无需托管。", "A backend is already running — no need to manage one.")

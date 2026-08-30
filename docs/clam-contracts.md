@@ -391,13 +391,17 @@ flag 压过偏好（它由拉起本进程的那个后端亲手递来）；压不
 
 ### 10.3 环境开关
 
-| 变量 | 谁读 | 谁设 | 作用 |
-|---|---|---|---|
-| `CLAM_RELEASE` | `clam-app/lib/index.js` 的 `applyReleaseForm` | `./release` 写的 LaunchAgent plist | 非空且非 `0` = **release 形态**：`configuration: "Release"`、`launch: false`、`restartOnRebuild: false`；`build`/`watch` 照开（壳源码在的话），构建成功后**安装**到 `/Applications/Surfclam.app`（先拷暂存名再换名，不 quit 正在跑的实例）。**同一张编排表服务两种形态**，差别只在每次运行的环境 |
+**一个都没有了。** 曾经有一个 `CLAM_RELEASE`（`./release` 写的 LaunchAgent plist
+里设它，clam-app 读它切形态），2026-08-30 随
+[`distribution-plan.md`](distribution-plan.md) 的 M4 删掉：形态判据改成
+**「`clam-app/host-build/` 这个模块 import 得到吗」**——构建那一整套代码住在
+那个目录里，而随 App 分发的那份 clam-app 只有 `lib/`（`files` 白名单与 `ClamNode/`
+载荷都只收它）。构建不了所以不构建，不是"被一个旋钮关掉了"。
+判据在包的内容里，不在任何进程的环境里。
 
-配套的 `appPath` 也跟着形态走：release 形态写 `/Applications/Surfclam.app`，
-dev 形态写本 worktree 的构建产物。计划与验收步骤见
-[`release-install-plan.md`](release-install-plan.md)。
+发现文件里的 `appPath`（以及 `hostDir` 出不出现）跟着同一个判据走：没有构建能力时
+`appPath` 写 `/Applications/Surfclam.app`、`hostDir` **整个不写**（没有那个目录）；
+有构建能力时两者都指向本 worktree。
 
 ### 10.4 托管后端（`BackendManager`）
 
@@ -419,6 +423,25 @@ spawn 什么：Dev 壳（bundle 路径推得出 worktree）跑 `<worktree>/dev`�
 **spawn 之前必须查重**：同一个 profile 的两个 dsh 会互抹 §10.1 那份发现文件。
 两条判据任一成立就不 spawn（进「后端已在运行」态）：发现文件里 `isOwn` 的端点
 探得通；或上面那个 LaunchAgent 在跑。
+
+### 10.5 分发载荷的约定（App bundle ↔ 镜像 ↔ 桥）
+
+M3（[`distribution-plan.md`](distribution-plan.md) §3.2/§3.2a）落下的几个跨包字符串。
+**权威在代码里**：打包侧 `clam-app/host/scripts/pack-payload.mjs` 与
+`prebuild-plugins.mjs`，消费侧 `clam-bridge/lib/swift-payload.js` 与
+`clam-app/host/Sources/Native/CompilerService.swift`。
+
+| 名字 | 谁写 | 谁读 | 是什么 |
+|---|---|---|---|
+| `Resources/ClamNode/<pkg>/{package.json, lib/, swift/}` | `pack-payload.mjs` | `ProfileBootstrap`（整份 `ditto` 进 `<profile>/.surfclam/`） | node 半边 + Swift 源码。**`swift/` 与 `lib/` 平级**，各插件的 `new URL("../swift/", import.meta.url)` 因此在镜像里原样成立 |
+| `Resources/ClamNode/<pkg>/swift/.clam-static` | `pack-payload.mjs` | `clam-bridge` 的 `register()` | 「这份源码是分发载荷，进程活着的时候不会变」。桥见到它就**只扫一次、不轮询**（§7.10）。不是 `.swift`，所以不进任何 hash |
+| `Resources/ClamPlugins/<Module>/prebuilt/<hash12>/lib<Module>_h<hash12>.dylib` | `prebuild-plugins` | `CompilerService.ProductRoot.prebuilt` | 预编译产物。`<hash12>` = contentHash 前 12 位，与用户缓存 `native-plugins/generations/<Module>/<hash12>/` **同构**（两者的产物永远是"兄弟"，插件间依赖那条 `@loader_path` rpath 因此两边通用） |
+| `Resources/ClamPayload.json` | `pack-payload.mjs` | `ProfileBootstrap`（当 `.stamp` 的 `sourceHash`）、`prebuild-plugins.mjs`（module 清单） | `{version, hash, packedAt, packages, modules}` |
+| `Resources/ClamPrebuilt.json` | `prebuild-plugins` | **没有程序读**，给人看 | `{version, generatedAt, plugins:[{plugin, module, generatedModule, contentHash, dylib}]}` |
+| 插件对象上的 `clamSwift`（不可枚举） | `createSwiftPlugin`（`clam-bridge/lib/plugin.js`） | `prebuild-plugins.mjs` | `{name, swiftDir, swiftDeps, sharedModules, schemaVersion}`。构建期算 contentHash 要用它——**静态解析源码猜这三样是不行的**，猜错了不报错，只是预编译永远命中不了 |
+
+**查找顺序**：用户缓存 → bundle 内预编译 → 现场编译。用户缓存排第一，
+是为了让"用户自己改了插件源码"赢过 bundle 里随分发走的默认实现。
 
 ---
 

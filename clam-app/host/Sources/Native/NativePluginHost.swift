@@ -26,6 +26,8 @@ private struct LoadedPlugin {
     let generation: Int
     /// 世代产物目录（下游插件 -I/-L 指向它）。
     let directory: URL
+    /// 这份产物是从哪儿来的（用户缓存 / bundle 内预编译 / 现场编译）。
+    let origin: CompiledPlugin.Origin
     /// `activate` 返回的 handle。**壳持有它 = 本代在役，壳松手 = 本代退休**：
     /// 它析构时把 activate 期间攒下的注册与订阅一并撤销。
     let handle: AnyObject?
@@ -87,12 +89,20 @@ final class NativePluginHost {
         let base = ClamPaths.appSupport.appendingPathComponent("native-plugins", isDirectory: true)
         storeDir = base.appendingPathComponent("store", isDirectory: true)
         try? FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        // 查找顺序：**用户缓存 → bundle 内预编译 → 现场编译**（分发计划 §3.2）。
+        // 用户缓存排第一，是为了让"用户自己改了插件源码"那一份赢过 bundle 里随
+        // 分发走的默认实现；正式形态下用户缓存本来就是空的，第一轮就落到预编译上。
         compiler = CompilerService(
             modulesDir: Bundle.main.bundleURL
                 .appendingPathComponent("Contents/Resources/ClamModules", isDirectory: true),
             frameworksDir: Bundle.main.bundleURL
                 .appendingPathComponent("Contents/Frameworks", isDirectory: true),
-            generationsDir: base.appendingPathComponent("generations", isDirectory: true))
+            searchRoots: [
+                .cache(base.appendingPathComponent("generations", isDirectory: true)),
+                .prebuilt(Bundle.main.bundleURL
+                    .appendingPathComponent("Contents/Resources/ClamPlugins", isDirectory: true)),
+            ],
+            writeRoot: .cache(base.appendingPathComponent("generations", isDirectory: true)))
         ledger = GenerationLedger(url: base.appendingPathComponent("ledger.json"))
 
         bridge.onFrame = { [weak self] frame in self?.handle(frame) }
@@ -271,7 +281,7 @@ final class NativePluginHost {
                     name: source.name, module: current.module, directory: current.directory,
                     dylibURL: current.directory
                         .appendingPathComponent("lib\(current.module).dylib"),
-                    contentHash: hash, fromCache: true)
+                    contentHash: hash, origin: current.origin)
                 continue
             }
 
@@ -281,7 +291,17 @@ final class NativePluginHost {
                 try swap(to: compiled, source: source)
                 bridge.send(["type": "compile-result", "plugin": source.name,
                              "contentHash": compiled.contentHash, "ok": true,
-                             "log": compiled.fromCache ? "缓存命中" : ""])
+                             "log": compiled.fromCache ? compiled.origin.rawValue : ""])
+            } catch CompileError.noToolchain {
+                // **不是失败，是缺一块能力**（分发计划 §3.2）：bundle 里没有这个插件
+                // 的预编译产物，本机也没有 swiftc。少一个插件，不是整个原生侧缺席
+                // ——所以这里 warn 一句就走，上一代（如果有）照常在役。
+                Log.write("插件 \(source.name) 跳过：本机没有 Swift 工具链，"
+                          + "bundle 里也没有它 @ \(hash.prefix(12)) 的预编译产物",
+                          to: ClamPaths.logURL, tag: "plugin")
+                bridge.send(["type": "compile-result", "plugin": source.name,
+                             "contentHash": hash, "ok": false, "reason": "no-toolchain",
+                             "log": "本机没有 Swift 工具链，且 bundle 内没有对应的预编译产物"])
             } catch {
                 let log = (error as? CompileError).flatMap { if case .failed(let l) = $0 { return l } else { return nil } }
                     ?? "\(error)"
@@ -343,7 +363,7 @@ final class NativePluginHost {
         let previous = loaded[name]
         loaded[name] = LoadedPlugin(name: name, module: compiled.module,
                                     contentHash: compiled.contentHash, generation: generation,
-                                    directory: compiled.directory,
+                                    directory: compiled.directory, origin: compiled.origin,
                                     handle: handle, plugin: plugin, host: host, image: image)
         if let previous {
             // 松手：旧 handle 析构 → 旧注册自行退场（且只退自己那份，见
@@ -352,8 +372,8 @@ final class NativePluginHost {
             Log.write("插件 \(name) 换代 g\(previous.generation) → g\(generation)（\(compiled.module)）",
                       to: ClamPaths.logURL, tag: "plugin")
         } else {
-            Log.write("插件 \(name) 装载 g\(generation)（\(compiled.module)"
-                      + "\(compiled.fromCache ? "，缓存命中" : "")）",
+            Log.write("插件 \(name) 装载 g\(generation)（\(compiled.module)，"
+                      + "\(compiled.origin.rawValue)）",
                       to: ClamPaths.logURL, tag: "plugin")
         }
         ledger.recordLoad(plugin: name, module: compiled.module, hash: compiled.contentHash)
@@ -368,7 +388,8 @@ final class NativePluginHost {
     var diagnostics: [String] {
         loaded.values.sorted { $0.name < $1.name }.map {
             // module 名末尾就是 contentHash 的短前缀（§6.2），不再单列一次。
-            "\($0.name)  g\($0.generation)  \($0.module)"
+            // 来路跟着一起报：**"这台机器上到底编没编"** 就是这一栏。
+            "\($0.name)  g\($0.generation)  \($0.module)  \($0.origin.rawValue)"
         }
     }
 

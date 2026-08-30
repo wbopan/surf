@@ -28,14 +28,34 @@ struct CompiledPlugin {
     let directory: URL
     let dylibURL: URL
     let contentHash: String
-    /// 这次是编出来的还是缓存命中的（诊断用）。
-    let fromCache: Bool
+    /// 这份产物是从哪儿来的。**"零编译启动"的证据就是这一栏**：正式形态下
+    /// 五个插件应当全是 `.prebuilt`，一次 swiftc 都不跑。
+    let origin: Origin
+
+    /// 产物的来路。
+    enum Origin: String {
+        /// 用户缓存（`native-plugins/generations/`）——上一次现场编译留下的。
+        case cache = "用户缓存"
+        /// App bundle 里随分发走的预编译产物（`Resources/ClamPlugins/`）。
+        case prebuilt = "bundle 预编译"
+        /// 这一次真的跑了 swiftc。
+        case compiled = "现场编译"
+    }
+
+    /// 这次没跑 swiftc（诊断文案与桥的回报都只关心这一位）。
+    var fromCache: Bool { origin != .compiled }
 }
 
 enum CompileError: Error {
     /// 编译失败，带 swiftc 的完整输出。
     case failed(log: String)
     case noSources
+    /// 本机没有 Swift 工具链，而缓存与 bundle 内预编译产物都没命中。
+    ///
+    /// **这不是错误，是缺一块能力**（分发计划 §3.2）：现场编译此后是"可选能力"
+    /// 而不是"启动前提"。正式形态下用户机器上多半没有 swiftc，正常路径是命中
+    /// bundle 里的预编译产物；走到这里说明那份产物也不在（换了源码、或者包坏了）。
+    case noToolchain
 }
 
 /// 壳内编译机：把桥送来的 Swift 源码就地编成 dylib（计划 §6）。
@@ -54,17 +74,65 @@ actor CompilerService {
     private let modulesDir: URL
     /// 共享 module 的 dylib（bundle 内 Contents/Frameworks）。
     private let frameworksDir: URL
-    /// 世代产物根目录。
-    private let generationsDir: URL
+
+    /// 产物的一种落点。
+    ///
+    /// **两种布局是同构的**（`<Module>/…/<hash12>/`，产物之间永远是"兄弟"），
+    /// 所以插件间依赖那条 `@loader_path` 相对 rpath 在两边都自动成立
+    /// ——`rpathReference(to:from:)` 按真实相对位置算，不写死任何一种布局。
+    enum ProductRoot {
+        /// 用户缓存：`<AppSupport>/native-plugins/generations/<Module>/<hash12>/`。
+        case cache(URL)
+        /// bundle 内预编译：`<App>.app/Contents/Resources/ClamPlugins/<Module>/prebuilt/<hash12>/`。
+        case prebuilt(URL)
+
+        var origin: CompiledPlugin.Origin {
+            switch self {
+            case .cache: .cache
+            case .prebuilt: .prebuilt
+            }
+        }
+
+        /// 这个落点存不存源码副本。用户缓存存（出问题时能看到当时到底编的是什么）；
+        /// bundle 里不存——那份源码已经在 `Resources/ClamNode/<pkg>/swift/` 了，
+        /// 再来一份是白白给每个用户多发 ~490 KB。
+        var keepsSources: Bool {
+            switch self {
+            case .cache: true
+            case .prebuilt: false
+            }
+        }
+
+        func directory(module: String, hash12: String) -> URL {
+            switch self {
+            case .cache(let root):
+                root.appendingPathComponent(module, isDirectory: true)
+                    .appendingPathComponent(hash12, isDirectory: true)
+            case .prebuilt(let root):
+                root.appendingPathComponent(module, isDirectory: true)
+                    .appendingPathComponent("prebuilt", isDirectory: true)
+                    .appendingPathComponent(hash12, isDirectory: true)
+            }
+        }
+    }
+
+    /// 找现成产物的顺序。**用户缓存排第一**：用户自己改了插件源码、壳现场编出来的
+    /// 那一份，必须赢过 bundle 里随分发走的默认实现（分发计划 §3.2）。
+    private let searchRoots: [ProductRoot]
+    /// 真要编译时写到哪儿。壳写用户缓存；构建期的预编译工具写 bundle。
+    private let writeRoot: ProductRoot
 
     private var toolchainFingerprintCache: String?
     private var sharedModuleFingerprintCache: [String: String] = [:]
     private var targetTripleCache: String?
+    private var toolchainAvailableCache: Bool?
 
-    init(modulesDir: URL, frameworksDir: URL, generationsDir: URL) {
+    init(modulesDir: URL, frameworksDir: URL,
+         searchRoots: [ProductRoot], writeRoot: ProductRoot) {
         self.modulesDir = modulesDir
         self.frameworksDir = frameworksDir
-        self.generationsDir = generationsDir
+        self.searchRoots = searchRoots
+        self.writeRoot = writeRoot
     }
 
     // MARK: - 内容寻址
@@ -80,7 +148,7 @@ actor CompilerService {
         hasher.update(source.module)
         hasher.update(source.bridgeHash)
         hasher.update(String(source.schemaVersion))
-        hasher.update(await toolchainFingerprint())
+        hasher.update(toolchainFingerprint())
         for module in source.sharedModules where module != Self.abiModule {
             hasher.update("shared:\(module)=\(sharedModuleFingerprint(module))")
         }
@@ -94,7 +162,8 @@ actor CompilerService {
 
     // MARK: - 编译
 
-    /// 编一个插件。命中缓存则不跑 swiftc。
+    /// 编一个插件。**先按 `searchRoots` 找现成的**（用户缓存 → bundle 内预编译），
+    /// 都没有才跑 swiftc。
     /// - Parameter resolved: 已编好的依赖（插件名 → 产物），用于 `-I/-L/-module-alias`。
     func compile(_ source: PluginSource,
                  resolved: [String: CompiledPlugin]) async throws -> CompiledPlugin {
@@ -102,19 +171,32 @@ actor CompilerService {
 
         let hash = await contentHash(for: source)
         let module = moduleName(source.module, hash)
-        let dir = generationsDir
-            .appendingPathComponent(source.module, isDirectory: true)
-            .appendingPathComponent(String(hash.prefix(12)), isDirectory: true)
-        let dylib = dir.appendingPathComponent("lib\(module).dylib")
+        let hash12 = String(hash.prefix(12))
 
-        if FileManager.default.fileExists(atPath: dylib.path) {
+        for root in searchRoots {
+            let dir = root.directory(module: source.module, hash12: hash12)
+            let dylib = dir.appendingPathComponent("lib\(module).dylib")
+            guard FileManager.default.fileExists(atPath: dylib.path) else { continue }
             return CompiledPlugin(name: source.name, module: module, directory: dir,
-                                  dylibURL: dylib, contentHash: hash, fromCache: true)
+                                  dylibURL: dylib, contentHash: hash, origin: root.origin)
         }
 
-        // 源码落盘（顺带成为诊断素材：出问题时能看到当时到底编的是什么）。
-        let srcDir = dir.appendingPathComponent("src", isDirectory: true)
+        // 现场编译此后是**可选能力**而不是启动前提（分发计划 §3.2）：正式形态下
+        // 上面那一轮就该命中 bundle 里的预编译产物，走到这里说明它不在。
+        // 没有工具链时缺的是"这一个插件的原生半边"，不是整个原生侧。
+        guard toolchainAvailable() else { throw CompileError.noToolchain }
+
+        let dir = writeRoot.directory(module: source.module, hash12: hash12)
+        let dylib = dir.appendingPathComponent("lib\(module).dylib")
+
+        // 源码落盘。用户缓存留一份当诊断素材（出问题时能看到当时到底编的是什么）；
+        // 写进 bundle 的预编译产物不留——那份源码已经在 `Resources/ClamNode/` 里了。
+        let srcDir = writeRoot.keepsSources
+            ? dir.appendingPathComponent("src", isDirectory: true)
+            : URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("clam-prebuild-\(module)", isDirectory: true)
         try? FileManager.default.removeItem(at: srcDir)
+        defer { if !writeRoot.keepsSources { try? FileManager.default.removeItem(at: srcDir) } }
         try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
         var sourcePaths: [String] = []
         for (rel, content) in source.files.sorted(by: { $0.key < $1.key }) {
@@ -139,7 +221,13 @@ actor CompilerService {
         for module in source.sharedModules where module != Self.abiModule {
             args += ["-l\(module)"]
         }
-        args += ["-Xlinker", "-rpath", "-Xlinker", frameworksDir.path]
+        // rpath 一律写成**可搬运**的形式：产物要能随 App bundle 分发（预编译方案，
+        // distribution-plan §3.2），烘焙一条构建机的绝对路径进去就等于把它钉死在那台机器上。
+        // 共享 module 永远在 `<App>.app/Contents/Frameworks`，而 `@executable_path` 展开的
+        // 是**主可执行文件**（壳）的位置——与这份 dylib 自己躺在哪里（用户缓存 / bundle 内
+        // 预编译目录）无关，所以这条对两种落点都成立。壳自己链接 ClamSDK 用的也正是这条
+        // （见 project.yml 的 LD_RUNPATH_SEARCH_PATHS，实测 `otool -l` 一致）。
+        args += ["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]
         // 插件间依赖：源码里写 `import ClamLayout`，这里用 -module-alias 绑到
         // 具体世代，世代号对插件作者完全透明（M2 §2 定稿）。
         for dep in source.deps {
@@ -148,16 +236,20 @@ actor CompilerService {
                      "-L", compiled.directory.path,
                      "-l\(compiled.module)",
                      "-module-alias", "\(baseModule(compiled.module))=\(compiled.module)"]
-            args += ["-Xlinker", "-rpath", "-Xlinker", compiled.directory.path]
+            args += ["-Xlinker", "-rpath", "-Xlinker",
+                     rpathReference(to: compiled.directory, from: dir)]
         }
         args += ["-Xlinker", "-install_name", "-Xlinker", "@rpath/lib\(module).dylib"]
         args += ["-target", await targetTriple(), "-language-mode", "5", "-Onone", "-g"]
 
         let started = Date()
+        Log.write("现场编译 \(source.name) → \(module)", to: ClamPaths.logURL, tag: "compile")
         let result = try runSwiftc(args)
         let log = result.output
-        try? log.write(to: dir.appendingPathComponent("build.log"),
-                       atomically: true, encoding: .utf8)
+        if writeRoot.keepsSources {
+            try? log.write(to: dir.appendingPathComponent("build.log"),
+                           atomically: true, encoding: .utf8)
+        }
 
         guard result.status == 0, FileManager.default.fileExists(atPath: dylib.path) else {
             // 失败的目录留着会让下次误判成缓存命中，清掉。
@@ -169,7 +261,70 @@ actor CompilerService {
                          Date().timeIntervalSince(started), module),
                   to: ClamPaths.logURL, tag: "compile")
         return CompiledPlugin(name: source.name, module: module, directory: dir,
-                              dylibURL: dylib, contentHash: hash, fromCache: false)
+                              dylibURL: dylib, contentHash: hash, origin: .compiled)
+    }
+
+    /// 本机有没有可用的 swiftc。
+    ///
+    /// **只在真要编译之前问一次**——正式形态下五个插件全部命中 bundle 里的预编译
+    /// 产物，这个函数一次都不会被调用，所以"零编译启动"连 `xcrun` 都不会 spawn。
+    ///
+    /// 判据是 `xcrun --find swiftc` 的**退出码 + 结果文件真的可执行**，不是
+    /// `swiftc --version` 的输出：`/usr/bin/xcrun` 在没有工具链的机器上照样存在、
+    /// 照样能跑，只是把 `xcrun: error: missing DEVELOPER_DIR path: …` 当 stdout
+    /// 吐出来（实测）——只看"跑起来了"会把那段错误文本当成成功。
+    private func toolchainAvailable() -> Bool {
+        if let cached = toolchainAvailableCache { return cached }
+        var available = false
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["--find", "swiftc"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let path = (String(data: data, encoding: .utf8) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            available = process.terminationStatus == 0 && !path.isEmpty
+                && FileManager.default.isExecutableFile(atPath: path)
+        } catch {
+            available = false
+        }
+        toolchainAvailableCache = available
+        return available
+    }
+
+    /// 插件间依赖那条 rpath，写成 `@loader_path` 相对形式。
+    ///
+    /// **运行期真正管用的机制不是这条 rpath，是"依赖先装"。** 壳按拓扑序 dlopen
+    /// （`NativePluginHost.reconcile`），而 dyld 在解析 `@rpath/libClamLayout_h….dylib`
+    /// 之前先看**已装载的 image 里有没有同名 install_name**，有就直接复用——
+    /// 与 rpath 能不能解析、与 `RTLD_LOCAL` 都无关（2026-08-30 实测：把 rpath 指向一个
+    /// 根本不存在的目录，先 dlopen 依赖再 dlopen 依赖方，照样成功；不先装依赖才会报
+    /// "Library not loaded"）。所以这条 rpath 的作用域是"这份 dylib 被单独装载时"
+    /// ——验证工具、将来的按需装载。
+    ///
+    /// 既然如此就该写成可搬运的：两份产物在同一棵树里的相对位置是**结构性**的
+    /// （用户缓存 `generations/<Module>/<hash12>/`，bundle 内预编译
+    /// `ClamPlugins/<Module>/prebuilt/<hash12>/`，都是"兄弟目录"），而绝对路径在换一台
+    /// 机器、甚至只是把 App 拖到别的文件夹之后就一定是错的。**相对路径在任何情形下都不
+    /// 比绝对路径差**：两者一起搬 → 相对还对、绝对已错；只搬一边 → 两者都错，而那时
+    /// 兜底的是上面那条"依赖先装"。
+    ///
+    /// 唯一退回绝对路径的情形是两者除了 `/` 没有公共祖先（跨卷等），那时它们无论如何
+    /// 都不是同一棵可分发的树。
+    private func rpathReference(to depDir: URL, from outputDir: URL) -> String {
+        let dep = depDir.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        let out = outputDir.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+        var shared = 0
+        while shared < dep.count, shared < out.count, dep[shared] == out[shared] { shared += 1 }
+        // pathComponents 的第 0 个是 "/"；只共享它 = 没有任何公共祖先。
+        guard shared > 1 else { return depDir.path }
+        let ups = Array(repeating: "..", count: out.count - shared)
+        return (["@loader_path"] + ups + dep[shared...]).joined(separator: "/")
     }
 
     /// `ClamLayout_h9f31c0aa12b4` → `ClamLayout`（-module-alias 的左边）。
@@ -202,17 +357,36 @@ actor CompilerService {
         return fallback
     }
 
-    /// **所有**插件共享的编译基线：ABI 版本 + swiftc 版本 + ClamSDK 的接口。
+    /// **所有**插件共享的编译基线：ABI 版本 + ClamSDK 的接口。
     ///
     /// 只有 ClamSDK 在这里。它是壳↔插件的 ABI 本身，每个插件都链接它，变了谁都得重编。
     /// 其余共享 module 按插件声明单独折进 `contentHash`
     /// ——把整个 `ClamModules/` 一股脑算进来，就等于让改一行共享 module 把从不
     /// import 它的插件也全量重编一遍。
-    private func toolchainFingerprint() async -> String {
+    ///
+    /// **这里不查本机 `swiftc --version`**（2026-08-30 删掉，distribution-plan §3.2）。
+    /// 两条理由：
+    ///
+    /// 1. **它让预编译分发不可能成立**。contentHash 要在构建机与用户机上算出同一个数，
+    ///    随 bundle 分发的那份 dylib 才可能被认出来；本机 swiftc 版本按定义两边不同。
+    ///    更糟的是无工具链的机器上它不是"取不到值"而是**取到垃圾值**：`/usr/bin/xcrun`
+    ///    仍在，`Process.run()` 不抛，`runSwiftc` 只是返回非零状态**并把错误文本当作
+    ///    output**（实测：`xcrun: error: missing DEVELOPER_DIR path: …`），那段带本机
+    ///    路径的错误文本被原样哈希进去。
+    /// 2. **信号没有丢**。`ClamSDK.swiftinterface` 的文件头里就写着编它的那个编译器
+    ///    （`// swift-compiler-version: Apple Swift version 6.4 (swiftlang-…)`）与目标
+    ///    三元组，而 `scripts/build-modules.sh` 的跳过判据里**含 `xcrun swiftc --version`**
+    ///    ——换工具链必然重编 ClamSDK、必然改写这份 interface、于是所有插件的
+    ///    contentHash 必然失效。`targetTriple()` 早就在演示同一个模式：真相取自随
+    ///    bundle 走的那份文件，而不是本机环境。
+    ///
+    /// **取舍**：同源码 + 同 ClamSDK、只换 swiftc 而**不重编 ClamSDK**，会被认作同一个
+    /// hash（缓存命中、不重编）。这条路只在有人手动绕开 build-modules.sh 时才走得到；
+    /// 真出问题也是响亮的 `.swiftmodule` 版本不匹配，不是沉默的认知分裂。
+    private func toolchainFingerprint() -> String {
         if let cached = toolchainFingerprintCache { return cached }
         var hasher = SHA256Hasher()
         hasher.update(String(clamABIVersionForFingerprint))
-        if let version = try? runSwiftc(["--version"]).output { hasher.update(version) }
         hasher.update(sharedModuleFingerprint(Self.abiModule))
         let value = hasher.finalizeHex()
         toolchainFingerprintCache = value

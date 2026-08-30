@@ -64,3 +64,6 @@ docs/spikes/hover/*
 
 # 兜底：给 shot.sh 传了相对路径、又恰好 cd 在壳工程根时的残留
 /clam-app/host/*.png
+
+# 预编译工具的产物（scripts/prebuild-plugins.sh 按源码 hash 重编）
+/clam-app/host/build-prebuild/

@@ -1,24 +1,34 @@
 /**
  * clam-app —— 壳源码与构建过程的插件化（阶段二计划 §7.5 v0）。
  *
- * 启动方向反转后 dsh 先于 app 存在，于是它就是壳天然的 bootstrapper：
- * 本插件的载荷是 `host/` 里的整个 Xcode 工程，activate 时做三件事——
+ * 启动方向反转后 dsh 先于 app 存在，于是它就是壳天然的 bootstrapper。
+ * **仓库里**本插件的载荷是 `host/` 里的整个 Xcode 工程，activate 时做三件事——
  *
- *   1. 写 endpoint 发现文件（`~/Library/Application Support/io.wenbo.surfclam/endpoint.json`），
+ *   1. 写 endpoint 发现文件（`~/Library/Application Support/io.wenbo.surfclam/endpoints/<profile>.json`），
  *      让手动双击启动的 app 也能找到这个 dsh；fiber 卸载时删除。
  *   2. 源码 hash 变了或产物缺失 → xcodegen + xcodebuild（无 Xcode 则降级为只探测既有产物）。
  *   3. 产物存在且 app 尚未运行 → `open --args --clam-endpoint …` 拉起。
+ *
+ * **随 App 分发的那一份只有第 1 和第 3 件**（`host/` 不在包里，见下）。
  *
  * 起来之后还盯着壳源码（v1，§7.5）：变了就后台重建，经桥播报
  * `app-build`；壳把它变成一条"有新版，重启生效"的横幅。**重建不等于重启**——
  * 壳重启是重循环（进程退出、页面状态丢失），时机归用户，默认只提示。
  * 运行中的 app bundle 被覆盖在 macOS 上是安全的（旧进程继续跑旧映像）。
  *
- * **两种形态，一张编排表**：环境变量 `CLAM_RELEASE=1`（`./release` 装出来的
- * LaunchAgent 在 plist 里设它）改的是**配置与落点**，不是"做不做"——照样盯源码、
- * 照样重建，只是配置用 `Release`、构建完多一步**安装**到
- * `/Applications/Surfclam.app`，而且从不自动拉起（登录时不弹窗口）。
- * 计划见 `docs/release-install-plan.md` §2.1 与 §2.5，实现见 {@link applyReleaseForm}。
+ * **构建那一整套代码不在这个文件里，也不随包分发**：它住在
+ * `clam-app/host-build/`（`docs/distribution-plan.md` §3.3），而本包的 `files`
+ * 白名单只收 `lib/`、App 的 `ClamNode/` 载荷也只拷 `lib/` 与 `swift/`。
+ * 判据因此**不是"探一下 host/ 在不在"，而是"那个模块 import 得到吗"**
+ * （见下面那个模块级常量 `hostBuild`）——更诚实，也省掉一次文件系统探路。
+ * 拿不到就是这份 clam-app 没有构建能力：`build` / `watch` / `restartOnRebuild`
+ * 一律关掉，只剩第 1 和第 3 件事。
+ *
+ * 曾经的 `CLAM_RELEASE` 旋钮 2026-08-30 随 M4 一起删了
+ * （`docs/distribution-plan.md` §3.3）：发布的 App 是 Developer ID 签名 + 公证过的，
+ * 它自己 xcodebuild 重建自己产出的是 ad-hoc 签名，**当场把自己降级成"来路不明"**，
+ * 所有热插件随之装载失败——所以正式形态根本不该有"要不要构建"这个开关，
+ * 而不是有一个默认关掉的。
  *
  * 全程"优雅缺席"：构建失败、没有 Xcode、连既有产物都没有，都只在终端留一句话，
  * dsh 照常服务浏览器。首次构建失败不重试、不成环——防的是构建风暴；
@@ -26,13 +36,12 @@
  *
  * @module clam-app
  */
-import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import z from "@deepseek-ai/schemastery";
 import { environmentLocale, localeFromTag } from "../../clam-bridge/lib/locale.js";
-import { HOST_DIR, hashMarkerPath, hashSources, signatureSources } from "./source-hash.js";
+import { delay, errorText, readTextOrUndefined, resolveProfileName, run } from "./util.js";
 
 export const name = "clam-app";
 
@@ -107,72 +116,72 @@ const ENDPOINT_GUARD_INTERVAL_MS = 5000;
 const DEFAULT_BRIDGE_PATH = "/clam/bridge";
 
 /**
- * xcodegen 二进制。**被 .gitignore 挡在库外**（`/clam-app/host/tools/`），
- * 所以新克隆 / 新 worktree 里它不存在——`surfclam/bin/surfclam.js` 的 ensureXcodegen
- * 会在 `./dev` 时从别的 worktree 或 PATH 拷一份补上。这里做一次显式存在性检查，
- * 是因为不做的话失败长成 `spawn …/tools/xcodegen ENOENT`：一句既不说明原因
- * 也不说明补法的话，还埋在构建日志里。
+ * 不挑地方的命令（`open` / `pgrep`）站在哪儿跑。
+ *
+ * **绝不能拿 `host/` 当 cwd**：源码不在场时那个目录不存在，而 `execFile` 的 cwd
+ * 不存在会让**任何**命令都起不来。家目录必然在，且这两条命令对 cwd 没有依赖。
+ * （构建那几条要站在 `HOST_DIR` 里，那是 `host-build/` 自己的事。）
  */
-const XCODEGEN = join(HOST_DIR, "tools", "xcodegen");
+const NEUTRAL_CWD = homedir();
 
-/** 产物落点由 xcodebuild 的 `-derivedDataPath build` 固定（见仓库 CLAUDE.md 硬约束）。 */
-const productPath = (configuration) =>
-	join(HOST_DIR, "build", "Build", "Products", configuration,
-		`${configuration === "Debug" ? "Surfclam Dev" : "Surfclam"}.app`);
-
-/** 没有 Xcode 时的兜底产物：上次装到 /Applications 的 Release。 */
-const INSTALLED_RELEASE = "/Applications/Surfclam.app";
+/** 装在 `/Applications` 的那个正式壳（dmg 装的那一份，也是 `build.sh` 的落点）。 */
+const INSTALLED_APP = "/Applications/Surfclam.app";
 
 /**
- * 「本机安装形态」的开关（`docs/release-install-plan.md` §2.1）。
+ * 构建那半边（`clam-app/host-build/`）——**`undefined` 就是这份 clam-app
+ * 没有构建能力**。
  *
- * `./release` 装出来的 LaunchAgent 在 plist 的 EnvironmentVariables 里设它，
- * 于是**同一张编排表**（`surfclam/cordis.patch.yml`）服务两种形态，差别只在
- * 每次运行的环境——不设第二个 profile、不复制第二份配置。
+ * 判据不是"探一下 `host/project.yml` 在不在"，而是**模块本身 import 得到吗**
+ * （`docs/distribution-plan.md` §3.3）。理由是它更诚实：随 App 分发的镜像与 npm
+ * 包里，`host-build/` 连同 `host/` 一起**根本没被打进来**，构建这件事不是"被一个
+ * 旋钮关掉了"，是压根不存在。省掉的那次文件系统探路是顺带的。
  *
- * 值的判定刻意宽松（非空且不是 `0` 即算开），因为它是人手写进 plist 的。
+ * 为什么正式形态不该有构建能力：发布的 App 是 Developer ID 签名 + 公证过的，
+ * 自己 xcodebuild 重建自己产出的是 ad-hoc 签名，**当场把自己从"公证过"降级成
+ * "来路不明"**，Hardened Runtime 与 entitlements 随之对不上，于是**所有热插件
+ * 突然装载失败**——而症状完全不像签名问题。
+ *
+ * **顶层 await 是有意的**：`apply` 是同步的，而 endpoint 发现文件在 `apply` 的
+ * 第一拍就要写、里面的 `appPath` 必须已经是对的（写错了壳会认不出"这是我这一套"）。
+ * 顶层解析掉之后，下面全部是同步代码，不必为一次亚毫秒的本地 import 把整条链染成
+ * 异步。dsh 的 loader 本来就是 `await import(entry)`，顶层 await 对它是透明的。
+ *
+ * **只有"模块不在"才算降级**：语法错之类如实报出来再降级，不静默
+ * ——开发期真写坏了 `host-build/`，症状应当是一行响亮的日志，
+ * 而不是"构建怎么不跑了"。
  */
-const RELEASE_ENV = "CLAM_RELEASE";
+const hostBuild = await importHostBuild();
 
-/** 本进程是不是 release 形态。**读环境而不是读 config**：config 是两种形态共用的那一张。 */
-function isReleaseForm() {
-	const raw = process.env[RELEASE_ENV]?.trim();
-	return raw !== undefined && raw !== "" && raw !== "0";
+async function importHostBuild() {
+	try {
+		return await import("../host-build/index.js");
+	} catch (error) {
+		if (error?.code === "ERR_MODULE_NOT_FOUND") return undefined;
+		process.stderr.write(`clam-app: 加载 clam-app/host-build 失败，`
+			+ `按"没有构建能力"降级：${errorText(error)}\n`);
+		return undefined;
+	}
 }
 
 /**
- * release 形态的**整体覆写**（计划 §2.5，2026-08-30 用户裁决推翻了 §2.1 的
- * "不构建不盯源码"）。常驻 daemon 的四条要求：
+ * 没有构建能力时的配置覆写：**只关"要工具链才做得到的事"**，其余照 config。
  *
- *  - `configuration: "Release"`——它伺候的是 `/Applications/Surfclam.app`；
- *  - `build` + `watch` **照开**（前提是壳源码在，见下）：壳二进制落后是**静默的**，
- *    而且症状出在别处——桥会把新插件热替换进旧壳，新插件 emit 的东西旧壳没人订阅，
- *    看上去像"按钮坏了"。所以哈希一致就跳过、不一致就重建，和 dev 形态同一套机制，
- *    只是配置与落点不同（构建仍发生在 worktree 的 `build/` 里，成功后**安装**到
- *    `/Applications`，见 {@link installBuiltProduct}）；
- *  - `launch: false`——**daemon 是安静的**：登录时不弹窗口，App 由用户双击
- *    （或 `./release` 收尾那一下 `open`）拉起。**壳自请重启后的重拉是另一条路径**
- *    （`app-restart` → {@link restartApp}），不受这一项管；
- *  - `restartOnRebuild: false`——**强制**。daemon 不替用户杀正在用的 App；
- *    换代由壳右上角那条「壳有新版本 · 重启」提示条驱动，用户点了才换。
+ * 关掉的两项都是同一个理由——`host-build/` 不在，xcodegen / xcodebuild 无从谈起，
+ * 盯一棵不存在的源码树只会白读文件（`docs/distribution-plan.md` §7.10：
+ * 桥那条 500ms 轮询在正式形态下是纯浪费，这条是同一个道理的 node 版）。
+ * `restartOnRebuild` 跟着关，是因为它描述的是"重建成功之后"，而重建不会发生。
  *
- * **门控**：壳源码目录不在（npm 装出来的 registry 形态可以只带 lib/）就退回
- * "不构建不盯源码"的老行为——最终用户机器上什么都不会发生。
- * 没有完整 Xcode 那一层门控在下游（{@link ensureBuilt} 里的 `hasXcode`，它是异步的，
- * 而这里必须同步给出配置）：那时构建这一步降级成"只探测既有产物"，
- * 于是 `freshness` 是 `prebuilt`，盯源码也就不会启动。
+ * **`launch` 不关**：正式形态下拉起是安全且有用的——App 早就在跑（后端正是它
+ * spawn 的），`launch()` 自己会因为 `isRunning` 跳过；而用户手动
+ * `dsh --profile surfclam` 时，把装好的 App 带起来正是他要的。
+ * （从前 release 形态强制 `launch: false`，防的是常驻 LaunchAgent 在登录时弹窗口，
+ * 那个 daemon 2026-08-30 已经退役。）
  */
-function applyReleaseForm(config, logger) {
-	if (!isReleaseForm()) return config;
-	const overrides = { configuration: "Release", launch: false, restartOnRebuild: false };
-	if (!existsSync(join(HOST_DIR, "project.yml"))) {
-		logger.info(`${RELEASE_ENV}=1：release 形态——壳源码不在（${HOST_DIR}），`
-			+ `不构建、不盯源码、不自动拉起（壳用 ${INSTALLED_RELEASE}）。`);
-		return { ...config, ...overrides, build: false, watch: false };
-	}
-	logger.info(`${RELEASE_ENV}=1：release 形态——盯壳源码、按需重建 Release 并安装到`
-		+ ` ${INSTALLED_RELEASE}；不自动拉起（登录时不弹窗口），换代由壳里的提示条驱动。`);
-	return { ...config, ...overrides, build: true, watch: true };
+function applyNoBuilderForm(config, logger) {
+	if (hostBuild !== undefined) return config;
+	logger.info("这份 clam-app 不带构建能力（没有 host-build/，随包分发的那一半只有 lib/）"
+		+ `——不构建、不盯源码；壳用既有产物 ${INSTALLED_APP}。`);
+	return { ...config, build: false, watch: false, restartOnRebuild: false };
 }
 
 /**
@@ -182,9 +191,23 @@ function applyReleaseForm(config, logger) {
  * 为什么 `hostDir` 不够：装到 `/Applications` 的 Release 壳不在任何 worktree 的
  * `build/Build/Products/` 之下，`ClamPaths.ownHostDir` 推不出来，`isOwn` 于是恒假
  * ——那样它只能按 `startedAt` 倒序挑 dsh，多 worktree 并存时会安静地连上邻居。
+ *
+ * 没有构建能力 = 这个后端是装好的那个 App 自己 spawn 的（或者用户手动起的、
+ * 冲着那个 App 去的），期望的产物只可能是 `/Applications` 里那一份。
  */
 function expectedAppPath(config) {
-	return isReleaseForm() ? INSTALLED_RELEASE : productPath(config.configuration);
+	return hostBuild === undefined ? INSTALLED_APP : hostBuild.productPath(config.configuration);
+}
+
+/** 不构建时的产物探测。没有构建能力时只有 `preferred` 一条候选——本地 `build/` 根本不存在。 */
+function locateProduct(config) {
+	const preferred = expectedAppPath(config);
+	if (hostBuild !== undefined) {
+		return hostBuild.locateExistingProduct(config.configuration, preferred);
+	}
+	return existsSync(preferred)
+		? { appPath: preferred, freshness: "prebuilt" }
+		: { appPath: undefined, freshness: "missing" };
 }
 
 /**
@@ -357,7 +380,7 @@ export function apply(ctx, rawConfig) {
 	const logger = reporter(ctx.logger("clam-app"));
 	// 形态覆写要在**一切之前**：下面每一步（发现文件写什么 appPath、要不要构建、
 	// 要不要拉起）都读它的结果，晚一步就会有半拉子按 dev 形态跑过。
-	const config = applyReleaseForm(rawConfig, logger);
+	const config = applyNoBuilderForm(rawConfig, logger);
 	const httpBase = resolveHttpBase(ctx.webServer);
 	const appPath = expectedAppPath(config);
 
@@ -495,16 +518,12 @@ function reporter(logger) {
 
 async function bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed }) {
 	const { configuration } = config;
-	// **构建落点与使用落点在 release 形态下是两个地方**：编译永远发生在 worktree 的
-	// `build/Build/Products/Release/`（`-derivedDataPath build` 是硬约束），
-	// 用的却是 /Applications 里那一份。`install` 非空就是"构建成功后还要拷过去"。
-	const install = isReleaseForm() ? INSTALLED_RELEASE : undefined;
-	// 不构建时**先认这一份**：release 形态下期望的是 /Applications 那个安装产物，
-	// 而本地 build/ 里多半也躺着一份同名的 Release——不指名道姓就会挑中后者，
+	// 不构建时**先认 expectedAppPath 那一份**：源码不在场时期望的是 /Applications
+	// 那个安装产物，不指名道姓就会挑中本地 build/ 里可能躺着的同名产物，
 	// 于是 endpoint 文件里的 appPath 与本插件自己认的产物分了家。
 	const built = config.build
-		? await ensureBuilt({ configuration, logger, isDisposed, install })
-		: locateExistingProduct(configuration, expectedAppPath(config));
+		? await hostBuild.ensureBuilt({ configuration, logger, isDisposed })
+		: locateProduct(config);
 
 	if (isDisposed()) return;
 
@@ -534,78 +553,11 @@ async function bootstrap({ ctx, config, logger, httpBase, bridge, isDisposed }) 
 	// 空转的防线在 watchSources 里（记住失败那次的 hash，hash 再变才重试）。
 	const buildable = built.freshness !== "prebuilt" || built.failedHash !== undefined;
 	if (config.build && config.watch && buildable) {
-		watchSources({
-			ctx, config, logger, bridge, isDisposed, configuration, install,
+		hostBuild.watchSources({
+			ctx, config, logger, bridge, isDisposed, configuration,
 			failedHash: built.failedHash,
 		});
 	}
-}
-
-/**
- * 盯壳源码（§7.5 v1）。与桥盯 `swift/` 同款的廉价轮询：先比 mtime/size 签名，
- * 签名变了才读内容算 hash——hash 才是"要不要重建"的判据（换 git 分支不算改过）。
- *
- * 播报走 `apply` 里那一处 `ctx.inject` 攒下的 `bridge.announce`：clam-bridge 在
- * 就播，不在就只写终端。壳没连上来时重建照做。
- */
-function watchSources({ ctx, config, logger, bridge, isDisposed, configuration, install, failedHash }) {
-	let building = false;
-	let pending = false;
-	let signature = signatureSources();
-	let builtHash = readTextOrUndefined(hashMarkerPath(configuration));
-	// **失败那次的 hash 也要记住**（计划 §2.5 的"不空转"）。签名比对本来就拦得住
-	// "文件一个字没动"的情况，但只要有人 touch 一下（或换分支再换回来），签名就变了
-	// 而内容没变——那时不认失败 hash 的话，每一次都是一轮几十秒的 xcodebuild 白跑。
-	let lastFailedHash = failedHash;
-
-	const tick = async () => {
-		if (isDisposed() || building) { if (building) pending = true; return; }
-		const next = signatureSources();
-		if (next === signature) return;
-		signature = next;
-		const hash = hashSources();
-		if (hash === undefined || hash === builtHash || hash === lastFailedHash) return;
-
-		building = true;
-		logger.info("壳源码有变动，后台重建中…");
-		bridge.announce("building", {});
-		const startedAt = Date.now();
-		let result = await runBuild({ configuration, logger, isDisposed });
-		// 安装是构建的一部分：装不进去就等于没重建，绝不能报 ready
-		// ——壳会挂出"有新版本"，用户点了重启，回来还是旧的。
-		if (result.ok && install !== undefined) {
-			result = await installBuiltProduct({ configuration, install, logger, logPath: result.logPath });
-		}
-		building = false;
-		if (isDisposed()) return;
-
-		if (result.ok) {
-			builtHash = hash;
-			lastFailedHash = undefined;
-			writeFileSync(hashMarkerPath(configuration), hash);
-			const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-			logger.info(`壳已重建（${seconds}s）${install === undefined ? "" : `并安装到 ${install}`}。`
-				+ `${config.restartOnRebuild ? "按配置立即重启壳。" : "重启 surfclam 生效——窗口里有提示。"}`);
-			bridge.announce("ready", {
-				hash: hash.slice(0, 12),
-				durationMs: Date.now() - startedAt,
-				autoRestart: config.restartOnRebuild,
-			});
-		} else {
-			// 失败不回滚 builtHash（旧产物仍在役），但记下这个 hash：源码**再变一次**
-			// 才重试，改对了自然就好，改不对也不会 2s 一轮空转 xcodebuild。
-			lastFailedHash = hash;
-			logger.error(`壳重建失败。完整日志：${result.logPath}\n${tail(result.log, 20)}`);
-			bridge.announce("failed", { log: tail(result.log, 40) });
-		}
-
-		if (pending) { pending = false; signature = ""; }
-	};
-
-	const timer = setInterval(() => { tick().catch(() => {}); }, config.watchIntervalMs);
-	timer.unref?.();
-	ctx.effect(() => () => clearInterval(timer), "clam-app 壳源码轮询");
-	logger.info(`盯着壳源码（每 ${config.watchIntervalMs}ms），改了会自动重建。`);
 }
 
 /**
@@ -626,220 +578,6 @@ async function restartApp({ appPath, httpBase, bridge, logger }) {
 }
 
 /**
- * 保证 `configuration` 的产物是新的：hash 没变且产物在 → 直接用；
- * 否则跑一遍 xcodegen + xcodebuild。没有 Xcode 时退化为只探测既有产物。
- *
- * `install` 非空（release 形态）时多两件事：产物构建成功后拷进 `install`，
- * 并且**返回的 appPath 是 `install` 而不是构建落点**——那才是用户双击的那一份，
- * 也是发现文件里 `appPath` 写的那一个（两者分家的话，壳会认不出"这套是我的"）。
- *
- * 返回值多一个 `failedHash`：构建真的跑了并且失败时才有值，调用方据此决定
- * "要不要继续盯源码"（见 bootstrap）与"哪个 hash 不必重试"（见 watchSources）。
- */
-async function ensureBuilt({ configuration, logger, isDisposed, install }) {
-	const product = productPath(configuration);
-	const hash = hashSources();
-	const marker = hashMarkerPath(configuration);
-	// 构建落点与使用落点：dev 形态是同一个，release 形态是 /Applications 那一份。
-	const target = install ?? product;
-
-	if (hash !== undefined && existsSync(product) && readTextOrUndefined(marker) === hash) {
-		// marker 与源码对得上，但 /Applications 里那份被删了（或从没装过）
-		// ——那是一次拷贝的事，不必重编。
-		if (install !== undefined && !existsSync(install)) {
-			logger.info(`${configuration} 产物已是最新，但 ${install} 不在——直接安装既有产物。`);
-			const copied = await installBuiltProduct({ configuration, install, logger, logPath: undefined });
-			if (!copied.ok) return { appPath: undefined, freshness: "missing" };
-			return { appPath: install, freshness: "fresh" };
-		}
-		logger.info(`${configuration} 产物已是最新（源码 hash ${hash.slice(0, 12)}），跳过构建。`);
-		return { appPath: target, freshness: "cached" };
-	}
-
-	if (!(await hasXcode())) {
-		logger.warn("未检测到完整 Xcode（xcodebuild 不可用，Command Line Tools 不够），跳过构建，只找既有产物。");
-		return locateExistingProduct(configuration, install);
-	}
-
-	if (!existsSync(XCODEGEN)) {
-		logger.error(`缺 ${XCODEGEN}（该二进制不入库，新克隆 / 新 worktree 里没有），跳过构建。`
-			+ ` 补法：在仓库根跑一次 ./dev（会自动从同仓库的其它 worktree 或 PATH 拷一份），`
-			+ ` 或 brew install xcodegen 后把它拷到上面那个路径。`);
-		return locateExistingProduct(configuration, install);
-	}
-
-	logger.info(`壳源码有变动，开始构建 ${configuration}（首次约需分钟级）…`);
-	const startedAt = Date.now();
-	const result = await runBuild({ configuration, logger, isDisposed });
-	if (isDisposed()) return { appPath: undefined, freshness: "missing" };
-	if (!result.ok) {
-		logger.error(`构建 ${configuration} 失败（改了源码才重试）。完整日志：${result.logPath}\n${tail(result.log, 20)}`);
-		return { ...locateExistingProduct(configuration, install), failedHash: hash };
-	}
-	if (!existsSync(product)) {
-		logger.error(`xcodebuild 报成功但产物不在 ${product}，放弃（改了源码才重试）。`);
-		return { ...locateExistingProduct(configuration, install), failedHash: hash };
-	}
-	if (install !== undefined) {
-		const copied = await installBuiltProduct({ configuration, install, logger, logPath: result.logPath });
-		if (!copied.ok) {
-			return { ...locateExistingProduct(configuration, install), failedHash: hash };
-		}
-	}
-	if (hash !== undefined) writeFileSync(marker, hash);
-	logger.info(`${configuration} 构建完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s：${target}`);
-	return { appPath: target, freshness: "fresh" };
-}
-
-/** `lsregister` 的绝对路径（LaunchServices 不在 PATH 上，只能写死）。 */
-const LSREGISTER =
-	"/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework" +
-	"/Versions/A/Support/lsregister";
-
-/**
- * 让系统重读刚装好的 bundle——**不做这一步，换了图标也还是旧图标**。
- *
- * `ditto` 连同源目录的 mtime 一起拷，而 `build/` 里那个 bundle 目录的 mtime 停在它
- * 第一次被创建的那一刻（后续增量构建只改内部文件），于是装到 `/Applications` 的这份
- * mtime 也是旧的。LaunchServices 按 **bundle 目录的 mtime** 判断"要不要重读图标"，
- * 看到没变就继续画缓存里那张旧图。
- *
- * 症状彻底静默：bundle 内容、`Info.plist`、`Assets.car` 全是新的，`NSWorkspace`
- * 查出来也是新的，只有 Dock / Finder 顽固地画旧的（2026-08-30 实测踩过，旧鲸鱼图标）。
- * 所以 `touch` 一下再强制重注册。失败无害——只是图标可能晚一点才刷新。
- */
-async function refreshIconCache(install, logger) {
-	try {
-		const now = new Date();
-		utimesSync(install, now, now);
-		if (existsSync(LSREGISTER)) await run(LSREGISTER, ["-f", install], HOST_DIR);
-	} catch (error) {
-		logger.warn(`刷新图标缓存失败（无害，Dock 里可能还是旧图标）：${errorText(error)}`);
-	}
-}
-
-/**
- * 把刚构建出来的产物装进 `install`（release 形态才走这条）。
- *
- * **绝不 quit 正在跑的 App**——这是与 `host/scripts/build.sh` 的关键分别：
- * 那个脚本是用户亲手跑的一条命令（闪断一次可以接受），而这里是常驻 daemon
- * 在后台发现源码变了，用户正对着窗口干活。换代由壳右上角的提示条驱动。
- *
- * 于是拷贝方式也不同：**先拷到同目录下的暂存名，再换名就位**，不做
- * `rm -rf 目标 && ditto`。两个理由——
- *
- *  1. 正在跑的 Mach-O 不能被原地覆写（`ETXTBSY`），链接器一族的标准做法都是
- *     "写新的、换名字"；
- *  2. `rm -rf` 到 `ditto` 完成之间有个几秒的窗口，那期间 `/Applications/Surfclam.app`
- *     根本不存在——用户这时候双击 Dock 图标就是一句"找不到应用程序"。
- *
- * 旧的那份换名到暂存后直接删：正在跑的进程早就把可执行文件映射进了内存，
- * unlink 不会伤到它（Unix 语义），而它之后按 bundle 路径读到的都是新的那一份
- * ——和 dev 形态下 xcodebuild 原地覆写 Debug 产物是同一种"新旧混用"，
- * 提示条存在的意义就是让这段混用尽快结束。
- */
-async function installBuiltProduct({ configuration, install, logger, logPath }) {
-	const product = productPath(configuration);
-	const staging = join(dirname(install), `.${basename(install)}.clam-staging`);
-	const previous = join(dirname(install), `.${basename(install)}.clam-previous`);
-	try {
-		rmSync(staging, { recursive: true, force: true });
-		rmSync(previous, { recursive: true, force: true });
-		await run("ditto", [product, staging], HOST_DIR);
-		if (existsSync(install)) renameSync(install, previous);
-		renameSync(staging, install);
-		await refreshIconCache(install, logger);
-		logger.info(`已安装到 ${install}（没有退出正在跑的实例——换代由窗口里的提示条驱动）。`);
-	} catch (error) {
-		const log = `安装到 ${install} 失败：${errorText(error)}`;
-		logger.error(log);
-		// 换名之间炸掉的话目标可能不在了，尽力把旧的那份放回去。
-		try {
-			if (!existsSync(install) && existsSync(previous)) renameSync(previous, install);
-		} catch { /* 尽力而为，下面那句日志已经足够定位 */ }
-		return { ok: false, log, logPath };
-	} finally {
-		try {
-			rmSync(staging, { recursive: true, force: true });
-			rmSync(previous, { recursive: true, force: true });
-		} catch (error) {
-			logger.warn(`清理安装暂存目录失败（无害，下次安装会再清一次）：${errorText(error)}`);
-		}
-	}
-	return { ok: true, log: "", logPath };
-}
-
-/**
- * 跑一遍 `dev.sh` 的构建三步。完整日志落文件（xcodebuild 的输出淹没 dsh 终端
- * 没有意义），返回值只带日志文本供调用方掐个尾巴。**不抛异常**：失败是预期内的
- * 一种结果，调用方各有各的善后。
- */
-async function runBuild({ configuration, logger, isDisposed }) {
-	const logPath = buildLogPath(configuration);
-	mkdirSync(dirname(logPath), { recursive: true });
-	// 盯文件的重建走的也是这里，绕过了 ensureBuilt 的那道检查——不拦一下，
-	// 日志里就只有一句 ENOENT。
-	if (!existsSync(XCODEGEN)) {
-		const log = `缺 ${XCODEGEN}（该二进制不入库）。补法：在仓库根跑一次 ./dev，`
-			+ ` 或 brew install xcodegen 后把它拷到该路径。`;
-		writeFileSync(logPath, log);
-		return { ok: false, log, logPath };
-	}
-	try {
-		// 时间戳文件不入库，须在 generate 扫描目录前落地。
-		await run(join(HOST_DIR, "scripts", "write-build-timestamp.sh"), [], HOST_DIR);
-		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
-		await run(XCODEGEN, ["generate"], HOST_DIR);
-		if (isDisposed()) return { ok: false, log: "已卸载", logPath };
-		// -derivedDataPath build 是硬约束：产物必须落在 build/Build/Products/，
-		// 换位置会造成"BUILD SUCCEEDED 但改动永不生效"。
-		const result = await run("xcodebuild", [
-			"-project", join(HOST_DIR, "surfclam.xcodeproj"),
-			"-scheme", "surfclam",
-			"-configuration", configuration,
-			"-derivedDataPath", "build",
-			"build",
-		], HOST_DIR, { maxBuffer: 64 * 1024 * 1024 });
-		const log = result.stdout + result.stderr;
-		writeFileSync(logPath, log);
-		return { ok: true, log, logPath };
-	} catch (error) {
-		const log = `${error?.stdout ?? ""}${error?.stderr ?? ""}` || errorText(error);
-		writeFileSync(logPath, log);
-		return { ok: false, log, logPath };
-	}
-}
-
-/**
- * 构建日志的路径，**按 profile 分片**（`clam-app-build.<profile>.<配置>.log`）。
- *
- * 多 worktree 并存时每个 worktree 一个 dsh，各构建各的壳；这份日志是**覆盖写**，
- * 共用一个文件名的话，邻居一构建就把你这份整个换掉——终端说"构建失败，完整日志见
- * <路径>"，你打开看到的却是邻居的编译错误，而且看不出来。分片与 endpoint 发现
- * 文件同一套兜底（见 {@link endpointFilePath}）。
- */
-function buildLogPath(configuration) {
-	const shard = resolveProfileName() ?? `pid-${process.pid}`;
-	return join(APP_SUPPORT, "logs", `clam-app-build.${shard}.${configuration}.log`);
-}
-
-/**
- * 不构建时的产物探测：先调用方指名的那一份（有的话），再本地 build/，
- * 最后 /Applications 的 Release 安装。
- *
- * @param preferred 期望的产物路径（见 {@link expectedAppPath}）；省略则只走后两级。
- */
-function locateExistingProduct(configuration, preferred) {
-	if (preferred !== undefined && existsSync(preferred)) {
-		return { appPath: preferred, freshness: "prebuilt" };
-	}
-	const product = productPath(configuration);
-	if (existsSync(product)) return { appPath: product, freshness: "prebuilt" };
-	if (existsSync(INSTALLED_RELEASE)) return { appPath: INSTALLED_RELEASE, freshness: "prebuilt" };
-	return { appPath: undefined, freshness: "missing" };
-}
-
-/**
  * 拉起 app 并把 endpoint 从命令行递给它（三级定位的第一级）。
  * 已在运行则跳过——防双开；`open` 不带 `-n`，即使这里判断失误，
  * 最坏结果也只是把已有窗口带到前台，而不是开出第二个实例。
@@ -852,7 +590,7 @@ async function launch({ appPath, httpBase, bridgePath, logger }) {
 	try {
 		await run("open", [appPath, "--args",
 			"--clam-endpoint", httpBase,
-			"--clam-bridge-path", bridgePath], HOST_DIR);
+			"--clam-bridge-path", bridgePath], NEUTRAL_CWD);
 		logger.info(`已拉起 surfclam：${appPath} → ${httpBase}`);
 	} catch (error) {
 		logger.error(`拉起 surfclam 失败（不重试）：${errorText(error)}`);
@@ -889,7 +627,7 @@ function writeEndpointFile({ httpBase, bridgePath, appPath, logger }) {
 		// `<hostDir>/build/Build/Products/<配置>/`，两边算出同一个绝对路径。
 		// 没有它，手动双击起来的壳只能按 startedAt 挑，多 worktree 时就会
 		// 连上邻居的 dsh、编译邻居的插件源码（见 Swift 侧 ClamEndpoint.isOwn）。
-		hostDir: HOST_DIR.replace(/\/$/, ""),
+		hostDir: hostBuild?.HOST_DIR.replace(/\/$/, ""),
 		// 同一个问题的第二条判据，**专为装到 /Applications 的 Release 壳**：
 		// 那份产物不在任何 worktree 的 build/ 之下，hostDir 那条路推不出来。
 		// 壳拿它跟自己的 Bundle.main.bundlePath 比（见 ClamEndpoint.isOwn）。
@@ -923,75 +661,14 @@ function removeEndpointFile(logger) {
 	}
 }
 
-/**
- * profile 名。dsh 不把它放进环境变量，只能从 argv 反推
- * （`dsh web` 是 `--profile web` 的别名）。
- *
- * 从"纯诊断字段"升格成了发现文件的文件名（见 {@link endpointFilePath}），
- * 所以取不到时调用方必须有兜底——这里仍然只负责如实返回 undefined。
- */
-function resolveProfileName() {
-	const argv = process.argv.slice(2);
-	const flag = argv.indexOf("--profile");
-	if (flag >= 0 && argv[flag + 1] !== undefined) return argv[flag + 1];
-	if (argv.includes("web")) return "web";
-	return undefined;
-}
-
 // ---------------------------------------------------------------- 子进程
-
-function run(file, args, cwd, options = {}) {
-	return new Promise((resolve, reject) => {
-		execFile(file, args, { cwd, maxBuffer: 8 * 1024 * 1024, ...options }, (error, stdout, stderr) => {
-			if (error) {
-				error.stdout = stdout;
-				error.stderr = stderr;
-				reject(error);
-				return;
-			}
-			resolve({ stdout, stderr });
-		});
-	});
-}
-
-/** 完整 Xcode 才有 xcodebuild；Command Line Tools 单独装是不够的。 */
-async function hasXcode() {
-	try {
-		await run("xcodebuild", ["-version"], HOST_DIR);
-		return true;
-	} catch {
-		return false;
-	}
-}
 
 /** 按可执行文件路径认进程（同 dev.sh），Debug/Release 名字不同不会互相误伤。 */
 async function isRunning(appPath) {
 	try {
-		await run("pgrep", ["-f", `${appPath}/Contents/MacOS/`], HOST_DIR);
+		await run("pgrep", ["-f", `${appPath}/Contents/MacOS/`], NEUTRAL_CWD);
 		return true;
 	} catch {
 		return false;
 	}
-}
-
-// ---------------------------------------------------------------- 杂项
-
-function readTextOrUndefined(path) {
-	try {
-		return readFileSync(path, "utf8");
-	} catch {
-		return undefined;
-	}
-}
-
-function tail(text, lines) {
-	return text.trimEnd().split("\n").slice(-lines).join("\n");
-}
-
-function delay(ms) {
-	return new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
-}
-
-function errorText(error) {
-	return error instanceof Error ? error.message : String(error);
 }

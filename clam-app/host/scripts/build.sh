@@ -11,12 +11,13 @@ CONFIGURATION="Release"
 DERIVED_DATA="build"
 PRODUCT_PATH="build/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 
-# 源码 hash 与 marker 路径都问 node 要（算法的唯一真相在 lib/source-hash.js）。
+# 源码 hash 与 marker 路径都问 node 要（算法的唯一真相在 host-build/source-hash.js
+# ——那半边不随包分发，见 docs/distribution-plan.md §3.3）。
 # **在动任何东西之前问**：时间戳文件是排除项、xcodegen 只写 .xcodeproj，两者都不进
 # hash，但先取一次总归更接近"这一份源码"。node 不在（或模块缺席）就整个跳过写 marker
 # ——那时常驻 dsh 会白编一次，不影响正确性。
-SOURCE_HASH="$(node ../lib/source-hash.js hash 2>/dev/null || true)"
-HASH_MARKER="$(node ../lib/source-hash.js marker "${CONFIGURATION}" 2>/dev/null || true)"
+SOURCE_HASH="$(node ../host-build/source-hash.js hash 2>/dev/null || true)"
+HASH_MARKER="$(node ../host-build/source-hash.js marker "${CONFIGURATION}" 2>/dev/null || true)"
 
 # 时间戳文件不入库：generate 扫描目录前先创建，否则新克隆的首次构建产物缺该资源。
 scripts/write-build-timestamp.sh

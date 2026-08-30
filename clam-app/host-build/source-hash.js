@@ -1,10 +1,13 @@
 /**
  * 壳源码的内容 hash 与「上次构建到哪个 hash」的账本路径。
  *
+ * **住在 `host-build/` 而不是 `lib/`**：`lib/` 是随包分发的那一半，而算源码 hash
+ * 只在"壳源码在场"时有意义（`docs/distribution-plan.md` §3.3）。整个目录不进
+ * `files` 白名单、也不进 App 的 `ClamNode/` 载荷。
+ *
  * **单独成模块，只为一件事：`host/scripts/build.sh` 也要写这份账。**
  * 手跑一次 `build.sh`（或 `./release` 里的那一步）之后，常驻 dsh 那半边
- * （`index.js` 的 release 形态哈希重建，`docs/release-install-plan.md` §2.5）
- * 必须知道"这个 hash 已经构建过了"，否则它一起来就把刚装好的那份原样再编一遍。
+ * （`host-build/index.js` 的盯源码重建）必须知道"这个 hash 已经构建过了"，否则它一起来就把刚装好的那份原样再编一遍。
  * 让 bash 自己算一遍 sha256 就是把算法抄成两份——抄错了不报错，
  * 症状是每次 `./release` 之后 daemon 都白编一次。
  *
@@ -14,18 +17,18 @@
  * 命令行两个查询子命令（build.sh 用，自己不写文件）：
  *
  * ```sh
- * node lib/source-hash.js hash            # 打印当前源码 hash，算不出来则退出码 1
- * node lib/source-hash.js marker Release  # 打印该配置的 marker 路径
+ * node host-build/source-hash.js hash            # 打印当前源码 hash，算不出来则退出码 1
+ * node host-build/source-hash.js marker Release  # 打印该配置的 marker 路径
  * ```
  *
- * @module clam-app/source-hash
+ * @module clam-app/host-build/source-hash
  */
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Xcode 工程载荷根（本包的 `host/`）。 */
+/** Xcode 工程载荷根（本包的 `host/`）。`host-build/` 与 `host/` 是兄弟。 */
 export const HOST_DIR = fileURLToPath(new URL("../host/", import.meta.url));
 
 /** 参与源码 hash 的子树；`tools/`（xcodegen 二进制）与 `build/`（产物）不算源码。 */

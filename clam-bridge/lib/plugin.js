@@ -118,7 +118,7 @@ export function createSwiftPlugin(options) {
 	const missing = swiftDeps.filter((dep) => !inject.includes(dep));
 	const injects = ["clamBridge", ...inject, ...missing];
 
-	return {
+	const plugin = {
 		name,
 		inject: injects,
 		Config,
@@ -154,6 +154,33 @@ export function createSwiftPlugin(options) {
 			subscribe?.(api);
 		},
 	};
+
+	/**
+	 * Swift 载荷的**声明**，挂在插件对象上给构建流水线读（分发计划 M3）。
+	 *
+	 * `clam-app/host/scripts/prebuild-plugins.mjs` 要在构建机上算出与桥逐字相同的
+	 * contentHash，为此它需要 `swiftDeps` / `sharedModules` / `schemaVersion`
+	 * ——而这三样只写在各插件调用本工厂的那几行里。**静态解析 `lib/index.js`
+	 * 是不行的**：猜错了不报错，只是 hash 对不上、预编译产物永远命中不了，
+	 * 静默退回现场编译，而用户机器上未必有 swiftc。所以让声明方直接把它交出来。
+	 *
+	 * `sharedModules` 在这里就去重排序，与桥的 `register()` 保持一致
+	 * （声明顺序不该影响 contentHash）。
+	 *
+	 * **不可枚举**：cordis 只认 `name` / `inject` / `Config` / `apply`，
+	 * 多一个可枚举的键只会让别处的 `Object.keys` 意外多出一项。
+	 */
+	Object.defineProperty(plugin, "clamSwift", {
+		value: Object.freeze({
+			name,
+			swiftDir: dir,
+			swiftDeps: [...swiftDeps],
+			sharedModules: [...new Set(sharedModules)].sort(),
+			schemaVersion,
+		}),
+		enumerable: false,
+	});
+	return plugin;
 }
 
 export default createSwiftPlugin;

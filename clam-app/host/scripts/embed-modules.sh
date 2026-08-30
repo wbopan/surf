@@ -4,8 +4,13 @@
 #   Contents/Frameworks/lib<M>.dylib        ← 壳按 @rpath 加载的那一份
 #   Contents/Resources/ClamModules/         ← 运行时编译插件用的 .swiftinterface/.swiftmodule
 #
-# 为什么要重新签名：拷贝发生在 Xcode 自己的签名步骤之后，动了 bundle 内容就
-# 破了 CodeResources 封印。ad-hoc 签名（identity "-"）代价可以忽略。
+# 嵌套 dylib 要自己签（inside-out：里层先签好，Xcode 再封外层）。
+#
+# **末尾那句对整个 app 的重签是死动作**——构建日志为证（计划 §4.1，M1 复核过）：
+# Xcode 的 `CodeSign` 阶段排在**全部 postBuildScripts 之后**，我们签完它还会再签
+# 一遍。留着它不只是浪费：它把身份写死成 `-`，阶段一旦被重排或本脚本被单独执行，
+# 就会**静默把整个 App 降级成 ad-hoc**。M5（签名公证）连同 `--timestamp=none`
+# 一起删。
 set -euo pipefail
 
 : "${BUILT_PRODUCTS_DIR:?仅供 Xcode 构建阶段调用}"

@@ -25,11 +25,15 @@
  * @module clam-bridge
  */
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { statSync } from "node:fs";
 import z from "@deepseek-ai/schemastery";
 import { WebSocketServer } from "ws";
 import { environmentLocale } from "./locale.js";
+// `clam-sidebar` → `ClamSidebar`。单独成模块是因为构建脚本也要用同一份算法
+// （见 ./module-name.js 的顶注）。
+import { moduleName } from "./module-name.js";
+// 扫描与 contentHash 同理：分发流水线（预编译 dylib）要算出逐字相同的 hash。
+import { isStaticPayload, scanSwiftDir, swiftContentHash } from "./swift-payload.js";
 
 export const name = "clam-bridge";
 
@@ -59,9 +63,6 @@ export const Config = z.object({
 /** 桥协议版本（计划 §5.4）。壳侧 `BridgeProtocol.version` 必须一致。 */
 const PROTOCOL_VERSION = 1;
 
-/** 只收这些扩展名进 snapshot——插件的 swift/ 目录里放别的都不算源码。 */
-const SOURCE_EXTENSIONS = [".swift"];
-
 /**
  * `moduleName()` 的结果必须是一个合法的 Swift 标识符。
  *
@@ -71,8 +72,16 @@ const SOURCE_EXTENSIONS = [".swift"];
  */
 const MODULE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** 轮询时跳过的目录名。 */
-const SKIP_DIRS = new Set([".git", ".build", "build", "DerivedData", ".DS_Store", "node_modules"]);
+/**
+ * `register()` 在「Swift 载荷不在」时返回的空壳 handle（见 `register` 的顶注）。
+ *
+ * 形状与真 handle 一致，所以调用方（`createSwiftPlugin`）一行都不用改：
+ * `push` 无处可推、`dispose` 无处可撤。
+ */
+const ABSENT_HANDLE = Object.freeze({
+	push() { /* 没有 Swift 半边，推给谁都没有意义 */ },
+	dispose() { /* 从来没进过登记表 */ },
+});
 
 export function apply(ctx, config) {
 	const logger = reporter(ctx.logger("clam-bridge"));
@@ -119,13 +128,20 @@ export function apply(ctx, config) {
 		},
 
 		/**
-		 * 登记一份 Swift 载荷。**这里一律 fails loud，不做任何补救。**
+		 * 登记一份 Swift 载荷。
 		 *
-		 * 登记是 dsh 启动时发生一次的事，而下面三种错的失败模式全是同一副样子：
-		 * dsh 照常起、HTTP 200、终端一片祥和，只是那个插件的原生半边**静默不存在**
-		 * （或者更糟：两份登记互相覆盖，界面上少一块，日志里什么都没有）。
-		 * 抛出去的话 cordis 会在加载插件时就把它顶到脸上，附带插件名——
-		 * 这是唯一能让作者当场看见的时机。
+		 * **两条仍然 fails loud**：module 名非法、重复登记。它们的失败模式是最坏的
+		 * 那一种——dsh 照常起、HTTP 200、终端一片祥和，只是那个插件的原生半边
+		 * **静默不存在**（或者更糟：两份登记互相覆盖，界面上少一块，日志里什么都没有）。
+		 * 抛出去的话 cordis 会在加载插件时就把它顶到脸上，附带插件名，这是唯一能让
+		 * 作者当场看见的时机。这两条的前提也没变过：名字与编排表都在作者手里。
+		 *
+		 * **swiftDir 不在则优雅缺席**（分发计划 §7.3，2026-08-30 改）。这一条的前提
+		 * 变了：从前 swiftDir 一定在仓库里，缺失只可能是打包漏了；现在它随 App 分发
+		 * （`ClamNode/<pkg>/swift/` → `<profile>/.surfclam/<pkg>/swift/`），用户把 App
+		 * 拖进废纸篓、或镜像被手工删掉，它就真的不在了。那时正确的行为是"这个插件
+		 * 没有原生半边"——node 半边照常工作、Web UI 照常可用——而不是让整个 dsh
+		 * 起不来。
 		 */
 		register(entry) {
 			// Swift module 名不是"顺手推的"，它是编译参数：不合法就等到壳去
@@ -148,12 +164,13 @@ export function apply(ctx, config) {
 				? statSync(entry.swiftDir, { throwIfNoEntry: false })
 				: undefined;
 			if (dirStats?.isDirectory() !== true) {
-				throw new Error(`clam-bridge：插件 "${entry.plugin}" 的 swiftDir 不是一个目录：`
-					+ `${JSON.stringify(entry.swiftDir)}。它一般是 `
-					+ `\`new URL("../swift", import.meta.url)\` 算出来的，`
-					+ `检查 package.json 的 files 白名单里有没有 "swift"。`);
+				logger.warn(`插件 "${entry.plugin}" 的 Swift 载荷不在，原生半边缺席：`
+					+ `${JSON.stringify(entry.swiftDir)}。`
+					+ `正式形态下它随 App 分发，删掉 App 或镜像就会这样；`
+					+ `开发形态下检查 package.json 的 files 白名单里有没有 "swift"。`);
+				return ABSENT_HANDLE;
 			}
-			if (Object.keys(scanDir(entry.swiftDir).files).length === 0) {
+			if (Object.keys(scanSwiftDir(entry.swiftDir).files).length === 0) {
 				throw new Error(`clam-bridge：插件 "${entry.plugin}" 的 swiftDir 里一个 .swift 文件都没有：`
 					+ `${entry.swiftDir}。空载荷登记上来只会让壳编出一个空 module——`
 					+ `没有 Swift 半边的插件不该调 createSwiftPlugin。`);
@@ -166,6 +183,9 @@ export function apply(ctx, config) {
 				// 排序落库：声明顺序不该影响 contentHash，也不该影响编译参数。
 				sharedModules: [...new Set(entry.sharedModules ?? [])].sort(),
 				schemaVersion: entry.schemaVersion ?? 1,
+				// 这份源码会不会变（分发计划 §7.10）。分发载荷带 `.clam-static` 标记，
+				// 进程活着的时候不可能变——重读它就是对一份只读载荷的纯浪费。
+				static: isStaticPayload(entry.swiftDir),
 				// 命令声明只是**透传的数据**：桥不解释它，也不校验它（形状的文档在
 				// `./plugin.js` 的 CommandDeclaration）。**它刻意不进 contentHash**
 				// ——改一句菜单文案不该让 Swift 半边全量重编。
@@ -177,8 +197,10 @@ export function apply(ctx, config) {
 			registry.set(entry.plugin, record);
 			logger.info(`登记 Swift 载荷：${entry.plugin} → ${entry.swiftDir}`
 				+ (record.swiftDeps.length ? `（依赖 ${record.swiftDeps.join(", ")}）` : "")
-				+ (record.sharedModules.length ? `（共享 module ${record.sharedModules.join(", ")}）` : ""));
+				+ (record.sharedModules.length ? `（共享 module ${record.sharedModules.join(", ")}）` : "")
+				+ (record.static ? "（分发载荷，不轮询）" : ""));
 			rescan("登记");
+			ensurePolling();
 			notifyCommandWatchers();
 			return {
 				/** 把数据推给这个插件的 Swift 半身（下行 push 帧）。 */
@@ -189,6 +211,7 @@ export function apply(ctx, config) {
 					if (registry.get(entry.plugin) === record) {
 						registry.delete(entry.plugin);
 						rescan("撤销登记");
+						ensurePolling();
 						notifyCommandWatchers();
 					}
 				},
@@ -294,7 +317,13 @@ export function apply(ctx, config) {
 				const ok = frame.ok === true;
 				const line = `${frame.plugin} @ ${String(frame.contentHash ?? "?").slice(0, 12)}`;
 				if (ok) logger.info(`编译成功：${line}`);
-				else logger.error(`编译失败：${line}\n${tail(String(frame.log ?? ""), 20)}`);
+				else if (frame.reason === "no-toolchain") {
+					// 现场编译此后是**可选能力**而不是启动前提（分发计划 §3.2）：
+					// 用户机器上大多没有 swiftc，而正式形态本来就该命中 bundle 里的
+					// 预编译产物。走到这里说明那份产物也不在——是缺一块，不是坏了。
+					logger.warn(`跳过 ${line}：本机没有 Swift 工具链，`
+						+ `而 App bundle 里也没有这个插件的预编译产物。`);
+				} else logger.error(`编译失败：${line}\n${tail(String(frame.log ?? ""), 20)}`);
 				break;
 			}
 
@@ -372,7 +401,9 @@ export function apply(ctx, config) {
 	function rescan(reason) {
 		let dirty = false;
 		for (const record of registry.values()) {
-			const scan = scanDir(record.swiftDir);
+			// 分发载荷扫一次就够（`register` 那一次）：它在进程活着的时候不会变。
+			if (record.static && record.signature !== undefined) continue;
+			const scan = scanSwiftDir(record.swiftDir);
 			if (scan.signature === record.signature) continue;
 			record.signature = scan.signature;
 			record.files = scan.files;
@@ -382,24 +413,10 @@ export function apply(ctx, config) {
 		if (dirty) {
 			// contentHash 折进依赖的 contentHash：上游一变，下游必然跟着变。
 			// 这就是"级联重编"在数据结构层面的落实，壳侧不需要再做传播。
+			// 算法住在 ./swift-payload.js：预编译流水线要在构建机上算出逐字相同的数。
 			for (const record of topological()) {
-				const hash = createHash("sha256");
-				hash.update(record.module);
-				hash.update("\0");
-				for (const [path, content] of Object.entries(record.files ?? {}).sort(byKey)) {
-					hash.update(path);
-					hash.update("\0");
-					hash.update(content);
-					hash.update("\0");
-				}
-				for (const dep of record.swiftDeps) {
-					hash.update(`dep:${dep}=${registry.get(dep)?.contentHash ?? "missing"}\0`);
-				}
-				// 共享 module 的**声明**进 hash（内容不进——桥看不见 bundle 里的
-				// .swiftinterface，那部分由壳的 CompilerService 折进去）。
-				// 加进来是因为改声明就改了编译参数，必须重编。
-				for (const module of record.sharedModules) hash.update(`shared:${module}\0`);
-				record.contentHash = hash.digest("hex");
+				record.contentHash = swiftContentHash(
+					record, (dep) => registry.get(dep)?.contentHash);
 			}
 		}
 
@@ -425,9 +442,46 @@ export function apply(ctx, config) {
 		return true;
 	}
 
-	const timer = setInterval(() => rescan("轮询"), config.pollIntervalMs);
-	timer.unref?.();
-	ctx.effect(() => () => clearInterval(timer), "clam-bridge swift/ 轮询");
+	/**
+	 * 盯文件的 500ms 轮询——**只在表上有会变的源码时才存在**（分发计划 §7.10）。
+	 *
+	 * 每一轮都无条件重读全部 `.swift`（签名比对发生在读完之后），实测 45 个文件
+	 * 约 507 KB。开发形态下 page cache 是热的，换来的是 1~3 秒的 Swift 热替换循环，
+	 * 划得来；正式形态下那些源码是随 App 分发的只读载荷，永远不会变，于是它变成对
+	 * 一个签过名的 bundle 持续约 1 MB/s 的纯浪费。
+	 *
+	 * **判据是事实不是旋钮**：登记项自己带着 `static`（swiftDir 里有没有
+	 * `.clam-static` 标记，见 ./swift-payload.js）。一张全是分发载荷的表干脆没有
+	 * 定时器；混进一个开发中的第三方插件时定时器照常在，只是静态那几家不重读。
+	 */
+	let timer;
+	/** 上一次播报过的轮询状态（undefined = 还没播报过）。 */
+	let announced;
+	function ensurePolling() {
+		const dynamic = [...registry.values()].filter((record) => record.static !== true);
+		const want = dynamic.length > 0;
+		if (want) {
+			if (timer === undefined) {
+				timer = setInterval(() => rescan("轮询"), config.pollIntervalMs);
+				timer.unref?.();
+			}
+		} else if (timer !== undefined) {
+			clearInterval(timer);
+			timer = undefined;
+		}
+		// **空表与"全是分发载荷"是两件事**：dsh 收摊时各插件逐个撤销登记，最后一轮
+		// 的表是空的——那时说"全是分发载荷"是句假话，而它长得恰好像正式形态的
+		// 正常日志，排查时会把人带偏。所以空表一个字都不说。
+		if (registry.size === 0 || want === announced) return;
+		announced = want;
+		logger.info(want
+			? `swift/ 轮询已开启（${dynamic.length} 家源码会变，每 ${config.pollIntervalMs}ms 一轮）。`
+			: "登记表里全是分发载荷（源码不会变），swift/ 轮询未开启。");
+	}
+	ctx.effect(() => () => {
+		if (timer !== undefined) clearInterval(timer);
+		timer = undefined;
+	}, "clam-bridge swift/ 轮询");
 
 	/**
 	 * 拓扑序（依赖在前）。它约束的是**编译顺序**与 **activate 顺序**——
@@ -458,13 +512,6 @@ export function apply(ctx, config) {
 
 // ---------------------------------------------------------------- 工具
 
-/** `clam-sidebar` → `ClamSidebar`。Swift module 名的唯一出处。 */
-function moduleName(plugin) {
-	return plugin.split(/[-_]/).filter(Boolean)
-		.map((part) => part[0].toUpperCase() + part.slice(1))
-		.join("");
-}
-
 /**
  * 命令声明的摘要，只进**表** hash，不进 contentHash（见 `rescan`）。
  *
@@ -477,47 +524,6 @@ function commandsDigest(commands) {
 		return JSON.stringify(commands ?? []);
 	} catch {
 		return String(Date.now());
-	}
-}
-
-/** 目录扫描：签名（廉价）+ 文件内容（签名变了才用得上）。 */
-function scanDir(dir) {
-	const files = {};
-	const parts = [];
-	for (const path of walk(dir)) {
-		if (!SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) continue;
-		const rel = relative(dir, path).split(sep).join("/");
-		let stats;
-		try {
-			stats = statSync(path);
-		} catch {
-			continue; // 扫描途中被删：当它不存在
-		}
-		parts.push(`${rel}:${stats.mtimeMs}:${stats.size}`);
-		try {
-			files[rel] = readFileSync(path, "utf8");
-		} catch {
-			continue;
-		}
-	}
-	return { signature: parts.sort().join("|"), files };
-}
-
-function* walk(path) {
-	let stats;
-	try {
-		stats = statSync(path);
-	} catch {
-		return;
-	}
-	if (stats.isFile()) {
-		yield path;
-		return;
-	}
-	if (!stats.isDirectory()) return;
-	for (const entry of readdirSync(path).sort()) {
-		if (SKIP_DIRS.has(entry)) continue;
-		yield* walk(join(path, entry));
 	}
 }
 
@@ -549,10 +555,6 @@ function reporter(logger) {
 		warn: (message) => emit("warn", message),
 		error: (message) => emit("error", message),
 	};
-}
-
-function byKey(a, b) {
-	return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 }
 
 function tail(text, lines) {

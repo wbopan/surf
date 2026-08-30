@@ -251,34 +251,60 @@ private struct OnboardingPage: View {
 
     // MARK: 上：托管
 
+    /// 后端程序压根不在。**这一态要多说两句**：一行照着敲就能装好的命令，
+    /// 和一条"明明装了却查不到"的解释（登录 Shell 不读 `.zshrc`）。
+    private var missingRuntime: Bool {
+        backend.state == .unavailable(.missingRuntime)
+    }
+
     private var managedCard: some View {
         ConnPanel {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: ConnSymbol.managed)
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(strings.connManagedCardTitle)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    // 说明与状态**同一格**：没起来时说它是干什么的，起来之后说它在
-                    // 干什么。两行都常驻的话这张横条会比下面整个面板还高。
-                    Text(ConnFormat.managedNote(backend.state, strings: strings)
-                         ?? strings.connManagedCardDetail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                if backend.state.isActive {
-                    Button(strings.connManagedStop) { actions.stopManaged() }
-                } else {
-                    Button(strings.connManagedStart) { actions.startManaged() }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: ConnSymbol.managed)
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(strings.connManagedCardTitle)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        // 说明与状态**同一格**：没起来时说它是干什么的，起来之后说它在
+                        // 干什么。两行都常驻的话这张横条会比下面整个面板还高。
+                        Text(ConnFormat.managedNote(backend.state, strings: strings)
+                             ?? strings.connManagedCardDetail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    if backend.state.isActive {
+                        Button(strings.connManagedStop) { actions.stopManaged() }
+                    } else {
+                        // 缺 dsh 那一态下这颗按钮的意思变了：它不是"开始托管"，
+                        // 是"我装好了，再查一次"。**不代劳安装**（计划 §0 非目标）。
+                        Button(missingRuntime ? strings.connManagedRecheck
+                                              : strings.connManagedStart) {
+                            actions.startManaged()
+                        }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .disabled(!backend.state.canStart)
+                    }
                 }
+                if missingRuntime { installHint }
             }
+        }
+    }
+
+    private var installHint: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ConnCommandRow(command: strings.connInstallDshCommand,
+                           copyTitle: strings.connCopyCommand,
+                           copiedTitle: strings.connCopiedCommand)
+            Text(strings.connInstallDshHint)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -534,6 +560,39 @@ private struct ConnBadge: View {
 
 /// 一块内嵌面板：淡底 + 细边 + 内边距。引导页的托管横条与「连接到已有的后端」
 /// 用的是同一块（`ConnRows` 是它的无内边距、带行分隔线的兄弟）。
+/// 一行可拷贝的命令。**给的是命令本身而不是一颗"帮我装"的按钮**——装 dsh
+/// 不归这个壳管（分发计划 §0 非目标），但让人照着敲得动是我们的事。
+private struct ConnCommandRow: View {
+    let command: String
+    let copyTitle: String
+    let copiedTitle: String
+
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(command)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Button(copied ? copiedTitle : copyTitle) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+                copied = true
+                // 回弹：这颗按钮下一次还得能用，而"已拷贝"不是一个持久状态。
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
 private struct ConnPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -702,6 +761,7 @@ private enum ConnFormat {
         case .unavailable(.externalBackend): return strings.connManagedExternal
         case .unavailable(.externalBackendUnreachable): return strings.connManagedExternalUnreachable
         case .unavailable(.launchFailed): return strings.connManagedFailed
+        case .unavailable(.bootstrapFailed): return strings.connManagedBootstrapFailed
         }
     }
 }

@@ -21,8 +21,8 @@ struct ClamEndpoint: Equatable, Sendable {
     let hostDir: String?
     /// 这个 dsh 期望的 App bundle 路径（老版本插件没有这个字段）。
     ///
-    /// dev 形态是本 worktree 的构建产物，release 形态（`CLAM_RELEASE=1` 的常驻
-    /// daemon）是 `/Applications/Surfclam.app`。
+    /// dev 形态（clam-app 带着 `host/` 源码）是本 worktree 的构建产物；
+    /// 正式形态（随 App 分发的镜像里没有 `host/`）是 `/Applications/Surfclam.app`。
     let appPath: String?
     let source: Source
 
