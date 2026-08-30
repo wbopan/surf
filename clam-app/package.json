@@ -12,7 +12,8 @@
     "lib",
     "host/project.yml",
     "host/Sources",
-    "host/scripts"
+    "host/scripts",
+    "host/Icons"
   ],
   "publishConfig": {
     "access": "public"

@@ -36,6 +36,12 @@ targets:
           # ClamSDK 单独编成共享 dylib（见 scripts/build-modules.sh），
           # 不能同时被编进 app module，否则类型身份一分为二。
           - "ClamSDK"
+      # Icon Composer 的 .icon（Xcode 26 起）取代了原来的两个 .icns：包里只有
+      # icon.json + Assets/ 里的裸 SVG，圆角遮罩、受光渐变、玻璃高光全归系统在运行时渲染，
+      # 我们一样都不画（画了反而会和系统的叠一层）。actool 顺带生成 .icns 给老系统兜底。
+      # XcodeGen 认得这个包类型，整个目录丢进来即可（实测写不写 type: file，
+      # 生成的 pbxproj 逐字相同）。
+      - path: Icons
     settings:
       base:
         INFOPLIST_FILE: Sources/Info.plist
@@ -46,6 +52,8 @@ targets:
         CODE_SIGNING_ALLOWED: YES
         MACOSX_DEPLOYMENT_TARGET: "27.0"
         COMBINE_HIDPI_IMAGES: YES
+        # 走 .icon 而不是 .icns：值取上面 configs 里按 Debug/Release 分好的 APP_ICON_NAME。
+        ASSETCATALOG_COMPILER_APPICON_NAME: "$(APP_ICON_NAME)"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         # 共享 module（ClamSDK）：编译期找 .swiftmodule，链接期找 dylib，
         # 运行期按 @rpath 落到 Contents/Frameworks/ 里 embed-modules.sh 摆好的那一份。

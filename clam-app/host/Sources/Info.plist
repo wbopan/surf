@@ -12,6 +12,8 @@
 	<string>6.0</string>
 	<key>CFBundleIconFile</key>
 	<string>$(APP_ICON_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>$(APP_ICON_NAME)</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleDisplayName</key>
