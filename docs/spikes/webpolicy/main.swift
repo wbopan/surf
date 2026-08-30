@@ -33,7 +33,8 @@ final class Harness: NSObject {
         policy = WebPolicy(
             currentEndpoint: {
                 ClamEndpoint(httpBase: base, bridgePath: "/clam/bridge",
-                             pid: nil, startedAt: nil, profile: nil, source: .flag)
+                             pid: nil, startedAt: nil, profile: nil,
+                             hostDir: nil, appPath: nil, source: .flag)
             },
             presentToast: { print("[harness] toast: \($0.text)") })
         super.init()

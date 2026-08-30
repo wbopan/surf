@@ -51,6 +51,11 @@ docs/spikes/hover/*
 !docs/spikes/hover/*.sh
 !docs/spikes/hover/*.md
 
+# Claude Code 的工作区：settings.json 是项目配置、该入库，worktrees/ 底下却是
+# 一个个真正的 git worktree（每个都有自己的 .git）——把它们提交进来等于把仓库
+# 套进自己。只挡 worktrees/，别挡整个 .claude/。
+/.claude/worktrees/
+
 # 截图等临时输出的统一落点（tools/shot.sh 不给 out 参数时就落这儿）
 /.scratch/
 
