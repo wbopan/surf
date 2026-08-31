@@ -172,6 +172,66 @@ currentColor，多数输入框里已经对了），但 dsh 有几处输入框自
 插入点会跟着变灰，而 macOS 的插入点从来是全对比度的——所以钉死，不靠 currentColor
 撞运气。**失效方向见「已知脆弱点」，`::selection` 那条不是无害的。**
 
+### 主题色：整条 deepseek 色阶换成品牌青
+
+**这一条和上面四条性质相反——它是覆盖，而且是本仓库唯一一处主动制造的、与 dsh
+网页端的显示偏差。**（铁律 1 默认禁止这么做；2026-08-31 用户裁决要"Surf 有自己的
+主题色"，范围也是用户定的：全部统一换，不留青蓝并存。）
+
+dsh 的强调色是一条 11 档色阶 `--dsw-static-deepseek-*`，浅色强调档 `-500 #4176e6`、
+深色 `-400 #679efe`。**浅深两档的 static 定义同值**，翻面发生在 alias 层，所以
+覆盖 static 这一处就够，dsh 自己那套翻面逻辑原样留着。下游三组 alias 全部跟着走：
+
+| alias | 浅 / 深 | 用在哪 |
+|---|---|---|
+| `--dsw-alias-button-info-fill` / `-hover` | -500 / -400 | 发送键等强调按钮 |
+| `--dsw-alias-state-business-primary` | -500 / -400 | 业务态强调 |
+| `--dsw-alias-state-business-tertiary` | -100 / -800 | 同上的浅底档 |
+| `--dsw-alias-brand-primary-new-color…` | -450 | — |
+
+**不是** `--dsw-alias-brand-primary`：那条走 neutral-bluish，浅色下是近黑的
+`#0f1115`，本来就不是蓝色，不在范围里。这个坑「带色按钮的高光必须跟着它自己的色走」
+一节也记过一次。
+
+特异性照抄 `--dsw-alias-bg-base` 那条重映射的办法：dsh 把 static 定义在 `body`
+(0,0,1) 与 `body[data-ds-dark-theme]`(0,1,1) 上，各多垫一个 `html` 就够，不打
+`!important`。两个选择器都写全——逗号串上只写一次前缀只命中第一条。
+
+#### 色值是算出来的，不是挑出来的
+
+拿 dsh 每一档的 OKLCh **明度原样保留**，色相换成 Surf 图标的青（`#0E8A94`，
+H=204.04；权威源是 `surf-app/host/Icons/AppIcon.icon/icon.json` 的
+`automatic-gradient`，不是 `site/styles.css`——那边只是同一个源的另一个消费者），
+彩度按 `品牌青C / dsh-500C = 0.537` 等比缩，于是 -500 正好落回品牌青。
+
+**保明度是关键**：dsh 拿这条色阶当成对的前景/背景用（-50/-100 作浅底、-800/-900
+作深底文字），明度一动对比度就塌；而色相旋转不改变任何一对的对比度。等比缩彩度
+则是为了让强调档落在品牌色上、而不是落在"青在该明度上的彩度上限"上。
+
+写死而不是让浏览器用 `oklch(from #4176e6 l c 204)` 现算，是因为相对颜色那条路的
+色域映射会把 -400/-450/-500 三档一起顶到边界（-500 → `#008e99`，比品牌青艳一档，
+且三档挤成几乎同一个彩度），色阶自己的疏密关系丢掉。
+
+写死的代价是 dsh 改色阶时这张表会 stale。那道闸是 `tools/accent-scale.mjs`：
+
+```sh
+node surf-nativeify/tools/accent-scale.mjs            # 从装好的 dsh theme 包重推一遍并逐档比对
+node surf-nativeify/tools/accent-scale.mjs --print    # 打出可直接粘回 ACCENT_SCALE 的表
+```
+
+它读的是 profile 里**真正装着的**那份 `@deepseek-ai/dsh-client-ui-theme`，所以
+dsh 一升级、色阶一动，这里就会红。
+
+#### 与「四条姿态」第四条不冲突
+
+选中色与插入点仍然从前景 `--dsw-alias-label-primary` 派生，**不从强调色**——那条
+的理由（macOS 的选中就是一层中性淡底）与主题色是什么颜色无关，换了青也不该改。
+
+#### 与「给色只能有一处」不冲突
+
+给 `_primary` 上色的仍然是 dsh 自己写的那条 `background-color`，我们只是换掉了它
+取用的 token 的值，照旧不往 `_primary` 身上叠任何一层色。那一节的结论原样有效。
+
 ### 按下即时、松开缓动
 
 手册量原生控件得到的时序是：**按下那一刻状态直接落定，只有松手才走曲线**。所以

@@ -125,6 +125,60 @@ window.__ModuleLoader__.load({
 		const ENABLED = ':not(:disabled):not([aria-disabled="true"])';
 		const join = (suffix) => SOLID_BUTTONS.map((s) => s + suffix).join(",\n");
 		const joinPlain = (suffix) => SOLID_PLAIN.map((s) => s + suffix).join(",\n");
+
+		// ── 主题色 ────────────────────────────────────────────────────────────
+		// dsh 的强调色是一条 11 档色阶 `--dsw-static-deepseek-*`（deepseek 蓝，
+		// -500 `#4176e6`）。**浅深两档的 static 定义同值**，翻面发生在 alias 层：
+		// `--dsw-alias-button-info-fill` 浅色取 -500、深色取 -400。所以覆盖 static
+		// 这一处，浅深一起换，而 dsh 自己那套翻面逻辑原样留着。下游三组 alias 全部
+		// 跟着走，一个都不用单列：
+		//
+		//   --dsw-alias-button-info-fill / -hover        发送键等强调按钮
+		//   --dsw-alias-state-business-primary / -tertiary
+		//   --dsw-alias-brand-primary-new-color…         （取 -450）
+		//
+		// （**不是** `--dsw-alias-brand-primary`：那条走 neutral-bluish，浅色下是
+		//   近黑的 `#0f1115`，本来就不是蓝色，不在这次范围里。）
+		//
+		// 值不是手挑的。拿 dsh 每一档的 OKLCh **明度原样保留**，色相换成 Surf 图标
+		// 的青（H=204.0；权威源是 `surf-app/host/Icons/AppIcon.icon/icon.json` 的
+		// automatic-gradient → `#0E8A94`），彩度按 `品牌青C / dsh-500C = 0.537`
+		// 等比缩，于是 -500 正好落回品牌青。**保明度是关键**：dsh 拿这条色阶当成对
+		// 的前景/背景用（-50/-100 作浅底、-800/-900 作深底文字），明度一动对比度
+		// 就塌，而色相旋转不影响任何一对的对比度。
+		//
+		// 为什么不写成 `oklch(from #4176e6 l c 204)` 让浏览器现算：那样彩度会被色域
+		// 映射顶到青在该明度上的上限（-500 → `#008e99`），比品牌青艳一档，而且
+		// -400/-450/-500 三档全撞在边界上、挤成几乎同一个彩度，色阶自己的疏密关系
+		// 丢掉。算好写死反而稳，代价是 dsh 哪天改色阶这张表会 stale —— 届时
+		// `surf-nativeify/README.md` 的「主题色」一节有可复跑的换算脚本。
+		//
+		// 是数组不是对象：对象会被 JS 的整数键规则重排，把 `700-delete` 甩到末尾，
+		// 跟 dsh 那张表对不上行，review 时白费一次核对。
+		const ACCENT_SCALE = [
+			["50", "#ecf4f5"],
+			["100", "#e3eff0"],
+			["200", "#d1e6e8"],
+			["300", "#abd3d7"],
+			["400", "#5bafb7"],
+			["450", "#2ba0aa"],
+			["500", "#168d97"],
+			["600", "#37777d"],
+			// dsh 自己的档名就带 `-delete` 后缀，照抄，别"修好"它。
+			["700-delete", "#1c5a60"],
+			["800", "#314547"],
+			["900", "#263435"],
+		];
+		// 特异性同 `--dsw-alias-bg-base` 那条重映射：dsh 把 static 定义在 `body`
+		// (0,0,1) 与 `body[data-ds-dark-theme]`(0,1,1) 上，各多垫一个 `html` 就够
+		// （0,0,2 / 0,1,2）。**两个选择器都要写全** —— 逗号串上只写一次前缀
+		// 只会命中第一条，这个坑这文件里踩过两次。
+		const accentTokens = [
+			"html body, html body[data-ds-dark-theme] {",
+			...ACCENT_SCALE.map(([k, v]) => `  --dsw-static-deepseek-${k}: ${v};`),
+			"}",
+		];
+
 		// **给色只能有一处，那一处是 background-color。**
 		// `_primary` 是唯一自带强调色的按钮，它的色由 dsh 自己画，我们碰都不碰，
 		// 只补结构层；其余几枚的色由我们出，写进 background-color。
@@ -1405,6 +1459,15 @@ window.__ModuleLoader__.load({
 					// 是 (0,1,2)，稳压上一条 `html`(0,0,1)，不靠源码顺序。
 					"html { color-scheme: light; }",
 					"html:has(body[data-ds-dark-theme]) { color-scheme: dark; }",
+
+					// 主题色：把 dsh 的 deepseek 蓝色阶整条换成 Surf 的品牌青。
+					// 一条规则管浅深两档，下游 alias 自动跟着走 —— 推导、色值来源与
+					// 特异性的账都记在文件头 ACCENT_SCALE 那儿。
+					//
+					// 注意这**不违反**下面「给色只能有一处」那条：给色的仍然是 dsh
+					// 自己写在 `_primary` 上的 background-color，我们只是换掉了它取用
+					// 的那个 token 的值。我们照旧不往 `_primary` 身上叠任何一层色。
+					...accentTokens,
 
 					// UI 文本不可选中（壳应用观感）：全局关掉 user-select，
 					// 输入类控件（composer 输入框等）恢复可选以便编辑。
