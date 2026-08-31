@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surf — a native Mac app for DeepSeek Harness</title>
+<meta name="description" content="Surf puts DeepSeek Harness in a real Mac window. The frame is Swift, and it can be rebuilt while the app is running.">
+<link rel="icon" href="surf.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap-wide">
+    <a class="nav-mark" href="#"><img src="surf.png" alt="">Surf</a>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#plugins">Plugins</a>
+      <a href="#source">Source</a>
+    </div>
+    <a class="btn btn-sm" href="#">Download</a>
+  </div>
+</nav>
+
+<div class="banner">
+  <p class="note">Surf is in early development. It follows dsh 0.1.1-rc.2, and it does not update itself yet.</p>
+</div>
+
+<header class="hero" id="overview">
+  <div class="wrap">
+    <img class="icon" src="surf.png" alt="Surf app icon">
+    <h1 class="display">A native Mac app for DeepSeek&nbsp;Harness.</h1>
+    <p class="lead">Surf gives dsh a real window — a native session list, real notifications, a settings
+      window, keys that work. The frame around the conversation is Swift, and it can be rebuilt while the
+      app is running.</p>
+    <div class="actions">
+      <a class="btn" href="#">Download for macOS</a>
+      <a class="btn btn-quiet" href="#source">View source</a>
+    </div>
+    <p class="note">Version 0.1.0 &nbsp;·&nbsp; macOS 27</p>
+  </div>
+</header>
+
+<section class="reveal" id="reveal">
+  <div class="reveal-stage">
+    <div class="scene">
+      <i class="flair f1"></i><i class="flair f2"></i><i class="flair f3"></i>
+      <div class="lockup">
+        <div class="hw"></div>
+        <div class="screen">
+          <img class="shot shot-web" src="screen-web@2x.png" width="1968" height="1272"
+               alt="DeepSeek Harness open in a browser tab">
+          <img class="shot shot-native" src="screen-native@2x.png" width="1968" height="1272"
+               alt="The same session in the Surf window">
+          <div class="sweep"><i class="s-ahead"></i><i class="s-behind"></i><i class="s-flash"></i><i class="s-core"></i></div>
+        </div>
+      </div>
+    </div>
+    <p class="reveal-cap">
+      <span class="cap-web">DeepSeek Harness in a browser tab.</span>
+      <span class="cap-native">The same session, in a window of its own.</span>
+    </p>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap-wide">
+    <p class="lead" style="max-width:720px">Surf is a shell, not a fork. Sessions, settings and themes stay in dsh; Surf projects them
+      into AppKit rather than keeping a second copy.</p>
+    <p class="lead" style="max-width:720px">Where dsh has not built something, Surf says so instead of inventing it. The gaps we ran
+      into are written down in the repository, each with a script to re-check it.</p>
+  </div>
+</section>
+
+<section class="band" id="plugins">
+  <div class="wrap-wide">
+    <div class="switch">
+      <div class="plugins" role="tablist" aria-label="Plugins">
+        <button role="tab" aria-selected="true"  aria-controls="p0"><span class="p-name">Native rendering</span><span class="p-mod">SurfUI</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p1"><span class="p-name">Swift plugin engine</span><span class="p-mod">SurfKit</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p2"><span class="p-name">Split view &amp; toolbar</span><span class="p-mod">SurfLayout</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p3"><span class="p-name">Sessions</span><span class="p-mod">SurfSessions</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p4"><span class="p-name">Notifications</span><span class="p-mod">SurfNotify</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p5"><span class="p-name">Menus &amp; keys</span><span class="p-mod">SurfShell</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p6"><span class="p-name">Settings</span><span class="p-mod">SurfSettings</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p7"><span class="p-name">Memory</span><span class="p-mod">SurfMemory</span></button>
+        <p class="note" style="margin-top:20px;padding-left:14px">Module names are proposed. The packages in
+          the repository are named <span class="mono">surf-*</span>.</p>
+      </div>
+
+      <div class="stage">
+
+        <div class="pane" id="p0" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">The web view stops looking like a web view.</h3>
+            <p class="copy">Popovers, button groups and the composer card are drawn with the system’s own
+              materials — and type is pulled back to macOS metrics.</p>
+          </div>
+          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#f2f3f5,#e6e7ea)">
+            <div style="position:absolute;inset:0;padding:22px 30px;display:flex;flex-direction:column;gap:12px;opacity:.5">
+              <div style="height:9px;width:62%;border-radius:5px;background:#b9bcc2"></div>
+              <div style="height:9px;width:84%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:71%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:40px;width:60%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
+              <div style="height:9px;width:78%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:52%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:66%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:44%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:40px;width:70%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
+              <div style="height:9px;width:80%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:58%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:73%;border-radius:5px;background:#c6c9ce"></div>
+            </div>
+            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px">
+              <div style="display:inline-flex;padding:3px;border-radius:11px;gap:3px;background:rgba(255,255,255,.5);backdrop-filter:blur(22px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.8),0 4px 16px rgba(30,32,36,.14)">
+                <span style="padding:5px 17px;border-radius:8px;font-size:13px;font-weight:500;background:rgba(255,255,255,.92);box-shadow:0 .5px 2px rgba(0,0,0,.16)">Chat</span>
+                <span style="padding:5px 17px;border-radius:8px;font-size:13px;color:#3c3c43">Trajectory</span>
+              </div>
+              <div style="width:376px;border-radius:17px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:16px;background:rgba(255,255,255,.48);backdrop-filter:blur(28px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.85),0 10px 34px rgba(30,32,36,.18)">
+                <span style="font-size:14.5px;color:rgba(29,29,31,.45)">Message the agent</span>
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:12.5px;color:rgba(29,29,31,.5)">Full access</span>
+                  <span style="width:26px;height:26px;border-radius:13px;background:#0e8a94"></span>
+                </div>
+              </div>
+            </div>
+          </div></div>
+          <p class="pane-cap">Handed back the moment the window loses focus. A hand-built approximation stays
+            behind it as a fallback.</p>
+        </div>
+
+        <div class="pane" id="p1" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">Native code, swapped in while you watch.</h3>
+            <p class="copy">A plugin’s Swift directory compiles to a module named after a hash of its own
+              contents, which then claims the slot the previous generation was holding.</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
+              <div class="code">
+                <div class="code-bar mono">SessionsPlugin.swift</div>
+<pre><span class="cm">// One C entry point. That is the whole ABI.</span>
+<span class="fn">@_cdecl</span>(<span class="st">"surf_plugin_entry"</span>)
+<span class="kw">public func</span> <span class="fn">surf_plugin_entry</span>() -&gt; <span class="ty">UnsafeMutableRawPointer</span> {
+    <span class="ty">Unmanaged</span>.<span class="fn">passRetained</span>(<span class="ty">SessionsPlugin</span>()).<span class="fn">toOpaque</span>()
+}
+
+<span class="kw">final class</span> <span class="ty">SessionsPlugin</span>: <span class="ty">SurfPlugin</span> {
+    <span class="kw">func</span> <span class="fn">activate</span>(host: <span class="ty">SurfHost</span>) -&gt; <span class="ty">AnyObject</span>? {
+        <span class="kw">let</span> handle = <span class="ty">SurfPluginHandle</span>()
+        host.<span class="fn">register</span>(slot: <span class="st">"sidebar"</span>) { <span class="ty">AnyView</span>(<span class="ty">SessionListView</span>()) }.<span class="fn">kept</span>(by: handle)
+        <span class="kw">return</span> handle  <span class="cm">// host lets go = this generation retires</span>
+    }
+}</pre>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">0.45 s for a six-line view, 1.03 s for the 408-line session list. A compile error
+            keeps the last good generation on screen, with the file and line in the terminal.</p>
+        </div>
+
+        <div class="pane" id="p2" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">A real split view, not a two-column layout.</h3>
+            <p class="copy">Dragging, double-click reset, width autosave, the collapse animation and the
+              toolbar separator all arrive with the system’s own split view.</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)" class="mock">
+              <div style="border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.12)">
+                <div style="height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.08);background:#f7f7f8">
+                  <div class="lights" style="transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
+                  <span style="width:1px;height:18px;background:rgba(0,0,0,.11);margin-left:24px"></span>
+                  <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:11px;font-size:11.5px;color:#0e8a94;box-shadow:inset 0 0 0 1px rgba(14,138,148,.3)">contributed item</span>
+                </div>
+                <div style="display:flex;height:172px;background:#fff">
+                  <div style="width:142px;flex:none;background:#f6f6f7;border-right:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:center">
+                    <span class="mono" style="font-size:11.5px;color:#86868b">slot: sidebar</span>
+                  </div>
+                  <div style="flex:1;display:flex;align-items:center;justify-content:center">
+                    <span class="mono" style="font-size:11.5px;color:#86868b">WKWebView — dsh’s own UI</span>
+                  </div>
+                </div>
+              </div>
+              <div style="position:absolute;inset:48px 0 0;border:1.5px dashed rgba(14,138,148,.4);border-radius:0 0 10px 10px"></div>
+            </div>
+          </div>
+          <p class="pane-cap">With no plugin in <span class="mono">root</span>, the window falls back to a plain
+            full-size web view. Nothing is missing except the native frame.</p>
+        </div>
+
+        <div class="pane" id="p3" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">What every session is doing, at a glance.</h3>
+            <p class="copy">Anything waiting on you is lifted into a Pending section at the top, and taken out
+              of its group so you never count it twice.</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:44px">
+              <div class="legend">
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg>Running</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg>Waiting for approval</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg>Asked you something</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/></svg>Failed</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg>Finished</div>
+              </div>
+              <div class="mock" style="width:268px;flex:none;background:#f6f6f7;border-radius:10px;padding:8px 10px 12px;box-shadow:0 0 0 1px rgba(0,0,0,.07)">
+                <div class="side-head" style="margin-top:6px"><span>Pending</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg></span><span class="name">Notarisation script</span><span class="time">09:42</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">Reading queue</span><span class="time">Yesterday</span></div>
+                <div class="side-head"><span>surf</span><span>3</span></div>
+                <div class="row sel"><span class="slot"></span><span class="name">Sidebar redesign</span><span class="time">10:15</span></div>
+                <div class="row"><span class="slot"></span><span class="name">Bridge frame table</span><span class="time">Tue</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">Icon composer pass</span><span class="time">22 Aug</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">Row 32 points, title 13 point regular, status slot 20 — measured against Apple’s
+            own sidebar specimens rather than estimated.</p>
+        </div>
+
+        <div class="pane" id="p4" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">Answer without switching windows.</h3>
+            <p class="copy">Approval requests and questions arrive as real notifications with the buttons on
+              them, and withdraw themselves if the request is answered somewhere else first.</p>
+          </div>
+          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#eff0f2,#e4e5e9)">
+            <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:360px;border-radius:19px;padding:14px 16px;display:flex;gap:12px;background:rgba(255,255,255,.74);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.9),0 18px 44px rgba(30,32,36,.24)">
+              <img src="surf.png" alt="" style="width:38px;height:38px;flex:none;display:block">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:baseline;justify-content:space-between">
+                  <span style="font-size:13.5px;font-weight:600;letter-spacing:-.008em">Surf</span>
+                  <span style="font-size:11.5px;color:var(--m-ink2)">now</span>
+                </div>
+                <div style="font-size:13.5px;line-height:1.35;margin-top:2px">Run the notarisation script?</div>
+                <div style="font-size:13px;line-height:1.35;color:var(--m-ink2)">Notarisation script · surf</div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Allow Once</span>
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;color:#ff3b30;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Deny</span>
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Open</span>
+                </div>
+              </div>
+            </div>
+          </div></div>
+          <p class="pane-cap">Looking at that session, nothing fires at all. Anywhere else you get a banner,
+            with a sound only when something is genuinely blocked on you — and finished turns stay quiet while
+            the app is in front of you.</p>
+        </div>
+
+        <div class="pane" id="p5" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">The menu bar the app deserves.</h3>
+            <p class="copy">Plugins declare their commands and Surf assembles them into the menu bar and a
+              shortcut editor in Settings.</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:40px">
+              <div style="flex:1">
+                <p class="label" style="margin-bottom:8px">Sessions</p>
+                <div class="keys">
+                  <div><span class="kc">⌘N</span><span class="kt">New session</span></div>
+                  <div><span class="kc">⌘⌥R</span><span class="kt">Rename session</span></div>
+                  <div><span class="kc">⌘⇧⌫</span><span class="kt">Archive session</span></div>
+                  <div><span class="kc">⌘⌥F</span><span class="kt">Focus search</span></div>
+                  <div><span class="kc">⌘⇧[</span><span class="kc">⌘⇧]</span><span class="kt">Previous · next session</span></div>
+                  <div><span class="kc">⌘⌥A</span><span class="kt">Next session waiting on you</span></div>
+                  <div><span class="kc">⌘⌥K</span><span class="kt">Clear filters</span></div>
+                  <div><span class="kc">⌘1</span><span class="kt">…⌘9 — jump to the nth session</span></div>
+                </div>
+              </div>
+              <div style="flex:1">
+                <p class="label" style="margin-bottom:8px">Window &amp; app</p>
+                <div class="keys">
+                  <div><span class="kc">⌘,</span><span class="kt">Settings</span></div>
+                  <div><span class="kc">⌥⌘S</span><span class="kt">Show or hide the sidebar</span></div>
+                  <div><span class="kc">Esc</span><span class="kt">Stop generating</span></div>
+                  <div><span class="kc">⌘R</span><span class="kt">Reload the page</span></div>
+                  <div><span class="kc">⌘⇧R</span><span class="kt">Reconnect to the backend</span></div>
+                  <div><span class="kc">⌥⌘D</span><span class="kt">Diagnostics</span></div>
+                  <div><span class="kc">⌘/</span><span class="kt">This list, in the app</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">The session commands can be re-bound or switched off. The system conventions on
+            the right are fixed — moving those would only make them harder to use.</p>
+        </div>
+
+        <div class="pane" id="p6" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">A settings window, not a web dialog in a frame.</h3>
+            <p class="copy">Five panes of AppKit that load no web content, applying changes as you make them
+              the way Mac settings do.</p>
+          </div>
+          <div class="pane-body">
+            <div class="mock" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:470px;border-radius:10px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.16),0 16px 40px -18px rgba(0,0,0,.3)">
+              <div style="background:#f6f6f7;border-bottom:1px solid rgba(0,0,0,.09);padding:9px 0 0">
+                <div class="lights" style="padding:0 11px;transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
+                <div style="text-align:center;font-size:13px;font-weight:600;margin:-13px 0 0">Settings</div>
+                <div style="display:flex;justify-content:center;gap:2px;padding:9px 0 7px;font-size:11px">
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">General</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#0e8a94;background:rgba(0,0,0,.06)">Models</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Plugins</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Agent Presets</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Connection</span>
+                </div>
+              </div>
+              <div style="background:#fff;padding:18px 22px 20px;display:grid;grid-template-columns:132px 1fr;column-gap:12px;row-gap:12px;align-items:start;font-size:13px">
+                <span style="text-align:right;padding-top:4px">Provider</span>
+                <span style="display:inline-flex;align-items:center;width:170px;background:#eaeaec;border-radius:6px;padding:4px 11px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.11)">DeepSeek</span>
+                <span style="text-align:right;padding-top:4px">API key</span>
+                <span>
+                  <span style="display:block;width:220px;background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.16);border-radius:5px;padding:4px 8px;letter-spacing:.06em">••••••••••••••</span>
+                  <span style="display:block;font-size:11px;color:#86868b;margin-top:5px;line-height:1.4">Redacted before it leaves the Node side. The window only learns whether one is set.</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">The first four panes mirror dsh’s own settings pane for pane. The plugin list is
+            deliberately read-only — dsh exposes no way to toggle one, and a switch that does nothing is worse
+            than no switch.</p>
+        </div>
+
+        <div class="pane" id="p7" role="tabpanel" hidden>
+          <div class="pane-head">
+            <h3 class="subtitle">What carries over between sessions.</h3>
+            <p class="copy">A folder of markdown files: the index goes in on every step, pinned ones go in
+              whole, and a body is read only when it is needed.</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
+              <div class="memrow alt">
+                <span class="mono" style="font-size:10px;color:#ff9500;width:44px;flex:none">pinned</span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">copy-style</span>
+                <span class="note" style="flex:1;min-width:0">Short, factual, no reassurance.</span>
+              </div>
+              <div class="memrow">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">native-abi-notes</span>
+                <span class="note" style="flex:1;min-width:0">Old images are never unloaded.</span>
+              </div>
+              <div class="memrow alt">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">toolbar-contracts</span>
+                <span class="note" style="flex:1;min-width:0">Metadata rebuilds; traffic updates in place.</span>
+              </div>
+              <div class="memrow">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">release-checklist</span>
+                <span class="note" style="flex:1;min-width:0">Notarise twice, staple both, in that order.</span>
+              </div>
+              <p class="copy" style="margin-top:26px;max-width:520px">No special tools — the agent edits them
+                with the read, write and grep it already has. This is the one plugin here with no macOS in it,
+                so it runs anywhere dsh runs.</p>
+            </div>
+          </div>
+          <p class="pane-cap">Said plainly because it is true: a prompt injection that reaches the write path
+            survives across sessions. That is an accepted residual risk, not a solved problem.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap-wide">
+    <div class="grid-3">
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="12" rx="2"/><path d="M2 20h20"/>
+        </svg>
+        <h3 class="subtitle">Requires macOS 27</h3>
+        <p class="copy">Install dsh, drag Surf to your Applications folder, open it. Surf starts the backend
+          when you open it and stops it when you quit — no Xcode, no toolchain, nothing to configure.</p>
+      </div>
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 6l-5 6 5 6M15 6l5 6-5 6"/>
+        </svg>
+        <h3 class="subtitle">Open source</h3>
+        <p class="copy">The shell, the eight plugins, and the measurement behind every number on this page.
+          Things dsh cannot do yet are listed rather than worked around.</p>
+        <p class="card-link"><a href="#">Go to the repository</a></p>
+      </div>
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M12.5 3.5a2 2 0 00-2 2c0 .35.09.68.25.97H7.4A1.4 1.4 0 006 7.87v3.35c.29-.16.62-.25.97-.25a2 2 0 010 4c-.35 0-.68-.09-.97-.25v3.35a1.4 1.4 0 001.4 1.4h3.35a2.02 2.02 0 01-.25-.97 2 2 0 014 0c0 .35-.9.68-.25.97h3.35a1.4 1.4 0 001.4-1.4v-3.35c-.29.16-.62.25-.97.25a2 2 0 010-4c.35 0 .68.09.97.25V7.87a1.4 1.4 0 00-1.4-1.4h-3.35c.16-.29.25-.62.25-.97a2 2 0 00-2-2z"/>
+        </svg>
+        <h3 class="subtitle">Write a plugin</h3>
+        <p class="copy">One C entry point, one <span class="mono">swift/</span> folder and a few lines of
+          JavaScript. The SDK ships inside the app, so you do not need Xcode.</p>
+        <p class="card-link"><a href="#">Read the plugin guide</a></p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap-wide">
+    <p class="note">Surf · a macOS app for DeepSeek Harness · 2026</p>
+    <div class="footer-links">
+      <a class="note" style="color:var(--ink-3)" href="#">[LICENCE]</a>
+      <span class="note">Not affiliated with DeepSeek</span>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
