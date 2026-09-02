@@ -68,6 +68,115 @@
   frame();
 })();
 
+/* The same list, read as a rack of Swift modules. A hairline rail carries one
+   accent cursor that slides to the selected row, and every row shows a six-hex
+   generation. Settle on a row for 150 ms and it rebuilds: the generation rolls
+   for 600 ms while a line sweeps the row, then lands on a new one and is marked
+   `swapped`. Rows scrolled past are not rebuilt — that is what the 150 ms is
+   for. Selection itself belongs to the tab list above; this only watches
+   aria-selected. */
+(function () {
+  var list = document.querySelector('.plugins');
+  if (!list) return;
+  var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+  var rail = list.querySelector('.p-rail');
+  var cursor = list.querySelector('.p-cursor');
+  if (!tabs.length || !rail || !cursor) return;
+
+  var still = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var HEX = '0123456789abcdef';
+
+  function gen6() {
+    var s = '';
+    for (var i = 0; i < 6; i++) s += HEX[(Math.random() * 16) | 0];
+    return s;
+  }
+
+  function selected() {
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('aria-selected') === 'true') return i;
+    }
+    return -1;
+  }
+
+  function place(animate) {
+    var i = selected();
+    if (i < 0) return;
+    var first = tabs[0];
+    var last = tabs[tabs.length - 1];
+    var btn = tabs[i];
+    rail.style.top = first.offsetTop + 'px';
+    rail.style.height = (last.offsetTop + last.offsetHeight - first.offsetTop) + 'px';
+    // '' restores the duration from the stylesheet; '0s' makes this call a jump
+    cursor.style.transitionDuration = animate && !still.matches ? '' : '0s';
+    cursor.style.height = btn.offsetHeight + 'px';
+    cursor.style.transform = 'translateY(' + btn.offsetTop + 'px)';
+  }
+
+  function mark(btn, gen) {
+    var old = btn.querySelector('.p-swap');
+    if (old) old.remove();
+    var tag = document.createElement('span');
+    tag.className = 'p-swap';
+    tag.textContent = 'swapped';
+    gen.insertAdjacentElement('afterend', tag);
+    setTimeout(function () {
+      tag.classList.add('is-out');
+      setTimeout(function () { tag.remove(); }, 300);
+    }, 900);
+  }
+
+  var rolling = null;
+  function rebuild(btn) {
+    var gen = btn.querySelector('.p-gen');
+    if (!gen) return;
+    if (rolling) { clearInterval(rolling.timer); rolling.done(); }
+
+    btn.classList.remove('is-rebuilding', 'is-built');
+    void btn.offsetWidth;                       // restart the sweep
+    btn.classList.add('is-rebuilding');
+
+    var landed = gen6();
+    var elapsed = 0;
+    var state = {
+      done: function () {
+        rolling = null;
+        gen.textContent = landed;
+        btn.classList.remove('is-rebuilding');
+        btn.classList.add('is-built');
+        setTimeout(function () { btn.classList.remove('is-built'); }, 900);
+        mark(btn, gen);
+      }
+    };
+    state.timer = setInterval(function () {
+      elapsed += 40;
+      if (elapsed >= 600) { clearInterval(state.timer); state.done(); return; }
+      gen.textContent = gen6();
+    }, 40);
+    rolling = state;
+  }
+
+  var settle = 0;
+  var built = selected();                       // the row we open on is already built
+  function onSelect() {
+    place(true);
+    clearTimeout(settle);
+    var i = selected();
+    if (i < 0 || i === built || still.matches) return;
+    settle = setTimeout(function () {
+      if (selected() !== i) return;
+      built = i;
+      rebuild(tabs[i]);
+    }, 150);
+  }
+
+  new MutationObserver(onSelect).observe(list, {
+    subtree: true, attributes: true, attributeFilter: ['aria-selected'],
+  });
+  window.addEventListener('resize', function () { place(false); });
+  place(false);
+})();
+
 /* Scroll reveal: dsh in a browser tab → the same session in the Surf window.
    --p is progress through the whole section, --w the wipe (a held start and a
    held finish), --e a bell curve used for the light at the wipe edge. */
@@ -114,4 +223,49 @@
   window.addEventListener('resize', function () { fit(); tick(); });
   fit();
   frame();
+})();
+
+/* One window, eight viewpoints. #surf-window is cloned into every .app-view;
+   the clone sits in a fixed 984 x 636 design space (.app) that is scaled to
+   the frame and then pushed in on the region that pane is about. data-zoom is
+   the magnification and data-ox / data-oy the design-space point that lands in
+   the middle of the frame; the frame crops whatever falls outside. */
+(function () {
+  var tpl = document.getElementById('surf-window');
+  var views = Array.prototype.slice.call(document.querySelectorAll('.app-view'));
+  if (!tpl || !views.length) return;
+
+  var W = 984, H = 636;
+
+  function place(view) {
+    var app = view.firstElementChild;
+    if (!app) return;
+    var w = view.clientWidth, h = view.clientHeight;
+    if (!w || !h) return;
+    var k = Math.min(w / W, h / H);
+    var s = k * (parseFloat(view.dataset.zoom) || 1);
+    var ox = parseFloat(view.dataset.ox), oy = parseFloat(view.dataset.oy);
+    if (isNaN(ox)) ox = W / 2;
+    if (isNaN(oy)) oy = H / 2;
+    app.style.transform = 'translate(' + (w / 2 - s * ox).toFixed(2) + 'px,'
+      + (h / 2 - s * oy).toFixed(2) + 'px) scale(' + s.toFixed(4) + ')';
+  }
+
+  views.forEach(function (view) {
+    var app = document.createElement('div');
+    app.className = 'app';
+    if (view.dataset.state) app.dataset.state = view.dataset.state;
+    app.appendChild(tpl.content.cloneNode(true));
+    view.appendChild(app);
+    place(view);
+  });
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { place(entry.target); });
+    });
+    views.forEach(function (view) { ro.observe(view); });
+  } else {
+    window.addEventListener('resize', function () { views.forEach(place); });
+  }
 })();

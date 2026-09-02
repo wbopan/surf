@@ -70,14 +70,16 @@
   <div class="wrap-wide">
     <div class="switch">
       <div class="plugins" role="tablist" aria-label="Plugins">
-        <button role="tab" aria-selected="true"  aria-controls="p0"><span class="p-name">Native rendering</span><span class="p-mod">SurfUI</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p1"><span class="p-name">Swift plugin engine</span><span class="p-mod">SurfKit</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p2"><span class="p-name">Split view &amp; toolbar</span><span class="p-mod">SurfLayout</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p3"><span class="p-name">Sessions</span><span class="p-mod">SurfSessions</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p4"><span class="p-name">Notifications</span><span class="p-mod">SurfNotify</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p5"><span class="p-name">Menus &amp; keys</span><span class="p-mod">SurfShell</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p6"><span class="p-name">Settings</span><span class="p-mod">SurfSettings</span></button>
-        <button role="tab" aria-selected="false" aria-controls="p7"><span class="p-name">Memory</span><span class="p-mod">SurfMemory</span></button>
+        <p class="label">Swift, swapped in place</p>
+        <span class="p-rail" aria-hidden="true"></span><span class="p-cursor" aria-hidden="true"></span>
+        <button role="tab" aria-selected="true"  aria-controls="p0"><span class="p-name">Native rendering</span><span class="p-mod">SurfUI</span><span class="p-sep">·</span><span class="p-gen">a3f9c1</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p1"><span class="p-name">Swift plugin engine</span><span class="p-mod">SurfKit</span><span class="p-sep">·</span><span class="p-gen">7e21b4</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p2"><span class="p-name">Split view &amp; toolbar</span><span class="p-mod">SurfLayout</span><span class="p-sep">·</span><span class="p-gen">c05d8a</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p3"><span class="p-name">Sessions</span><span class="p-mod">SurfSessions</span><span class="p-sep">·</span><span class="p-gen">1f6e30</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p4"><span class="p-name">Notifications</span><span class="p-mod">SurfNotify</span><span class="p-sep">·</span><span class="p-gen">9b4772</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p5"><span class="p-name">Menus &amp; keys</span><span class="p-mod">SurfShell</span><span class="p-sep">·</span><span class="p-gen">42dcae</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p6"><span class="p-name">Settings</span><span class="p-mod">SurfSettings</span><span class="p-sep">·</span><span class="p-gen">6a0f53</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p7"><span class="p-name">Memory</span><span class="p-mod">SurfMemory</span><span class="p-sep">·</span><span class="p-gen">d8b219</span></button>
         <p class="note" style="margin-top:20px;padding-left:14px">Module names are provisional. The packages in
           the repository are named <span class="mono">surf-*</span>.</p>
       </div>
@@ -90,34 +92,8 @@
             <p class="copy">Popovers, button groups, and the composer card are drawn with the system’s own
               materials, and type is pulled back to macOS metrics.</p>
           </div>
-          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#f2f3f5,#e6e7ea)">
-            <div style="position:absolute;inset:0;padding:22px 30px;display:flex;flex-direction:column;gap:12px;opacity:.5">
-              <div style="height:9px;width:62%;border-radius:5px;background:#b9bcc2"></div>
-              <div style="height:9px;width:84%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:71%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:40px;width:60%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
-              <div style="height:9px;width:78%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:52%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:66%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:44%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:40px;width:70%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
-              <div style="height:9px;width:80%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:58%;border-radius:5px;background:#c6c9ce"></div>
-              <div style="height:9px;width:73%;border-radius:5px;background:#c6c9ce"></div>
-            </div>
-            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px">
-              <div style="display:inline-flex;padding:3px;border-radius:11px;gap:3px;background:rgba(255,255,255,.5);backdrop-filter:blur(22px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.8),0 4px 16px rgba(30,32,36,.14)">
-                <span style="padding:5px 17px;border-radius:8px;font-size:13px;font-weight:500;background:rgba(255,255,255,.92);box-shadow:0 .5px 2px rgba(0,0,0,.16)">Chat</span>
-                <span style="padding:5px 17px;border-radius:8px;font-size:13px;color:#3c3c43">Trajectory</span>
-              </div>
-              <div style="width:376px;border-radius:17px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:16px;background:rgba(255,255,255,.48);backdrop-filter:blur(28px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.85),0 10px 34px rgba(30,32,36,.18)">
-                <span style="font-size:14.5px;color:rgba(29,29,31,.45)">Message the agent</span>
-                <div style="display:flex;align-items:center;justify-content:space-between">
-                  <span style="font-size:12.5px;color:rgba(29,29,31,.5)">Full access</span>
-                  <span style="width:26px;height:26px;border-radius:13px;background:#0e8a94"></span>
-                </div>
-              </div>
-            </div>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="composer" data-zoom="1.06" data-ox="492" data-oy="316"></div>
           </div></div>
           <p class="pane-cap">The system rendering is released when the window loses focus, and a hand-built
             approximation takes its place.</p>
@@ -129,8 +105,8 @@
             <p class="copy">A plugin’s Swift directory compiles to a module named by its content hash, which
               then replaces the previous generation in place.</p>
           </div>
-          <div class="pane-body">
-            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
+          <div class="pane-body"><div class="shotarea dark">
+            <div class="codeframe">
               <div class="code">
                 <div class="code-bar mono">SessionsPlugin.swift</div>
 <pre><span class="cm">// One C entry point. That is the whole ABI.</span>
@@ -147,8 +123,15 @@
     }
 }</pre>
               </div>
+              <div class="build">
+                <span class="bseg">swift/ changed</span>
+                <span class="bline"></span>
+                <span class="bseg">swiftc · 1.03 s</span>
+                <span class="bline"></span>
+                <span class="bseg">SurfSessions_h9f31c0aa12b4 swapped</span>
+              </div>
             </div>
-          </div>
+          </div></div>
           <p class="pane-cap">0.45 s for a six-line view, 1.03 s for the 408-line session list. If a build fails,
             the last good generation stays on screen, and the error’s file and line go to the terminal.</p>
         </div>
@@ -159,26 +142,9 @@
             <p class="copy">Dragging, double-click reset, width autosave, the collapse animation, and the
               toolbar separator all arrive with it.</p>
           </div>
-          <div class="pane-body">
-            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)" class="mock">
-              <div style="border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.12)">
-                <div style="height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.08);background:#f7f7f8">
-                  <div class="lights" style="transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
-                  <span style="width:1px;height:18px;background:rgba(0,0,0,.11);margin-left:24px"></span>
-                  <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:11px;font-size:11.5px;color:#0e8a94;box-shadow:inset 0 0 0 1px rgba(14,138,148,.3)">contributed item</span>
-                </div>
-                <div style="display:flex;height:172px;background:#fff">
-                  <div style="width:142px;flex:none;background:#f6f6f7;border-right:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:center">
-                    <span class="mono" style="font-size:11.5px;color:#86868b">slot: sidebar</span>
-                  </div>
-                  <div style="flex:1;display:flex;align-items:center;justify-content:center">
-                    <span class="mono" style="font-size:11.5px;color:#86868b">WKWebView — dsh’s own UI</span>
-                  </div>
-                </div>
-              </div>
-              <div style="position:absolute;inset:48px 0 0;border:1.5px dashed rgba(14,138,148,.4);border-radius:0 0 10px 10px"></div>
-            </div>
-          </div>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="layout" data-state="annot"></div>
+          </div></div>
           <p class="pane-cap">With no plugin in <span class="mono">root</span>, the window falls back to a plain
             full-size web view, and dsh works as usual.</p>
         </div>
@@ -189,8 +155,9 @@
             <p class="copy">Switch to By Status and the list splits into Pending, In Progress and Ended.
               In the other groupings the same state shows as the symbol at the start of each row.</p>
           </div>
-          <div class="pane-body">
-            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:44px">
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="sessions" data-state="by-status" data-zoom="1.45" data-ox="242" data-oy="240"></div>
+            <div class="ov ov-legend">
               <div class="legend">
                 <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg>Running</div>
                 <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg>Waiting for approval</div>
@@ -198,18 +165,8 @@
                 <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/></svg>Failed</div>
                 <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg>Finished</div>
               </div>
-              <div class="mock" style="width:268px;flex:none;background:#f6f6f7;border-radius:10px;padding:8px 10px 12px;box-shadow:0 0 0 1px rgba(0,0,0,.07)">
-                <div class="side-head" style="margin-top:6px"><span>Pending</span><span>2</span></div>
-                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg></span><span class="name">Notarisation script</span><span class="time">09:42</span></div>
-                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">Reading queue</span><span class="time">Yesterday</span></div>
-                <div class="side-head"><span>In Progress</span><span>1</span></div>
-                <div class="row sel"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg></span><span class="name">Sidebar redesign</span><span class="time">10:15</span></div>
-                <div class="side-head"><span>Ended</span><span>2</span></div>
-                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">Icon composer pass</span><span class="time">22 Aug</span></div>
-                <div class="row"><span class="slot"></span><span class="name">Bridge frame table</span><span class="time">Tue</span></div>
-              </div>
             </div>
-          </div>
+          </div></div>
           <p class="pane-cap">Rows are 32 points, titles 13 point regular, the status slot 20, all measured from
             Apple’s own sidebar specimens.</p>
         </div>
@@ -220,20 +177,16 @@
             <p class="copy">Approval requests and questions arrive as notifications with buttons on them,
               and are withdrawn if answered somewhere else first.</p>
           </div>
-          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#eff0f2,#e4e5e9)">
-            <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:360px;border-radius:19px;padding:14px 16px;display:flex;gap:12px;background:rgba(255,255,255,.74);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.9),0 18px 44px rgba(30,32,36,.24)">
-              <img src="surf.png" alt="" style="width:38px;height:38px;flex:none;display:block">
-              <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:baseline;justify-content:space-between">
-                  <span style="font-size:13.5px;font-weight:600;letter-spacing:-.008em">Surf</span>
-                  <span style="font-size:11.5px;color:var(--m-ink2)">now</span>
-                </div>
-                <div style="font-size:13.5px;line-height:1.35;margin-top:2px">Run the notarisation script?</div>
-                <div style="font-size:13px;line-height:1.35;color:var(--m-ink2)">Notarisation script · surf</div>
-                <div style="display:flex;gap:8px;margin-top:11px">
-                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Allow Once</span>
-                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;color:#ff3b30;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Deny</span>
-                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">Open</span>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="notify" data-state="dim"></div>
+            <div class="ov ov-note">
+              <img src="surf.png" alt="">
+              <div>
+                <div class="ov-note-top"><b>Surf</b><span>now</span></div>
+                <p>Run the notarisation script?</p>
+                <p class="sub">Notarisation script · surf</p>
+                <div class="ov-note-acts">
+                  <span>Allow Once</span><span class="deny">Deny</span><span>Open</span>
                 </div>
               </div>
             </div>
@@ -249,37 +202,26 @@
             <p class="copy">Plugins declare their commands and Surf assembles them into the menu bar and a
               shortcut editor in Settings.</p>
           </div>
-          <div class="pane-body">
-            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:40px">
-              <div style="flex:1">
-                <p class="label" style="margin-bottom:8px">Sessions</p>
-                <div class="keys">
-                  <div><span class="kc">⌘N</span><span class="kt">New session</span></div>
-                  <div><span class="kc">⌘⌥R</span><span class="kt">Rename session</span></div>
-                  <div><span class="kc">⌘⇧⌫</span><span class="kt">Archive session</span></div>
-                  <div><span class="kc">⌘⌥F</span><span class="kt">Focus search</span></div>
-                  <div><span class="kc">⌘⇧[</span><span class="kc">⌘⇧]</span><span class="kt">Previous · next session</span></div>
-                  <div><span class="kc">⌘⌥A</span><span class="kt">Next session waiting on you</span></div>
-                  <div><span class="kc">⌘⌥K</span><span class="kt">Clear filters</span></div>
-                  <div><span class="kc">⌘1</span><span class="kt">…⌘9 — jump to the nth session</span></div>
-                </div>
-              </div>
-              <div style="flex:1">
-                <p class="label" style="margin-bottom:8px">Window &amp; app</p>
-                <div class="keys">
-                  <div><span class="kc">⌘,</span><span class="kt">Settings</span></div>
-                  <div><span class="kc">⌥⌘S</span><span class="kt">Show or hide the sidebar</span></div>
-                  <div><span class="kc">Esc</span><span class="kt">Stop generating</span></div>
-                  <div><span class="kc">⌘R</span><span class="kt">Reload the page</span></div>
-                  <div><span class="kc">⌘⇧R</span><span class="kt">Reconnect to the backend</span></div>
-                  <div><span class="kc">⌥⌘D</span><span class="kt">Diagnostics</span></div>
-                  <div><span class="kc">⌘/</span><span class="kt">This list, in the app</span></div>
-                </div>
-              </div>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="menus" data-oy="300"></div>
+            <div class="ov ov-mbar">
+              <span></span><span class="b">Surf</span><span>File</span><span>Edit</span><span>View</span><span class="on">Session</span><span>Window</span><span>Help</span>
             </div>
-          </div>
-          <p class="pane-cap">The session commands can be re-bound or switched off. The system shortcuts on
-            the right are fixed.</p>
+            <div class="ov ov-menu">
+              <div><span>New Session</span><span>⌘N</span></div>
+              <hr>
+              <div><span>Rename Session…</span><span>⌥⌘R</span></div>
+              <div><span>Archive Session</span><span>⇧⌘⌫</span></div>
+              <div><span>Focus Search</span><span>⌥⌘F</span></div>
+              <div><span>Previous Session</span><span>⇧⌘[</span></div>
+              <div><span>Next Session</span><span>⇧⌘]</span></div>
+              <div><span>Next Pending Session</span><span>⌥⌘A</span></div>
+              <div><span>Clear Filters</span><span>⌥⌘K</span></div>
+              <div><span>Session 1…9</span><span>⌘1…⌘9</span></div>
+            </div>
+          </div></div>
+          <p class="pane-cap">The session commands can be re-bound or switched off. The window and app shortcuts
+            are fixed.</p>
         </div>
 
         <div class="pane" id="p6" role="tabpanel">
@@ -288,30 +230,27 @@
             <p class="copy">Five panes of AppKit that load no web content. Changes apply as you make them,
               the way Mac settings do.</p>
           </div>
-          <div class="pane-body">
-            <div class="mock" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:470px;border-radius:10px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.16),0 16px 40px -18px rgba(0,0,0,.3)">
-              <div style="background:#f6f6f7;border-bottom:1px solid rgba(0,0,0,.09);padding:9px 0 0">
-                <div class="lights" style="padding:0 11px;transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
-                <div style="text-align:center;font-size:13px;font-weight:600;margin:-13px 0 0">Settings</div>
-                <div style="display:flex;justify-content:center;gap:2px;padding:9px 0 7px;font-size:11px">
-                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">General</span>
-                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#0e8a94;background:rgba(0,0,0,.06)">Models</span>
-                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Plugins</span>
-                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Agent Presets</span>
-                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">Connection</span>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="settings" data-state="dim"></div>
+            <div class="ov ov-set mock">
+              <div class="ov-set-top">
+                <div class="lights"><i></i><i></i><i></i></div>
+                <div class="ov-set-title">Settings</div>
+                <div class="ov-set-tabs">
+                  <span>General</span><span class="on">Models</span><span>Plugins</span><span>Agent Presets</span><span>Connection</span>
                 </div>
               </div>
-              <div style="background:#fff;padding:18px 22px 20px;display:grid;grid-template-columns:132px 1fr;column-gap:12px;row-gap:12px;align-items:start;font-size:13px">
-                <span style="text-align:right;padding-top:4px">Provider</span>
-                <span style="display:inline-flex;align-items:center;width:170px;background:#eaeaec;border-radius:6px;padding:4px 11px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.11)">DeepSeek</span>
-                <span style="text-align:right;padding-top:4px">API key</span>
+              <div class="ov-set-body">
+                <span class="lab">Provider</span>
+                <span class="pop">DeepSeek</span>
+                <span class="lab">API key</span>
                 <span>
-                  <span style="display:block;width:220px;background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.16);border-radius:5px;padding:4px 8px;letter-spacing:.06em">••••••••••••••</span>
-                  <span style="display:block;font-size:11px;color:#86868b;margin-top:5px;line-height:1.4">Redacted before it leaves the Node side. The window only learns whether one is set.</span>
+                  <span class="fld">••••••••••••••</span>
+                  <span class="hint">Redacted before it leaves the Node side. The window only learns whether one is set.</span>
                 </span>
               </div>
             </div>
-          </div>
+          </div></div>
           <p class="pane-cap">The first four panes mirror dsh’s own settings pane for pane. The plugin list is
             read-only, because dsh does not provide a way to toggle plugins.</p>
         </div>
@@ -322,33 +261,16 @@
             <p class="copy">A folder of markdown files: the index goes into context on every step, pinned ones go
               in whole, and a body is read only when it is needed.</p>
           </div>
-          <div class="pane-body">
-            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
-              <div class="memrow alt">
-                <span class="mono" style="font-size:10px;color:#ff9500;width:44px;flex:none">pinned</span>
-                <span class="mono" style="font-size:12.5px;width:170px;flex:none">copy-style</span>
-                <span class="note" style="flex:1;min-width:0">Short, factual, no reassurance.</span>
-              </div>
-              <div class="memrow">
-                <span style="width:44px;flex:none"></span>
-                <span class="mono" style="font-size:12.5px;width:170px;flex:none">native-abi-notes</span>
-                <span class="note" style="flex:1;min-width:0">Old images are never unloaded.</span>
-              </div>
-              <div class="memrow alt">
-                <span style="width:44px;flex:none"></span>
-                <span class="mono" style="font-size:12.5px;width:170px;flex:none">toolbar-contracts</span>
-                <span class="note" style="flex:1;min-width:0">Metadata rebuilds; traffic updates in place.</span>
-              </div>
-              <div class="memrow">
-                <span style="width:44px;flex:none"></span>
-                <span class="mono" style="font-size:12.5px;width:170px;flex:none">release-checklist</span>
-                <span class="note" style="flex:1;min-width:0">Notarise twice, staple both, in that order.</span>
-              </div>
-              <p class="copy" style="margin-top:26px;max-width:520px">The agent edits these files with the read,
-                write, and grep it already has. This is the only plugin here with no macOS code, so it runs
-                anywhere dsh runs.</p>
+          <div class="pane-body"><div class="shotarea mock">
+            <div class="app-view" data-view="memory" data-state="mem" data-zoom="1.2" data-ox="550" data-oy="290"></div>
+            <div class="ov ov-mem">
+              <div class="ov-mem-head mono">surf-memory/</div>
+              <div class="memrow alt"><span class="pin mono">pinned</span><span class="mono">copy-style</span></div>
+              <div class="memrow"><span class="pin"></span><span class="mono">native-abi-notes</span></div>
+              <div class="memrow alt"><span class="pin"></span><span class="mono">toolbar-contracts</span></div>
+              <div class="memrow"><span class="pin"></span><span class="mono">release-checklist</span></div>
             </div>
-          </div>
+          </div></div>
           <p class="pane-cap">One caveat: a prompt injection that reaches the write path persists across
             sessions.</p>
         </div>
@@ -406,6 +328,114 @@
     </div>
   </div>
 </footer>
+
+<!-- The one window model behind all eight panes of the plugin band. app.js
+     clones it into every .app-view; styles.css lays it out in a 984 x 636
+     design space, the geometry of screen-native@2x.jpg at 1x. Everything in
+     here is the app talking, so it stays in English on the Chinese page too —
+     the app follows the system language, and the two real screenshots above
+     are English. -->
+<template id="surf-window">
+  <div class="win window mock">
+
+    <div class="wtb">
+      <div class="wtb-lead">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <span class="tbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h16M6.5 12h11M9.5 17h5"/></svg></span>
+        <span class="tbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="3"/><path d="M10 5.2v13.6"/></svg></span>
+      </div>
+      <span class="wtb-sep"></span>
+      <div class="wtb-main">
+        <div class="wtitle">
+          <b>Clean up worktrees</b>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3.5l7.5 3.2v5c0 4.2-3 7.4-7.5 8.8-4.5-1.4-7.5-4.6-7.5-8.8v-5z"/></svg>Standard mode</span>
+        </div>
+        <div class="wtb-end">
+          <div class="seg"><span class="on">Chat</span><span>Trajectory</span></div>
+          <span class="tbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10M8.4 10.4L12 14l3.6-3.6M5 17.6v1.1c0 .7.6 1.3 1.3 1.3h11.4c.7 0 1.3-.6 1.3-1.3v-1.1"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wbody">
+      <div class="side">
+        <div class="side-new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5H6.5A2.5 2.5 0 0 0 4 7v10.5A2.5 2.5 0 0 0 6.5 20H17a2.5 2.5 0 0 0 2.5-2.5V12"/><path d="M17.2 3.9l2.9 2.9-7.4 7.4-3.6.7.7-3.6z"/></svg>New Session</div>
+        <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6L20 20"/></svg>Search</div>
+
+        <div class="side-list by-space">
+          <div class="side-head"><span>Pending</span><span></span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">Greeting and session start</span><span class="time">10:19 AM</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 1 1 3.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">Add website support to dsh</span><span class="time">10:18 AM</span></div>
+          <div class="side-head"><span>surf</span><span>3</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg></span><span class="name">Push everything</span><span class="time">10:30 AM</span></div>
+          <div class="row"><span class="slot"></span><span class="name">Files to ignore or delete?</span><span class="time">10:23 AM</span></div>
+          <div class="row sel"><span class="slot"></span><span class="name">Clean up worktrees</span><span class="time">10:19 AM</span></div>
+          <div class="side-head"><span>Desktop</span><span>2</span></div>
+          <div class="row"><span class="slot"></span><span class="name">Hong Kong weather today</span><span class="time">10:16 AM</span></div>
+          <div class="row"><span class="slot"></span><span class="name">Is Hades 2 any good?</span><span class="time">10:14 AM</span></div>
+        </div>
+
+        <div class="side-list by-status">
+          <div class="side-head"><span>Pending</span><span>2</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg></span><span class="name">Notarisation script</span><span class="time">09:42</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 1 1 3.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">Reading queue</span><span class="time">Yesterday</span></div>
+          <div class="side-head"><span>In Progress</span><span>1</span></div>
+          <div class="row sel"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg></span><span class="name">Sidebar redesign</span><span class="time">10:15</span></div>
+          <div class="side-head"><span>Ended</span><span>2</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">Icon composer pass</span><span class="time">22 Aug</span></div>
+          <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/></svg></span><span class="name">Bridge frame table</span><span class="time">Tue</span></div>
+        </div>
+
+        <div class="side-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.2V6.8a2 2 0 0 1 2-2h3.2l1.8 2.2h7.5a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-12.5a2 2 0 0 1-2-2z"/><path d="M12 10.6v5M9.5 13.1h5"/></svg></div>
+      </div>
+
+      <div class="wmain">
+        <div class="bubble">Clean up our worktrees</div>
+
+        <div class="traj">
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg><b>Context injection</b><i>·</i><em>CLAUDE.md</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg><b>Context injection</b><i>·</i><em>@deepseek-ai/dsh-system-prompt</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg><b>Context injection</b><i>·</i><em>skill-catalog</em></div>
+          <div class="trow" data-mem><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg><b>Context injection</b><i>·</i><em>surf-memory</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M9 9l6 6M15 9l-6 6"/></svg><b>Think</b><i>·</i><em>The user wants to clean up git worktrees in the repo. Let me check git worktree list.</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M8 10l2.6 2.4L8 14.8M13 15h3.5"/></svg><b>Bash</b><i>·</i><em>List git worktrees</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M8 10l2.6 2.4L8 14.8M13 15h3.5"/></svg><b>Bash</b><i>·</i><em>Check worktree state and unmerged commits</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M9 9l6 6M15 9l-6 6"/></svg><b>Think</b><i>·</i><em>Clean worktree, no unmerged commits. Remove it.</em></div>
+          <p class="tpara">Worktree is clean with no unmerged commits — safe to remove.</p>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M8 10l2.6 2.4L8 14.8M13 15h3.5"/></svg><b>Bash</b><i>·</i><em>Remove worktree and its branch</em></div>
+          <div class="trow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M8 10l2.6 2.4L8 14.8M13 15h3.5"/></svg><b>Bash</b><i>·</i><em>Prune stale worktree metadata</em></div>
+          <p class="tpara">Cleaned up. There was one worktree, <span class="mono">worktrees/arch-coupling-audit</span>, on branch <span class="mono">worktree-arch-coupling-audit</span>:</p>
+          <div class="tbul"><i>•</i><span>Verified it had no uncommitted changes and no commits ahead of main</span></div>
+          <div class="tbul"><i>•</i><span>Removed the worktree, deleted its branch, and pruned stale metadata</span></div>
+        </div>
+
+        <div class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></div>
+
+        <div class="comp">
+          <span class="comp-ph">Message the agent</span>
+          <div class="comp-row">
+            <span class="comp-plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></span>
+            <span class="comp-pop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="currentColor" stroke="none"/></svg>Full access<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></span>
+            <span class="comp-model"><b>GLM-5.3</b>Default<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></span>
+            <span class="comp-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- the split-view divider under the pointer, and two hairline leaders -->
+  <div class="ann">
+    <svg viewBox="0 0 984 636" fill="none">
+      <path d="M284.5 76.5V612" stroke="rgba(0,0,0,.32)"/>
+      <path d="M278 332l-5.5 8 5.5 8M291 332l5.5 8-5.5 8" stroke="rgba(0,0,0,.46)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M285 76l25 34" stroke="rgba(0,0,0,.34)"/>
+      <path d="M919.5 70v80" stroke="rgba(0,0,0,.34)"/>
+    </svg>
+    <span class="ann-lab" style="left:316px;top:105px">toolbar separator</span>
+    <span class="ann-lab" style="right:64px;top:156px">contributed by a plugin</span>
+  </div>
+</template>
 
 <script src="app.js"></script>
 </body>

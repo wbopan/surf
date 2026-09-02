@@ -227,20 +227,15 @@ h1, h2, h3, p { margin: 0; }
 .band .pane-cap,
 .band .plugins .note { color: var(--band-ink-2); }
 .band .p-name { color: var(--band-ink-2); }
-.band .p-mod { color: #74747c; }
+.band .p-mod, .band .p-sep, .band .p-gen { color: #74747c; }
 .band .plugins button:hover .p-name { color: var(--band-ink); }
-.band .plugins button[aria-selected="true"] { border-left-color: var(--band-accent); }
 .band .plugins button[aria-selected="true"] .p-name { color: var(--band-accent); }
-.band .kc {
-  background: rgba(255, 255, 255, .06);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .17);
-  color: var(--band-ink);
-}
-.band .kt,
-.band .legend div { color: var(--band-ink-2); }
-.band .memrow { color: var(--band-ink-2); }
-.band .memrow.alt { background: rgba(255, 255, 255, .05); }
-.band .memrow .note { color: var(--band-ink-2); }
+/* the rail, the cursor and the rebuild sweep — see the plugin switcher below.
+   The row's own border-left only comes back on a narrow screen. */
+.band .p-rail { background: var(--band-line); }
+.band .p-cursor,
+.band .plugins button::after { background: var(--band-accent); }
+.band .p-swap { color: var(--band-accent); }
 .band .mono { color: var(--band-ink); }
 
 /* ---------- three-up cards ---------- */
@@ -256,7 +251,22 @@ h1, h2, h3, p { margin: 0; }
 
 /* ---------- app mockups ----------
    These are pictures of the app, so they keep their own light palette in
-   either page appearance — the same way a screenshot would. */
+   either page appearance — the same way a screenshot would.
+
+   One window, eight viewpoints. #surf-window is the only model there is;
+   app.js clones it into every .app-view. The clone lives in a fixed
+   984 x 636 design space (.app) — the same geometry as screen-native@2x.jpg
+   at 1x — so every number from here to the end of this block is a design
+   pixel and the eight panes share one type ramp. app.js scales that space
+   to the frame (.shotarea) and then pushes in on the part the pane is
+   about: data-zoom is the magnification, data-ox / data-oy the design-space
+   point that lands in the middle of the frame. data-state switches the
+   window's own state (by-status, annot, mem, dim).
+
+   Anything that is the page talking rather than the app — leader labels,
+   the legend, the menu bar, the notification, the settings window, the
+   memory card — is an .ov overlay in frame pixels, so it stays at its own
+   size whatever the magnification is. */
 
 .mock {
   --m-ink:  #1d1d1f;
@@ -324,7 +334,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .row .time {
   flex: none;
-  min-width: 36px;
+  min-width: 52px;
   text-align: right;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -343,6 +353,379 @@ h1, h2, h3, p { margin: 0; }
   font-size: 13px;
   color: var(--m-ink3);
 }
+.search svg { width: 14px; height: 14px; flex: none; }
+
+/* the design space, and the frame that crops it */
+.app-view { position: absolute; inset: 0; overflow: hidden; }
+.app {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 984px;
+  height: 636px;
+  transform-origin: 0 0;
+}
+
+/* the window: 24 of desktop on every side at 1x */
+.win {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  width: 936px;
+  height: 588px;
+  display: flex;
+  flex-direction: column;
+  background: var(--m-bg);
+}
+.app[data-state~="dim"] .win { filter: brightness(.96); }
+
+/* toolbar */
+.wtb { flex: none; height: 52px; display: flex; border-bottom: 1px solid var(--m-line); }
+.wtb-lead {
+  width: 260px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--m-side);
+}
+.wtb-lead .lights { margin-right: auto; }
+.wtb-sep { width: 1px; flex: none; background: var(--m-line); }
+.wtb-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: #fbfbfc;
+}
+.wtitle b { display: block; font-size: 14px; font-weight: 600; letter-spacing: -.012em; line-height: 1.2; }
+.wtitle span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--m-ink2);
+}
+.wtitle svg { width: 11px; height: 11px; }
+.wtb-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* the system materials this page is about: one glass recipe, used three times */
+.tbtn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-ink);
+  background: rgba(255, 255, 255, .6);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .1), 0 1px 2px rgba(30, 32, 36, .08);
+}
+.tbtn svg { width: 15px; height: 15px; display: block; }
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .5);
+  backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .8), 0 4px 16px rgba(30, 32, 36, .14);
+}
+.seg span { padding: 4px 15px; border-radius: 8px; font-size: 12.5px; color: #3c3c43; }
+.seg .on {
+  color: var(--m-ink);
+  font-weight: 500;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 .5px 2px rgba(0, 0, 0, .16);
+}
+
+/* sidebar body */
+.wbody { flex: 1; min-height: 0; display: flex; }
+.side-new {
+  height: 36px;
+  margin-top: 6px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.side-new svg { width: 15px; height: 15px; flex: none; }
+.side-list.by-status { display: none; }
+.app[data-state~="by-status"] .side-list.by-space { display: none; }
+.app[data-state~="by-status"] .side-list.by-status { display: block; }
+.side-foot { margin-top: auto; height: 34px; display: flex; align-items: center; padding: 0 6px; color: #b4b4b9; }
+.side-foot svg { width: 15px; height: 15px; }
+
+/* content */
+.wmain { flex: 1; min-width: 0; position: relative; overflow: hidden; background: var(--m-bg); }
+.bubble {
+  position: absolute;
+  right: 56px;
+  top: 16px;
+  max-width: 284px;
+  padding: 7px 14px;
+  border-radius: 15px;
+  background: #eaeef6;
+  font-size: 13px;
+  letter-spacing: -.004em;
+}
+.traj { position: absolute; left: 26px; right: 26px; top: 62px; }
+.trow {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+.trow svg { width: 14px; height: 14px; flex: none; color: var(--m-ink2); }
+.trow b { flex: none; font-weight: 400; color: var(--m-ink); }
+.trow i { flex: none; font-style: normal; color: #c6c6cb; }
+.trow em {
+  min-width: 0;
+  font-style: normal;
+  color: var(--m-ink2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tpara { padding: 7px 8px; font-size: 13px; line-height: 1.4; }
+.tpara .mono { font-size: 12px; padding: 1px 4px; border-radius: 4px; background: rgba(0, 0, 0, .05); }
+.tbul { display: flex; gap: 10px; padding: 6px 8px; font-size: 13px; line-height: 1.4; }
+.tbul i { font-style: normal; color: var(--m-ink3); }
+.app[data-state~="mem"] .trow[data-mem] { background: rgba(14, 138, 148, .08); }
+
+.jump {
+  position: absolute;
+  right: 24px;
+  bottom: 116px;
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-ink2);
+  background: rgba(255, 255, 255, .7);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .1), 0 2px 8px rgba(30, 32, 36, .12);
+}
+.jump svg { width: 14px; height: 14px; }
+
+/* composer — the trajectory runs under it, which is what the glass is for */
+.comp {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 14px;
+  height: 86px;
+  padding: 14px 16px 12px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, .5);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .85),
+              0 0 0 .5px rgba(0, 0, 0, .08),
+              0 10px 34px rgba(30, 32, 36, .16);
+}
+.comp-ph { font-size: 14.5px; color: rgba(29, 29, 31, .45); }
+.comp-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: rgba(29, 29, 31, .58); }
+.comp-row svg { width: 13px; height: 13px; flex: none; }
+.comp-plus {
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-ink2);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .14);
+}
+.comp-pop { display: flex; align-items: center; gap: 5px; }
+.comp-model { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.comp-model b { font-weight: 400; color: var(--m-ink); }
+.comp-send {
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #0e8a94;
+}
+.comp-send svg { width: 14px; height: 14px; }
+
+/* leader lines — design space, so they stay pinned to what they point at */
+.ann { position: absolute; inset: 0; display: none; }
+.app[data-state~="annot"] .ann { display: block; }
+.ann svg { position: absolute; left: 0; top: 0; width: 984px; height: 636px; }
+.ann-lab {
+  position: absolute;
+  font-size: 12px;
+  line-height: 14px;
+  letter-spacing: .004em;
+  color: var(--m-ink2);
+  white-space: nowrap;
+}
+
+/* ---------- overlays, in frame pixels ---------- */
+
+.ov { position: absolute; z-index: 2; }
+/* the band tints .mono for its own prose; inside a frame it is app text */
+.shotarea .mono { color: inherit; }
+
+.ov-legend {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 44%;
+  min-width: 230px;
+  padding: 0 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--m-side);
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, .12);
+}
+
+.ov-note {
+  right: 16px;
+  top: 16px;
+  width: 360px;
+  padding: 14px 16px;
+  border-radius: 19px;
+  display: flex;
+  gap: 12px;
+  background: rgba(255, 255, 255, .74);
+  backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .9), 0 18px 44px rgba(30, 32, 36, .24);
+}
+.ov-note img { width: 38px; height: 38px; flex: none; display: block; }
+.ov-note > div { flex: 1; min-width: 0; }
+.ov-note-top { display: flex; align-items: baseline; justify-content: space-between; }
+.ov-note-top b { font-size: 13.5px; font-weight: 600; letter-spacing: -.008em; }
+.ov-note-top span { font-size: 11.5px; color: var(--m-ink2); }
+.ov-note p { margin: 2px 0 0; font-size: 13.5px; line-height: 1.35; }
+.ov-note p.sub { color: var(--m-ink2); font-size: 13px; }
+.ov-note-acts { display: flex; gap: 8px; margin-top: 11px; }
+.ov-note-acts span {
+  flex: 1;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .1);
+}
+.ov-note-acts .deny { color: #ff3b30; }
+
+.ov-mbar {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 24px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--m-ink);
+  background: rgba(246, 246, 247, .92);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 .5px 0 rgba(0, 0, 0, .1);
+}
+.ov-mbar span { padding: 2px 9px; border-radius: 5px; line-height: 16px; }
+.ov-mbar .b { font-weight: 600; }
+.ov-mbar .on { background: rgba(0, 0, 0, .08); }
+.ov-menu {
+  left: 206px;
+  top: 26px;
+  width: 282px;
+  padding: 5px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--m-ink);
+  background: rgba(250, 250, 251, .97);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .12), 0 12px 32px rgba(30, 32, 36, .26);
+}
+.ov-menu div { display: flex; align-items: center; gap: 14px; height: 22px; padding: 0 8px; }
+.ov-menu div span:first-child { flex: 1; min-width: 0; white-space: nowrap; }
+.ov-menu div span + span { color: var(--m-ink2); }
+.ov-menu hr { margin: 5px 8px; border: 0; border-top: 1px solid rgba(0, 0, 0, .1); }
+
+.ov-set {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 470px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .16), 0 16px 40px -18px rgba(0, 0, 0, .3);
+}
+.ov-set-top { background: var(--m-side); border-bottom: 1px solid rgba(0, 0, 0, .09); padding: 9px 0 0; }
+.ov-set-top .lights { padding: 0 11px; transform: scale(.8); transform-origin: left; }
+.ov-set-title { text-align: center; font-size: 13px; font-weight: 600; margin: -13px 0 0; }
+.ov-set-tabs { display: flex; justify-content: center; gap: 2px; padding: 9px 0 7px; font-size: 11px; }
+.ov-set-tabs span { width: 84px; text-align: center; padding: 5px 0; border-radius: 7px; color: #3c3c43; }
+.ov-set-tabs .on { color: #0e8a94; background: rgba(0, 0, 0, .06); }
+.ov-set-body {
+  background: #fff;
+  padding: 18px 22px 20px;
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  column-gap: 12px;
+  row-gap: 12px;
+  align-items: start;
+  font-size: 13px;
+}
+.ov-set-body .lab { text-align: right; padding-top: 4px; }
+.ov-set-body .pop {
+  display: inline-flex;
+  align-items: center;
+  width: 170px;
+  background: #eaeaec;
+  border-radius: 6px;
+  padding: 4px 11px;
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .11);
+}
+.ov-set-body .fld {
+  display: block;
+  width: 220px;
+  background: #fff;
+  border-radius: 5px;
+  padding: 4px 8px;
+  letter-spacing: .06em;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .16);
+}
+.ov-set-body .hint { display: block; font-size: 11px; color: var(--m-ink3); margin-top: 5px; line-height: 1.4; }
+
+.ov-mem {
+  right: 16px;
+  bottom: 16px;
+  width: 300px;
+  padding: 11px 12px 12px;
+  border-radius: 10px;
+  background: #fbfbfc;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 10px 28px rgba(30, 32, 36, .18);
+}
+.ov-mem-head { padding: 0 6px 6px; font-size: 11.5px; color: var(--m-ink2); }
+.ov-mem .memrow { height: 26px; padding: 0 6px; gap: 8px; font-size: 12.5px; }
+.ov-mem .pin { width: 40px; flex: none; font-size: 10px; color: #ff9500; }
+.ov-mem .memrow > span:last-child { flex: 1; min-width: 0; }
 
 /* ---------- swift band ---------- */
 
@@ -374,39 +757,103 @@ h1, h2, h3, p { margin: 0; }
 .code .cm { color: #6a6a72; }
 .code .fn { color: #8ab8e8; }
 
+/* the one pane that is not a photograph: source above, the build below it */
+.codeframe {
+  position: absolute;
+  inset: 0;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+.codeframe .code { flex: 0 1 auto; min-height: 0; overflow: hidden; }
+.build { flex: none; display: flex; align-items: center; }
+.bseg {
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--band-ink);
+  box-shadow: inset 0 0 0 1px var(--band-line);
+}
+.bline { width: 34px; height: 1px; flex: none; background: var(--band-line); }
+
 /* ---------- plugin switcher ---------- */
 
 .switch { display: flex; gap: 44px; align-items: stretch; }
 
-.plugins { width: 244px; flex: none; display: flex; flex-direction: column; justify-content: center; }
+.plugins {
+  position: relative;
+  width: 244px; flex: none;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.plugins .label { margin: 0 0 14px; padding-left: 14px; text-wrap: balance; }
+
+/* One hairline rail down the eight rows with a single cursor that slides
+   between them — no row carries a rule of its own. app.js sizes both: the
+   rail spans the buttons (not the label above or the note below), the cursor
+   tracks the selected row. Both are out of flow, so the flex column is
+   unaffected; on a narrow screen the list becomes a grid and they go away. */
+.p-rail { position: absolute; left: 0; width: 1px; background: var(--line); }
+.p-cursor {
+  position: absolute; left: 0; top: 0; width: 2px;
+  background: var(--accent);
+  transition: transform .26s ease, height .26s ease;
+}
+
 .plugins button {
+  position: relative;
   display: block;
   width: 100%;
-  padding: 9px 0 9px 14px;
+  padding: 9px 0 9px 12px;
   border: 0;
-  border-left: 2px solid transparent;
+  border-left: 2px solid transparent;   /* the cursor's lane; kept so the two
+                                           layouts share one text edge */
   background: none;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
   font: inherit;
   color: inherit;
 }
+/* The rebuild sweep: 600 ms left to right under the row, then it fades where
+   it stands. Neither class transitions on the way out, so a restart snaps. */
+.plugins button::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  opacity: 0;
+}
+.plugins button.is-rebuilding::after { transform: scaleX(1); opacity: 1; transition: transform .6s linear; }
+.plugins button.is-built::after { transform: scaleX(1); opacity: 0; transition: opacity .5s ease .2s; }
 .plugins button:hover .p-name { color: var(--ink); }
-.plugins button[aria-selected="true"] { border-left-color: var(--accent); }
 .plugins button[aria-selected="true"] .p-name { color: var(--accent); }
 .p-name {
   display: block;
+  white-space: normal;
   font-size: 15px;
   font-weight: 500;
   letter-spacing: -.012em;
   color: var(--ink-2);
 }
-.p-mod {
-  display: block;
+/* Second line: module · generation. Inline-block and no whitespace between
+   them, so the pair never breaks across two lines. */
+.p-mod, .p-sep, .p-gen, .p-swap {
+  display: inline-block;
   margin-top: 2px;
   font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
   color: var(--ink-3);
+}
+.p-sep { margin: 2px 5px 0; }
+.p-swap { margin-left: 7px; color: var(--accent); transition: opacity .25s ease; }
+.p-swap.is-out { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .p-cursor { transition: none; }
 }
 
 .stage {
@@ -433,13 +880,16 @@ h1, h2, h3, p { margin: 0; }
   color: var(--ink-3);
 }
 
-/* a light, picture-like visual inside a pane */
+/* the frame all eight panes share: a lit desk with the window on it, or —
+   for the one pane that shows source rather than the app — black */
 .shotarea {
   position: absolute;
   inset: 0;
   border-radius: 12px;
   overflow: hidden;
+  background: linear-gradient(#f2f3f5, #e6e7ea);
 }
+.shotarea.dark { background: #000; box-shadow: inset 0 0 0 1px var(--band-line); }
 
 .memrow {
   display: flex;
@@ -451,26 +901,9 @@ h1, h2, h3, p { margin: 0; }
 }
 .memrow.alt { background: rgba(0, 0, 0, .03); }
 
-/* legend rows, key rows, memory rows — shared quiet list shape */
-.legend { display: flex; flex-direction: column; gap: 12px; }
-.legend div { display: flex; align-items: center; gap: 11px; font-size: 13.5px; }
-.keys { display: flex; flex-direction: column; }
-.keys div { display: flex; align-items: center; gap: 6px; height: 29px; }
-.kc {
-  flex: none;
-  min-width: 26px;
-  height: 21px;
-  padding: 0 6px;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11.5px;
-  color: var(--ink);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.kt { margin-left: 5px; font-size: 13px; color: var(--ink-2); }
+.legend { display: flex; flex-direction: column; gap: 13px; }
+.legend div { display: flex; align-items: center; gap: 11px; font-size: 13px; }
+.legend svg { flex: none; }
 
 /* ---------- narrow screens ---------- */
 
@@ -496,7 +929,11 @@ h1, h2, h3, p { margin: 0; }
 
   .switch { flex-direction: column; gap: 20px; }
   .plugins { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }
-  .plugins .note { grid-column: 1 / -1; }
+  .plugins .label, .plugins .note { grid-column: 1 / -1; }
+  /* two columns have no single edge to slide down: back to a rule per row */
+  .p-rail, .p-cursor { display: none; }
+  .plugins button[aria-selected="true"] { border-left-color: var(--accent); }
+  .band .plugins button[aria-selected="true"] { border-left-color: var(--band-accent); }
 
   /* too small to spend eight screens of scroll on: the band goes back to
      being a tab list you click */
@@ -505,7 +942,8 @@ h1, h2, h3, p { margin: 0; }
   .stage { height: auto; }
   .pane { position: static; opacity: 1; visibility: visible; transform: none; display: none; transition: none; }
   .pane.is-on { display: flex; }
-  .pane-body { height: 320px; overflow-x: auto; overflow-y: hidden; }
+  .pane-body { flex: none; height: 320px; overflow-x: auto; overflow-y: hidden; }
+  #p1 .pane-body { height: 420px; }   /* the source pane: whole listing plus the build bar */
   .pane-cap { padding: 14px 0 0; }
 
   .footer .wrap-wide { flex-direction: column; align-items: flex-start; gap: 12px; }
