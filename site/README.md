@@ -34,18 +34,26 @@ python3 -m http.server -d site 8000   # 然后开 http://localhost:8000
   `automatic-gradient`。它只是图标的颜色，不承载任何主题含义。
 - **MacBook 是照片，不是 CSS**。`mac-light@2x.jpg` / `mac-dark@2x.jpg` 是 2408×1472 的
   机身图，所以 reveal 段的设计空间是 **1204×736**；屏幕坐落在 **(110, 17)**，尺寸
-  **984×636**——正好等于 `screen-web@2x.png` / `screen-native@2x.png` 的一半，截图原样
+  **984×636**——正好等于 `screen-web@2x.jpg` / `screen-native@2x.jpg` 的一半，截图原样
   放进去，一个像素都不重采样。这三个数是量出来的（机身图里屏幕黑区 x 194..2212、
   y 8..1373，内容层水平居中于画布、顶边内缩 26px@2x），改素材就得重量。
   `mac-screen-mask@2x.png` 提供屏幕的圆角与刘海缺口，`mac-shape-mask@2x.png` 提供整机
   轮廓——后者是给 `.lockup` 的 `drop-shadow` 用的，没有它阴影会是个矩形。
-  **这两张遮罩在 `styles.css` 里是 base64 内联的**（遮罩是最容易在各种打开方式下悄悄
-  失效的一类资源，失效时元素不是回退成"没遮罩"，而是整个消失）。目录里的 `.png` 是
-  源文件，改了它得重新内联：
+  遮罩失效时元素不是回退成"没遮罩"，而是整个消失——所以 reveal 段一片空白时，先确认
+  是不是用 `file://` 打开的（见开头）。
+- **两张屏幕截图是同一个会话的对照**：`screen-web@2x.jpg` 是它在 Chrome 里的样子，
+  `screen-native@2x.jpg` 是同一个会话在 Surf 窗口里的样子。整屏截（含菜单栏与 Dock），
+  两次的窗口位置要尽量一致——wipe 扫过去时对不齐会很明显。原始截图是 3024×1964，
+  从**底部**（Dock 下方的空隙）裁到 3024×1955 才是 1968:1272 的比例，再缩到
+  1968×1272，最后用 `sips` 编码成 JPEG（PNG 存的话两张各自超过 1.2 MB，不划算）：
 
   ```sh
-  python3 -c "import base64;print('data:image/png;base64,'+base64.b64encode(open('site/mac-screen-mask@2x.png','rb').read()).decode())"
+  sips -s format jpeg -s formatOptions 90 mid.png --out screen-web@2x.jpg
   ```
+- **`.shot` 这个类名在 `styles.css` 里只能有一处定义。** 全局是 `box-sizing: border-box`，
+  reveal 段的 `.shot` 又靠 `height: 636px` 精确对位——文件前半段一旦另有一条 `.shot`
+  带 `padding`，图就被压进内容盒里，下方露出 `.screen` 的黑底，看起来像图片被垂直
+  压扁了。这个坑排查起来极贵，因为症状长得像浏览器的解码 bug。
 - **字体是系统栈**（`-apple-system` 打头），不引 web font。给一个原生 Mac App 做官网，
   用平台自己的字最诚实。
 - **侧边栏几何**按 `docs/sidebar-redesign-plan.md` 的目标形态画：行高 32、标题 13pt
@@ -62,12 +70,10 @@ python3 -m http.server -d site 8000   # 然后开 http://localhost:8000
   `SurfKit` 实为 `SurfBridge`、`SurfSessions` 实为 `SurfSidebar`、`SurfShell` 没有对应的包
   （菜单与快捷键分散在 layout / app 两侧）。`SurfLayout` / `SurfNotify` / `SurfSettings` /
   `SurfMemory` 与实际一致。模块名由 `surf-bridge/lib/module-name.js` 从包名推导。
-- **`screen-web@2x.png` 里有旧名**：侧边栏第四项写着 `surfclam`。它出现在首屏那台
-  MacBook 的屏幕上，是全站最显眼的位置，上线前必须重截。
-- `desktop-light@2x.jpg` / `desktop-dark@2x.jpg` 现在没有被任何地方引用。它们是给
-  「窗口截图垫一张桌面」那条路线准备的，而两张 `screen-*.png` 本身已经是整屏内容，
-  用不上了——重截时如果仍然截整屏，可以直接删掉这两张。
-- 窗口大图与通知横幅里的会话内容是示意数据。
+- **两张屏幕截图是真实会话，不是示意数据**，上线前逐项过一遍：会话标题、`Home` 路径里的
+  用户名、浏览器标签栏、菜单栏上挂的第三方工具、composer 上显示的模型名，全都会随页面
+  公开。
+- 插件切换区里的界面示意与通知横幅仍是示意数据。
 
 ## 宽度
 

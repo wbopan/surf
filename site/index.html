@@ -18,20 +18,23 @@
       <a href="#plugins">Plugins</a>
       <a href="#source">Source</a>
     </div>
-    <a class="btn btn-sm" href="#">Download</a>
+    <div class="nav-end">
+      <a class="nav-lang" href="index.zh.html" lang="zh-Hans">中文</a>
+      <a class="btn btn-sm" href="#">Download</a>
+    </div>
   </div>
 </nav>
 
 <div class="banner">
-  <p class="note">Surf is in early development. It follows dsh 0.1.1-rc.2, and it does not update itself yet.</p>
+  <p class="note">Surf is in early development. It follows DeepSeek Harness (dsh) 0.1.1-rc.2, and it does not update itself yet.</p>
 </div>
 
 <header class="hero" id="overview">
   <div class="wrap">
     <img class="icon" src="surf.png" alt="Surf app icon">
     <h1 class="display">A native Mac app for DeepSeek&nbsp;Harness.</h1>
-    <p class="lead">Surf gives dsh a real window — a native session list, real notifications, a settings
-      window, keys that work. The frame around the conversation is Swift, and it can be rebuilt while the
+    <p class="lead">Surf gives dsh a real Mac window: a native session list, system notifications, a settings
+      window, and full keyboard shortcuts. The frame around the conversation is Swift, and it can be rebuilt while the
       app is running.</p>
     <div class="actions">
       <a class="btn" href="#">Download for macOS</a>
@@ -48,11 +51,9 @@
       <div class="lockup">
         <div class="hw"></div>
         <div class="screen">
-          <img class="shot shot-web" src="screen-web@2x.png" width="1968" height="1272"
-               alt="DeepSeek Harness open in a browser tab">
-          <img class="shot shot-native" src="screen-native@2x.png" width="1968" height="1272"
-               alt="The same session in the Surf window">
-          <div class="sweep"><i class="s-ahead"></i><i class="s-behind"></i><i class="s-flash"></i><i class="s-core"></i></div>
+          <img class="shot shot-web" src="screen-web@2x.jpg" width="1968" height="1272" alt="DeepSeek Harness open in a browser tab">
+          <img class="shot shot-native" src="screen-native@2x.jpg" width="1968" height="1272" alt="The same session in the Surf window">
+          <div class="sweep"><i class="s-ahead"></i><i class="s-core"></i></div>
         </div>
       </div>
     </div>
@@ -63,16 +64,9 @@
   </div>
 </section>
 
-<section class="statement">
-  <div class="wrap-wide">
-    <p class="lead" style="max-width:720px">Surf is a shell, not a fork. Sessions, settings and themes stay in dsh; Surf projects them
-      into AppKit rather than keeping a second copy.</p>
-    <p class="lead" style="max-width:720px">Where dsh has not built something, Surf says so instead of inventing it. The gaps we ran
-      into are written down in the repository, each with a script to re-check it.</p>
-  </div>
-</section>
-
 <section class="band" id="plugins">
+  <div class="band-track">
+  <div class="band-stage">
   <div class="wrap-wide">
     <div class="switch">
       <div class="plugins" role="tablist" aria-label="Plugins">
@@ -84,7 +78,7 @@
         <button role="tab" aria-selected="false" aria-controls="p5"><span class="p-name">Menus &amp; keys</span><span class="p-mod">SurfShell</span></button>
         <button role="tab" aria-selected="false" aria-controls="p6"><span class="p-name">Settings</span><span class="p-mod">SurfSettings</span></button>
         <button role="tab" aria-selected="false" aria-controls="p7"><span class="p-name">Memory</span><span class="p-mod">SurfMemory</span></button>
-        <p class="note" style="margin-top:20px;padding-left:14px">Module names are proposed. The packages in
+        <p class="note" style="margin-top:20px;padding-left:14px">Module names are provisional. The packages in
           the repository are named <span class="mono">surf-*</span>.</p>
       </div>
 
@@ -93,8 +87,8 @@
         <div class="pane" id="p0" role="tabpanel">
           <div class="pane-head">
             <h3 class="subtitle">The web view stops looking like a web view.</h3>
-            <p class="copy">Popovers, button groups and the composer card are drawn with the system’s own
-              materials — and type is pulled back to macOS metrics.</p>
+            <p class="copy">Popovers, button groups, and the composer card are drawn with the system’s own
+              materials, and type is pulled back to macOS metrics.</p>
           </div>
           <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#f2f3f5,#e6e7ea)">
             <div style="position:absolute;inset:0;padding:22px 30px;display:flex;flex-direction:column;gap:12px;opacity:.5">
@@ -125,15 +119,15 @@
               </div>
             </div>
           </div></div>
-          <p class="pane-cap">Handed back the moment the window loses focus. A hand-built approximation stays
-            behind it as a fallback.</p>
+          <p class="pane-cap">The system rendering is released when the window loses focus, and a hand-built
+            approximation takes its place.</p>
         </div>
 
-        <div class="pane" id="p1" role="tabpanel" hidden>
+        <div class="pane" id="p1" role="tabpanel">
           <div class="pane-head">
             <h3 class="subtitle">Native code, swapped in while you watch.</h3>
-            <p class="copy">A plugin’s Swift directory compiles to a module named after a hash of its own
-              contents, which then claims the slot the previous generation was holding.</p>
+            <p class="copy">A plugin’s Swift directory compiles to a module named by its content hash, which
+              then replaces the previous generation in place.</p>
           </div>
           <div class="pane-body">
             <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
@@ -155,15 +149,15 @@
               </div>
             </div>
           </div>
-          <p class="pane-cap">0.45 s for a six-line view, 1.03 s for the 408-line session list. A compile error
-            keeps the last good generation on screen, with the file and line in the terminal.</p>
+          <p class="pane-cap">0.45 s for a six-line view, 1.03 s for the 408-line session list. If a build fails,
+            the last good generation stays on screen, and the error’s file and line go to the terminal.</p>
         </div>
 
-        <div class="pane" id="p2" role="tabpanel" hidden>
+        <div class="pane" id="p2" role="tabpanel">
           <div class="pane-head">
-            <h3 class="subtitle">A real split view, not a two-column layout.</h3>
-            <p class="copy">Dragging, double-click reset, width autosave, the collapse animation and the
-              toolbar separator all arrive with the system’s own split view.</p>
+            <h3 class="subtitle">The split view comes from the system.</h3>
+            <p class="copy">Dragging, double-click reset, width autosave, the collapse animation, and the
+              toolbar separator all arrive with it.</p>
           </div>
           <div class="pane-body">
             <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)" class="mock">
@@ -186,14 +180,14 @@
             </div>
           </div>
           <p class="pane-cap">With no plugin in <span class="mono">root</span>, the window falls back to a plain
-            full-size web view. Nothing is missing except the native frame.</p>
+            full-size web view, and dsh works as usual.</p>
         </div>
 
-        <div class="pane" id="p3" role="tabpanel" hidden>
+        <div class="pane" id="p3" role="tabpanel">
           <div class="pane-head">
             <h3 class="subtitle">What every session is doing, at a glance.</h3>
-            <p class="copy">Anything waiting on you is lifted into a Pending section at the top, and taken out
-              of its group so you never count it twice.</p>
+            <p class="copy">Switch to By Status and the list splits into Pending, In Progress and Ended.
+              In the other groupings the same state shows as the symbol at the start of each row.</p>
           </div>
           <div class="pane-body">
             <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:44px">
@@ -205,25 +199,26 @@
                 <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg>Finished</div>
               </div>
               <div class="mock" style="width:268px;flex:none;background:#f6f6f7;border-radius:10px;padding:8px 10px 12px;box-shadow:0 0 0 1px rgba(0,0,0,.07)">
-                <div class="side-head" style="margin-top:6px"><span>Pending</span></div>
+                <div class="side-head" style="margin-top:6px"><span>Pending</span><span>2</span></div>
                 <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg></span><span class="name">Notarisation script</span><span class="time">09:42</span></div>
                 <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">Reading queue</span><span class="time">Yesterday</span></div>
-                <div class="side-head"><span>surf</span><span>3</span></div>
-                <div class="row sel"><span class="slot"></span><span class="name">Sidebar redesign</span><span class="time">10:15</span></div>
-                <div class="row"><span class="slot"></span><span class="name">Bridge frame table</span><span class="time">Tue</span></div>
+                <div class="side-head"><span>In Progress</span><span>1</span></div>
+                <div class="row sel"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg></span><span class="name">Sidebar redesign</span><span class="time">10:15</span></div>
+                <div class="side-head"><span>Ended</span><span>2</span></div>
                 <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">Icon composer pass</span><span class="time">22 Aug</span></div>
+                <div class="row"><span class="slot"></span><span class="name">Bridge frame table</span><span class="time">Tue</span></div>
               </div>
             </div>
           </div>
-          <p class="pane-cap">Row 32 points, title 13 point regular, status slot 20 — measured against Apple’s
-            own sidebar specimens rather than estimated.</p>
+          <p class="pane-cap">Rows are 32 points, titles 13 point regular, the status slot 20, all measured from
+            Apple’s own sidebar specimens.</p>
         </div>
 
-        <div class="pane" id="p4" role="tabpanel" hidden>
+        <div class="pane" id="p4" role="tabpanel">
           <div class="pane-head">
             <h3 class="subtitle">Answer without switching windows.</h3>
-            <p class="copy">Approval requests and questions arrive as real notifications with the buttons on
-              them, and withdraw themselves if the request is answered somewhere else first.</p>
+            <p class="copy">Approval requests and questions arrive as notifications with buttons on them,
+              and are withdrawn if answered somewhere else first.</p>
           </div>
           <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#eff0f2,#e4e5e9)">
             <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:360px;border-radius:19px;padding:14px 16px;display:flex;gap:12px;background:rgba(255,255,255,.74);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.9),0 18px 44px rgba(30,32,36,.24)">
@@ -243,14 +238,14 @@
               </div>
             </div>
           </div></div>
-          <p class="pane-cap">Looking at that session, nothing fires at all. Anywhere else you get a banner,
-            with a sound only when something is genuinely blocked on you — and finished turns stay quiet while
-            the app is in front of you.</p>
+          <p class="pane-cap">No notification appears for the session you are looking at. Other sessions get a
+            banner, with a sound only when one is waiting on you. Finished turns stay quiet while the app is
+            in front.</p>
         </div>
 
-        <div class="pane" id="p5" role="tabpanel" hidden>
+        <div class="pane" id="p5" role="tabpanel">
           <div class="pane-head">
-            <h3 class="subtitle">The menu bar the app deserves.</h3>
+            <h3 class="subtitle">A complete menu bar.</h3>
             <p class="copy">Plugins declare their commands and Surf assembles them into the menu bar and a
               shortcut editor in Settings.</p>
           </div>
@@ -283,14 +278,14 @@
               </div>
             </div>
           </div>
-          <p class="pane-cap">The session commands can be re-bound or switched off. The system conventions on
-            the right are fixed — moving those would only make them harder to use.</p>
+          <p class="pane-cap">The session commands can be re-bound or switched off. The system shortcuts on
+            the right are fixed.</p>
         </div>
 
-        <div class="pane" id="p6" role="tabpanel" hidden>
+        <div class="pane" id="p6" role="tabpanel">
           <div class="pane-head">
-            <h3 class="subtitle">A settings window, not a web dialog in a frame.</h3>
-            <p class="copy">Five panes of AppKit that load no web content, applying changes as you make them
+            <h3 class="subtitle">A native settings window.</h3>
+            <p class="copy">Five panes of AppKit that load no web content. Changes apply as you make them,
               the way Mac settings do.</p>
           </div>
           <div class="pane-body">
@@ -318,15 +313,14 @@
             </div>
           </div>
           <p class="pane-cap">The first four panes mirror dsh’s own settings pane for pane. The plugin list is
-            deliberately read-only — dsh exposes no way to toggle one, and a switch that does nothing is worse
-            than no switch.</p>
+            read-only, because dsh does not provide a way to toggle plugins.</p>
         </div>
 
-        <div class="pane" id="p7" role="tabpanel" hidden>
+        <div class="pane" id="p7" role="tabpanel">
           <div class="pane-head">
             <h3 class="subtitle">What carries over between sessions.</h3>
-            <p class="copy">A folder of markdown files: the index goes in on every step, pinned ones go in
-              whole, and a body is read only when it is needed.</p>
+            <p class="copy">A folder of markdown files: the index goes into context on every step, pinned ones go
+              in whole, and a body is read only when it is needed.</p>
           </div>
           <div class="pane-body">
             <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
@@ -350,17 +344,19 @@
                 <span class="mono" style="font-size:12.5px;width:170px;flex:none">release-checklist</span>
                 <span class="note" style="flex:1;min-width:0">Notarise twice, staple both, in that order.</span>
               </div>
-              <p class="copy" style="margin-top:26px;max-width:520px">No special tools — the agent edits them
-                with the read, write and grep it already has. This is the one plugin here with no macOS in it,
-                so it runs anywhere dsh runs.</p>
+              <p class="copy" style="margin-top:26px;max-width:520px">The agent edits these files with the read,
+                write, and grep it already has. This is the only plugin here with no macOS code, so it runs
+                anywhere dsh runs.</p>
             </div>
           </div>
-          <p class="pane-cap">Said plainly because it is true: a prompt injection that reaches the write path
-            survives across sessions. That is an accepted residual risk, not a solved problem.</p>
+          <p class="pane-cap">One caveat: a prompt injection that reaches the write path persists across
+            sessions.</p>
         </div>
 
       </div>
     </div>
+  </div>
+  </div>
   </div>
 </section>
 
@@ -373,8 +369,8 @@
           <rect x="3" y="5" width="18" height="12" rx="2"/><path d="M2 20h20"/>
         </svg>
         <h3 class="subtitle">Requires macOS 27</h3>
-        <p class="copy">Install dsh, drag Surf to your Applications folder, open it. Surf starts the backend
-          when you open it and stops it when you quit — no Xcode, no toolchain, nothing to configure.</p>
+        <p class="copy">Install dsh, drag Surf to your Applications folder, and open it. Surf starts the
+          backend on launch and stops it when you quit. No Xcode, no configuration.</p>
       </div>
 
       <div class="card">
@@ -382,8 +378,8 @@
           <path d="M9 6l-5 6 5 6M15 6l5 6-5 6"/>
         </svg>
         <h3 class="subtitle">Open source</h3>
-        <p class="copy">The shell, the eight plugins, and the measurement behind every number on this page.
-          Things dsh cannot do yet are listed rather than worked around.</p>
+        <p class="copy">The shell, the eight plugins, and the measurements behind the numbers on this page.
+          Gaps in dsh are documented rather than worked around.</p>
         <p class="card-link"><a href="#">Go to the repository</a></p>
       </div>
 
@@ -392,7 +388,7 @@
           <path d="M12.5 3.5a2 2 0 00-2 2c0 .35.09.68.25.97H7.4A1.4 1.4 0 006 7.87v3.35c.29-.16.62-.25.97-.25a2 2 0 010 4c-.35 0-.68-.09-.97-.25v3.35a1.4 1.4 0 001.4 1.4h3.35a2.02 2.02 0 01-.25-.97 2 2 0 014 0c0 .35-.9.68-.25.97h3.35a1.4 1.4 0 001.4-1.4v-3.35c-.29.16-.62.25-.97.25a2 2 0 010-4c.35 0 .68.09.97.25V7.87a1.4 1.4 0 00-1.4-1.4h-3.35c.16-.29.25-.62.25-.97a2 2 0 00-2-2z"/>
         </svg>
         <h3 class="subtitle">Write a plugin</h3>
-        <p class="copy">One C entry point, one <span class="mono">swift/</span> folder and a few lines of
+        <p class="copy">One C entry point, one <span class="mono">swift/</span> folder, and a few lines of
           JavaScript. The SDK ships inside the app, so you do not need Xcode.</p>
         <p class="card-link"><a href="#">Read the plugin guide</a></p>
       </div>

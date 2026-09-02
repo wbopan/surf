@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surf —— DeepSeek Harness 的原生 Mac App</title>
+<meta name="description" content="Surf 把 DeepSeek Harness 装进一扇真正的 Mac 窗口。这层框架是 Swift 写的，可以在 App 运行时重建。">
+<link rel="icon" href="surf.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap-wide">
+    <a class="nav-mark" href="#"><img src="surf.png" alt="">Surf</a>
+    <div class="nav-links">
+      <a href="#overview">概览</a>
+      <a href="#plugins">插件</a>
+      <a href="#source">源码</a>
+    </div>
+    <div class="nav-end">
+      <a class="nav-lang" href="index.html" lang="en">English</a>
+      <a class="btn btn-sm" href="#">下载</a>
+    </div>
+  </div>
+</nav>
+
+<div class="banner">
+  <p class="note">Surf 仍在早期开发阶段。它跟随 DeepSeek Harness（dsh）0.1.1-rc.2，暂时不会自我更新。</p>
+</div>
+
+<header class="hero" id="overview">
+  <div class="wrap">
+    <img class="icon" src="surf.png" alt="Surf 应用图标">
+    <h1 class="display">DeepSeek&nbsp;Harness 的原生 Mac&nbsp;App。</h1>
+    <p class="lead">Surf 给 dsh 一扇真正的 Mac 窗口：原生的会话列表、系统通知、独立的设置窗口和完整的快捷键。对话四周的这层框架由 Swift 写成，可以在 App 运行时重建。</p>
+    <div class="actions">
+      <a class="btn" href="#">下载 macOS 版</a>
+      <a class="btn btn-quiet" href="#source">查看源码</a>
+    </div>
+    <p class="note">版本 0.1.0 &nbsp;·&nbsp; macOS 27</p>
+  </div>
+</header>
+
+<section class="reveal" id="reveal">
+  <div class="reveal-stage">
+    <div class="scene">
+      <i class="flair f1"></i><i class="flair f2"></i><i class="flair f3"></i>
+      <div class="lockup">
+        <div class="hw"></div>
+        <div class="screen">
+          <img class="shot shot-web" src="screen-web@2x.jpg" width="1968" height="1272" alt="浏览器标签页里的 DeepSeek Harness">
+          <img class="shot shot-native" src="screen-native@2x.jpg" width="1968" height="1272" alt="同一个会话，在 Surf 窗口里">
+          <div class="sweep"><i class="s-ahead"></i><i class="s-core"></i></div>
+        </div>
+      </div>
+    </div>
+    <p class="reveal-cap">
+      <span class="cap-web">浏览器标签页里的 DeepSeek Harness。</span>
+      <span class="cap-native">同一个会话，在自己的窗口里。</span>
+    </p>
+  </div>
+</section>
+
+<section class="band" id="plugins">
+  <div class="band-track">
+  <div class="band-stage">
+  <div class="wrap-wide">
+    <div class="switch">
+      <div class="plugins" role="tablist" aria-label="插件">
+        <button role="tab" aria-selected="true"  aria-controls="p0"><span class="p-name">原生渲染</span><span class="p-mod">SurfUI</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p1"><span class="p-name">Swift 插件引擎</span><span class="p-mod">SurfKit</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p2"><span class="p-name">分栏与工具栏</span><span class="p-mod">SurfLayout</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p3"><span class="p-name">会话</span><span class="p-mod">SurfSessions</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p4"><span class="p-name">通知</span><span class="p-mod">SurfNotify</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p5"><span class="p-name">菜单与快捷键</span><span class="p-mod">SurfShell</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p6"><span class="p-name">设置</span><span class="p-mod">SurfSettings</span></button>
+        <button role="tab" aria-selected="false" aria-controls="p7"><span class="p-name">记忆</span><span class="p-mod">SurfMemory</span></button>
+        <p class="note" style="margin-top:20px;padding-left:14px">模块名是暂定的。仓库里的包名是
+          <span class="mono">surf-*</span>。</p>
+      </div>
+
+      <div class="stage">
+
+        <div class="pane" id="p0" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">网页视图不再像网页视图。</h3>
+            <p class="copy">浮层、按钮组和输入卡片都用系统自己的材质绘制，字体也拉回 macOS 的度量。</p>
+          </div>
+          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#f2f3f5,#e6e7ea)">
+            <div style="position:absolute;inset:0;padding:22px 30px;display:flex;flex-direction:column;gap:12px;opacity:.5">
+              <div style="height:9px;width:62%;border-radius:5px;background:#b9bcc2"></div>
+              <div style="height:9px;width:84%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:71%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:40px;width:60%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
+              <div style="height:9px;width:78%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:52%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:66%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:44%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:40px;width:70%;border-radius:10px;background:#d3d6db;margin:4px 0"></div>
+              <div style="height:9px;width:80%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:58%;border-radius:5px;background:#c6c9ce"></div>
+              <div style="height:9px;width:73%;border-radius:5px;background:#c6c9ce"></div>
+            </div>
+            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px">
+              <div style="display:inline-flex;padding:3px;border-radius:11px;gap:3px;background:rgba(255,255,255,.5);backdrop-filter:blur(22px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.8),0 4px 16px rgba(30,32,36,.14)">
+                <span style="padding:5px 17px;border-radius:8px;font-size:13px;font-weight:500;background:rgba(255,255,255,.92);box-shadow:0 .5px 2px rgba(0,0,0,.16)">Chat</span>
+                <span style="padding:5px 17px;border-radius:8px;font-size:13px;color:#3c3c43">Trajectory</span>
+              </div>
+              <div style="width:376px;border-radius:17px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:16px;background:rgba(255,255,255,.48);backdrop-filter:blur(28px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.85),0 10px 34px rgba(30,32,36,.18)">
+                <span style="font-size:14.5px;color:rgba(29,29,31,.45)">Message the agent</span>
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:12.5px;color:rgba(29,29,31,.5)">Full access</span>
+                  <span style="width:26px;height:26px;border-radius:13px;background:#0e8a94"></span>
+                </div>
+              </div>
+            </div>
+          </div></div>
+          <p class="pane-cap">窗口失去焦点时释放系统渲染，改由手工近似的版本接替。</p>
+        </div>
+
+        <div class="pane" id="p1" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">原生代码，在你眼前换上去。</h3>
+            <p class="copy">插件的 Swift 目录会编译成一个以内容哈希命名的模块，然后原地替换上一代。</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
+              <div class="code">
+                <div class="code-bar mono">SessionsPlugin.swift</div>
+<pre><span class="cm">// 一个 C 入口点。整个 ABI 就这么多。</span>
+<span class="fn">@_cdecl</span>(<span class="st">"surf_plugin_entry"</span>)
+<span class="kw">public func</span> <span class="fn">surf_plugin_entry</span>() -&gt; <span class="ty">UnsafeMutableRawPointer</span> {
+    <span class="ty">Unmanaged</span>.<span class="fn">passRetained</span>(<span class="ty">SessionsPlugin</span>()).<span class="fn">toOpaque</span>()
+}
+
+<span class="kw">final class</span> <span class="ty">SessionsPlugin</span>: <span class="ty">SurfPlugin</span> {
+    <span class="kw">func</span> <span class="fn">activate</span>(host: <span class="ty">SurfHost</span>) -&gt; <span class="ty">AnyObject</span>? {
+        <span class="kw">let</span> handle = <span class="ty">SurfPluginHandle</span>()
+        host.<span class="fn">register</span>(slot: <span class="st">"sidebar"</span>) { <span class="ty">AnyView</span>(<span class="ty">SessionListView</span>()) }.<span class="fn">kept</span>(by: handle)
+        <span class="kw">return</span> handle  <span class="cm">// host 松手 = 这一代退役</span>
+    }
+}</pre>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">六行的视图 0.45 秒，408 行的会话列表 1.03 秒。编译失败时上一代继续留在屏幕上，文件名与行号打进终端。</p>
+        </div>
+
+        <div class="pane" id="p2" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">分栏视图来自系统。</h3>
+            <p class="copy">拖拽、双击复位、宽度自动保存、折叠动画和工具栏分隔线，都随之一起到位。</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)" class="mock">
+              <div style="border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.12)">
+                <div style="height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.08);background:#f7f7f8">
+                  <div class="lights" style="transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
+                  <span style="width:1px;height:18px;background:rgba(0,0,0,.11);margin-left:24px"></span>
+                  <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:11px;font-size:11.5px;color:#0e8a94;box-shadow:inset 0 0 0 1px rgba(14,138,148,.3)">插件贡献的项</span>
+                </div>
+                <div style="display:flex;height:172px;background:#fff">
+                  <div style="width:142px;flex:none;background:#f6f6f7;border-right:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:center">
+                    <span class="mono" style="font-size:11.5px;color:#86868b">slot: sidebar</span>
+                  </div>
+                  <div style="flex:1;display:flex;align-items:center;justify-content:center">
+                    <span class="mono" style="font-size:11.5px;color:#86868b">WKWebView —— dsh 自己的界面</span>
+                  </div>
+                </div>
+              </div>
+              <div style="position:absolute;inset:48px 0 0;border:1.5px dashed rgba(14,138,148,.4);border-radius:0 0 10px 10px"></div>
+            </div>
+          </div>
+          <p class="pane-cap"><span class="mono">root</span> 槽里没有插件时，窗口退回一个铺满的普通网页视图，dsh 照常可用。</p>
+        </div>
+
+        <div class="pane" id="p3" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">每个会话在做什么，一眼看到。</h3>
+            <p class="copy">切到「按状态」，列表分成待处理、进行中、已结束三段。按工作区或按时间看时，
+              同一件事就是行首那个符号。</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:44px">
+              <div class="legend">
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="2" stroke-linecap="round" stroke-dasharray="34 14"><circle cx="12" cy="12" r="8"/></svg>正在运行</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg>待批准</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg>待回答</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/></svg>已出错</div>
+                <div><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg>已完成</div>
+              </div>
+              <div class="mock" style="width:268px;flex:none;background:#f6f6f7;border-radius:10px;padding:8px 10px 12px;box-shadow:0 0 0 1px rgba(0,0,0,.07)">
+                <div class="side-head" style="margin-top:6px"><span>待处理</span><span>2</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff9500" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="#ff9500" stroke="none"/></svg></span><span class="name">公证脚本</span><span class="time">09:42</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#af52de" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M9.9 9.6a2.1 2.1 0 113.1 2c-.7.5-1 .9-1 1.7"/><circle cx="12" cy="16.2" r=".95" fill="#af52de" stroke="none"/></svg></span><span class="name">阅读队列</span><span class="time">昨天</span></div>
+                <div class="side-head"><span>surf</span><span>3</span></div>
+                <div class="row sel"><span class="slot"></span><span class="name">侧边栏重设计</span><span class="time">10:15</span></div>
+                <div class="row"><span class="slot"></span><span class="name">桥的帧表</span><span class="time">周二</span></div>
+                <div class="row"><span class="slot"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b8b90" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M8.3 12.3l2.5 2.5 4.9-5"/></svg></span><span class="name">图标合成一轮</span><span class="time">8月22日</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">行高 32 点、标题 13 点常规、状态槽 20，都量自 Apple 自己的侧边栏样张。</p>
+        </div>
+
+        <div class="pane" id="p4" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">不切窗口就能回答。</h3>
+            <p class="copy">审批请求和提问会作为带按钮的通知送达。如果先在别处得到回应，通知会随之撤回。</p>
+          </div>
+          <div class="pane-body"><div class="shotarea mock" style="background:linear-gradient(#eff0f2,#e4e5e9)">
+            <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:360px;border-radius:19px;padding:14px 16px;display:flex;gap:12px;background:rgba(255,255,255,.74);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.9),0 18px 44px rgba(30,32,36,.24)">
+              <img src="surf.png" alt="" style="width:38px;height:38px;flex:none;display:block">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:baseline;justify-content:space-between">
+                  <span style="font-size:13.5px;font-weight:600;letter-spacing:-.008em">Surf</span>
+                  <span style="font-size:11.5px;color:var(--m-ink2)">现在</span>
+                </div>
+                <div style="font-size:13.5px;line-height:1.35;margin-top:2px">运行公证脚本？</div>
+                <div style="font-size:13px;line-height:1.35;color:var(--m-ink2)">公证脚本 · surf</div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">允许一次</span>
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;color:#ff3b30;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">拒绝</span>
+                  <span style="flex:1;text-align:center;height:28px;line-height:28px;border-radius:8px;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.86);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1)">打开</span>
+                </div>
+              </div>
+            </div>
+          </div></div>
+          <p class="pane-cap">正在看的会话不弹任何通知。其他会话送横幅，只有在等你时才出声。
+            App 在前台时，跑完的回合保持安静。</p>
+        </div>
+
+        <div class="pane" id="p5" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">一套完整的菜单栏。</h3>
+            <p class="copy">插件声明自己的命令，Surf 把它们组装进菜单栏，以及设置里的快捷键编辑器。</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:flex;gap:40px">
+              <div style="flex:1">
+                <p class="label" style="margin-bottom:8px">会话</p>
+                <div class="keys">
+                  <div><span class="kc">⌘N</span><span class="kt">新建会话</span></div>
+                  <div><span class="kc">⌘⌥R</span><span class="kt">重命名会话</span></div>
+                  <div><span class="kc">⌘⇧⌫</span><span class="kt">归档会话</span></div>
+                  <div><span class="kc">⌘⌥F</span><span class="kt">聚焦搜索</span></div>
+                  <div><span class="kc">⌘⇧[</span><span class="kc">⌘⇧]</span><span class="kt">上一个 · 下一个会话</span></div>
+                  <div><span class="kc">⌘⌥A</span><span class="kt">下一个在等你的会话</span></div>
+                  <div><span class="kc">⌘⌥K</span><span class="kt">清除筛选</span></div>
+                  <div><span class="kc">⌘1</span><span class="kt">…⌘9 —— 跳到第 n 个会话</span></div>
+                </div>
+              </div>
+              <div style="flex:1">
+                <p class="label" style="margin-bottom:8px">窗口与 App</p>
+                <div class="keys">
+                  <div><span class="kc">⌘,</span><span class="kt">设置</span></div>
+                  <div><span class="kc">⌥⌘S</span><span class="kt">显示或隐藏侧边栏</span></div>
+                  <div><span class="kc">Esc</span><span class="kt">停止生成</span></div>
+                  <div><span class="kc">⌘R</span><span class="kt">重新载入页面</span></div>
+                  <div><span class="kc">⌘⇧R</span><span class="kt">重新连接后端</span></div>
+                  <div><span class="kc">⌥⌘D</span><span class="kt">诊断</span></div>
+                  <div><span class="kc">⌘/</span><span class="kt">在 App 里看这份列表</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">会话相关的命令可以改键，也可以关掉。右边的系统快捷键保持固定。</p>
+        </div>
+
+        <div class="pane" id="p6" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">一扇原生的设置窗口。</h3>
+            <p class="copy">五个 AppKit 面板，不加载任何网页内容，像 Mac 的设置那样边改边生效。</p>
+          </div>
+          <div class="pane-body">
+            <div class="mock" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:470px;border-radius:10px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.16),0 16px 40px -18px rgba(0,0,0,.3)">
+              <div style="background:#f6f6f7;border-bottom:1px solid rgba(0,0,0,.09);padding:9px 0 0">
+                <div class="lights" style="padding:0 11px;transform:scale(.8);transform-origin:left"><i></i><i></i><i></i></div>
+                <div style="text-align:center;font-size:13px;font-weight:600;margin:-13px 0 0">设置</div>
+                <div style="display:flex;justify-content:center;gap:2px;padding:9px 0 7px;font-size:11px">
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">通用</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#0e8a94;background:rgba(0,0,0,.06)">模型</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">插件</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">智能体预设</span>
+                  <span style="width:84px;text-align:center;padding:5px 0;border-radius:7px;color:#3c3c43">连接</span>
+                </div>
+              </div>
+              <div style="background:#fff;padding:18px 22px 20px;display:grid;grid-template-columns:132px 1fr;column-gap:12px;row-gap:12px;align-items:start;font-size:13px">
+                <span style="text-align:right;padding-top:4px">服务商</span>
+                <span style="display:inline-flex;align-items:center;width:170px;background:#eaeaec;border-radius:6px;padding:4px 11px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.11)">DeepSeek</span>
+                <span style="text-align:right;padding-top:4px">API 密钥</span>
+                <span>
+                  <span style="display:block;width:220px;background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.16);border-radius:5px;padding:4px 8px;letter-spacing:.06em">••••••••••••••</span>
+                  <span style="display:block;font-size:11px;color:#86868b;margin-top:5px;line-height:1.4">在离开 Node 一侧之前就已脱敏。窗口只知道有没有设过。</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <p class="pane-cap">前四个面板与 dsh 自己的设置逐一对应。插件列表是只读的，因为 dsh 没有提供开关插件的方式。</p>
+        </div>
+
+        <div class="pane" id="p7" role="tabpanel">
+          <div class="pane-head">
+            <h3 class="subtitle">什么会留到下一个会话。</h3>
+            <p class="copy">一个装着 markdown 文件的文件夹：索引每一步都进上下文，置顶的整篇进，正文只在需要时才读。</p>
+          </div>
+          <div class="pane-body">
+            <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%)">
+              <div class="memrow alt">
+                <span class="mono" style="font-size:10px;color:#ff9500;width:44px;flex:none">置顶</span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">copy-style</span>
+                <span class="note" style="flex:1;min-width:0">短、事实性、不写安抚话。</span>
+              </div>
+              <div class="memrow">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">native-abi-notes</span>
+                <span class="note" style="flex:1;min-width:0">旧镜像永远不卸载。</span>
+              </div>
+              <div class="memrow alt">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">toolbar-contracts</span>
+                <span class="note" style="flex:1;min-width:0">元数据重建；流量原地更新。</span>
+              </div>
+              <div class="memrow">
+                <span style="width:44px;flex:none"></span>
+                <span class="mono" style="font-size:12.5px;width:170px;flex:none">release-checklist</span>
+                <span class="note" style="flex:1;min-width:0">公证两次，各自装订，按这个顺序。</span>
+              </div>
+              <p class="copy" style="margin-top:26px;max-width:520px">智能体用它本来就有的读、写、grep
+                来编辑这些文件。这是这里唯一不含 macOS 代码的插件，所以 dsh 跑到哪它就跑到哪。</p>
+            </div>
+          </div>
+          <p class="pane-cap">一个注意点：触及写入路径的提示注入会跨会话留存。</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap-wide">
+    <div class="grid-3">
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="12" rx="2"/><path d="M2 20h20"/>
+        </svg>
+        <h3 class="subtitle">需要 macOS 27</h3>
+        <p class="copy">装好 dsh，把 Surf 拖进「应用程序」文件夹，打开它。Surf 会在启动时拉起后端、退出时停掉。不需要 Xcode，也没有要配置的东西。</p>
+      </div>
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 6l-5 6 5 6M15 6l5 6-5 6"/>
+        </svg>
+        <h3 class="subtitle">开源</h3>
+        <p class="copy">这层壳、八个插件，以及本页数字背后的实测。dsh 还做不到的事情如实列出，不绕过去。</p>
+        <p class="card-link"><a href="#">前往仓库</a></p>
+      </div>
+
+      <div class="card">
+        <svg class="card-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M12.5 3.5a2 2 0 00-2 2c0 .35.09.68.25.97H7.4A1.4 1.4 0 006 7.87v3.35c.29-.16.62-.25.97-.25a2 2 0 010 4c-.35 0-.68-.09-.97-.25v3.35a1.4 1.4 0 001.4 1.4h3.35a2.02 2.02 0 01-.25-.97 2 2 0 014 0c0 .35-.9.68-.25.97h3.35a1.4 1.4 0 001.4-1.4v-3.35c-.29.16-.62.25-.97.25a2 2 0 010-4c.35 0 .68.09.97.25V7.87a1.4 1.4 0 00-1.4-1.4h-3.35c.16-.29.25-.62.25-.97a2 2 0 00-2-2z"/>
+        </svg>
+        <h3 class="subtitle">写一个插件</h3>
+        <p class="copy">一个 C 入口点、一个 <span class="mono">swift/</span> 目录，加上几行 JavaScript。SDK 随
+          App 一起分发，所以你不需要 Xcode。</p>
+        <p class="card-link"><a href="#">阅读插件作者指南</a></p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap-wide">
+    <p class="note">Surf · DeepSeek Harness 的 macOS App · 2026</p>
+    <div class="footer-links">
+      <a class="note" style="color:var(--ink-3)" href="#">[LICENCE]</a>
+      <span class="note">与 DeepSeek 无关联</span>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
