@@ -7,17 +7,25 @@ import SwiftUI
 /// | 级别 | 长什么样 | 为什么 |
 /// |---|---|---|
 /// | 正在进行 | 系统 spinner（`ProgressView`） | 运行中是*正在变化*，静止的点表达不了；且不依赖颜色 |
-/// | 等你动作 | 语义符号 + 系统色 | 叹号/问号形状本身就能区分，色盲或灰度下不丢信息 |
+/// | 等你动作 | 语义符号 + 系统色 | 举手/气泡/警告三个形状本身就能区分，色盲或灰度下不丢信息 |
 /// | 纯状态 | 什么都不画 | 空闲不是消息 |
 ///
-/// 曾经四个状态全是彩色圆点，等于把"要你动手"和"纯信息"画成同一个东西。
+/// 曾经四个状态全是彩色圆点，等于把"要你动手"和"纯信息"画成同一个东西；
+/// 后来换成 `*.circle.fill`，圆底那块实心色在一列灰字里像红绿灯，一样刺眼。
+/// 现在用的是**裸的语义符号**——不带圆底，形状直接说事：
 ///
-/// 绿点被删掉不是口味问题：绿点的既有语义是"一切正常"（Mail 的在线点那种），
-/// 拿它表示"正在跑"是反的；而且它与橙点、紫点只差色相。
+/// - `hand.raised` 等你批准：举手就是"先别动，等我"，比一个叹号准
+/// - `questionmark` 等你回答：问号就是问句本身，不用绕道气泡；蓝色是系统里
+///   "轮到你了、可以点"的既有色，和橙（拦住你）、红（出错了）分得开
+/// - `exclamationmark.triangle` 出错：三角警告是系统里"出问题了"的既有语义，
+///   比 `xmark`（"关掉/否"）准；描边而非 `.fill`，实心三角是 alert 级别的分量
+/// - `checkmark` 跑完了：**绿色**。绿的既有语义就是"一切正常、成过了"，
+///   这一档正好是它（早年那版绿点用来表示*正在跑*才是反的，所以被删）
 ///
 /// **槽位 20pt**（官方 `Sidebars/*/Medium/Items/Level 0` 的 Leading - Icon 就是
 /// 20 宽），内部图标尺寸不变：`ProgressView().controlSize(.small)` 是 16pt，
-/// 符号 13pt，都在槽里居中——两者光学重心对齐，行与行之间不会左右晃。
+/// 符号 13pt（勾 12pt，它本身就宽），都在槽里居中——光学重心对齐，
+/// 行与行之间不会左右晃。
 struct StatusIndicator: View {
     let status: SidebarSessionStatus
     /// 只用来读 AX label——界面上这里一个字都没有，全是符号与转轮。
@@ -42,23 +50,24 @@ struct StatusIndicator: View {
             ProgressView()
                 .controlSize(.small)
         case .pendingApproval:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 13, weight: .medium))
+            Image(systemName: "hand.raised")
+                .font(.system(size: 13))
                 .foregroundStyle(.orange)
         case .pendingQuestion:
-            Image(systemName: "questionmark.circle.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.purple)
+            // 裸问号笔画细，同字号下比举手/警告轻一档，semibold 补回来。
+            Image(systemName: "questionmark")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.blue)
         case .failed:
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 13, weight: .medium))
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 13))
                 .foregroundStyle(.red)
         case .done:
-            // **空心而不是实心**：上面三个是"等你动手"，这个只是"跑完了，看一眼"。
-            // 同样的字号下空心的视觉重量明显轻一档，一列扫下来分得开。
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+            // 勾自带宽度，同字号下比上面三个显大一圈，所以退到 12；
+            // 加粗一档补回被减掉的分量，免得在描边符号旁边显得虚。
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.green)
         case .idle:
             Color.clear
         }

@@ -12,9 +12,10 @@ import SwiftUI
 //
 // - 「新建会话」常驻在最上面（`newSessionRow`），落在当前选中会话所属的工作区；
 // - 搜索是系统 `NSSearchField`（`SidebarSearchField`），不自绘；
-// - 列表按工作区分组或按时间分段（组织轴 `SidebarFilterState.Mode`，
-//   在工具栏那枚「筛选」菜单里切）。**「待处理」是恒在最上面的一个分区**
-//   （待批准 / 待回答 / 出错 / 跑完了），从下面的分区里提走、不重复；
+// - 列表按工作区分组、按时间分段、或按状态分段（组织轴 `SidebarFilterState.Mode`，
+//   在工具栏那枚「筛选」菜单里切）。**状态只在「按状态」那一档分段**
+//   （待处理 / 进行中 / 已结束）——另外两档一条会话都不往外提，
+//   按工作区看时项目里的会话是齐的，按时间看时今天的会话都在「今天」里；
 // - 工具栏那枚「筛选」（分组方式 + 工作区显隐 + 显示已归档 + 清除筛选）在
 //   `SidebarPlugin` 里，是个 `NSMenuToolbarItem`，与这里共读一份 `SidebarFilterState`；
 // - 底栏「添加工作区」（`folder.badge.plus`），不画分隔线。
@@ -157,7 +158,7 @@ struct SessionRow: View {
     private var archivable: Bool { !session.blank && !session.archived }
 }
 
-/// 分区头的规格。**三处共用**（工作区 / 时间分段 / 置顶待处理）——
+/// 分区头的规格。**三处共用**（工作区 / 时间分段 / 状态分段）——
 /// 从前一个是 11 semibold secondary、一个是 13 medium primary，同一张列表上
 /// 两种分区头长得不一样，看着像两个控件。
 ///
@@ -182,7 +183,7 @@ enum SectionHeaderStyle {
     })
 }
 
-/// 只有标题（+ 可选计数）的分区头：时间分段与置顶的「待处理」用它。
+/// 只有标题（+ 可选计数）的分区头：时间分段与状态分段用它。
 /// 工作区分组头多了 hover 动作，另见 `GroupHeader`。
 struct PlainSectionHeader: View {
     let title: String
@@ -309,7 +310,7 @@ struct GroupHeader: View {
     }
 }
 
-/// 主视图：搜索 + 筛选胶囊 + 列表（按工作区分组，或按时间分段）。
+/// 主视图：搜索 + 列表（按工作区分组、按时间分段、或按状态分段）。
 struct SidebarView<Model: SidebarModel>: View {
     @ObservedObject var model: Model
     @ObservedObject var filter: SidebarFilterState
@@ -371,6 +372,13 @@ struct SidebarView<Model: SidebarModel>: View {
         let rows: [SidebarSession]
     }
 
+    /// 「按状态」视图的一段。同样以稳定英文 id（`StatusBuckets.Bucket`）为身份。
+    private struct StatusSection: Identifiable {
+        let bucket: StatusBuckets.Bucket
+        var id: String { bucket.rawValue }
+        let rows: [SidebarSession]
+    }
+
     init(model: Model, filter: SidebarFilterState, surface: SurfConversationSurface,
          locale: SurfLocaleStore) {
         self.model = model
@@ -414,10 +422,8 @@ struct SidebarView<Model: SidebarModel>: View {
     /// 「按时间」视图：把所有过筛的会话摊平、按 updatedAt 倒序、分四段。
     private var timeSections: [TimeSection] {
         var buckets: [TimeBuckets.Bucket: [SidebarSession]] = [:]
-        for group in model.groups where !filter.hiddenGroups.contains(groupKey(group)) {
-            for session in group.sessions where filter.belongsToSections(session) {
-                buckets[TimeBuckets.of(session.updatedAt), default: []].append(session)
-            }
+        for session in filter.visibleSessions(from: model.groups) {
+            buckets[TimeBuckets.of(session.updatedAt), default: []].append(session)
         }
         return TimeBuckets.order.compactMap { bucket in
             guard let rows = buckets[bucket] else { return nil }
@@ -426,18 +432,19 @@ struct SidebarView<Model: SidebarModel>: View {
         }
     }
 
-    private func groupKey(_ group: SidebarGroup) -> String {
-        group.filterKey
-    }
-
-    /// 置顶的待处理行。两种分组视图都在最上面摆它，空则整个分区不出现。
-    private var pendingRows: [SidebarSession] {
-        filter.pendingSessions(from: model.groups)
+    /// 「按状态」视图的三段。分段规则在 `SidebarFilterState`——快捷键导航
+    /// 读的是同一份，这里只把它装进 `Identifiable` 的壳里给 `ForEach` 用。
+    private var statusSections: [StatusSection] {
+        filter.statusSections(from: model.groups)
+            .map { StatusSection(bucket: $0.bucket, rows: $0.rows) }
     }
 
     private var isEmpty: Bool {
-        guard pendingRows.isEmpty else { return false }
-        return filter.mode == .time ? timeSections.isEmpty : filteredGroups.isEmpty
+        switch filter.mode {
+        case .workspace: return filteredGroups.isEmpty
+        case .time: return timeSections.isEmpty
+        case .status: return statusSections.isEmpty
+        }
     }
 
     /// List 双向选择绑定：读真源；写（用户点选）走 activate。
@@ -465,10 +472,12 @@ struct SidebarView<Model: SidebarModel>: View {
                 .padding(.bottom, 10)
             if isEmpty {
                 emptyState
-            } else if filter.mode == .time {
-                timeList
             } else {
-                workspaceList
+                switch filter.mode {
+                case .workspace: workspaceList
+                case .time: timeList
+                case .status: statusList
+                }
             }
             addWorkspaceBar
         }
@@ -551,25 +560,8 @@ struct SidebarView<Model: SidebarModel>: View {
         }?.workspaceId
     }
 
-    /// 置顶的「待处理」分区。**收的行从下面的分区里提走**（`belongsToSections`），
-    /// 不重复出现；空则整段不画（没有"恭喜，没有待办"这种空态）。
-    @ViewBuilder
-    private var pendingSection: some View {
-        let rows = pendingRows
-        if !rows.isEmpty {
-            Section {
-                ForEach(rows) { session in
-                    row(session).tag(session.id)
-                }
-            } header: {
-                PlainSectionHeader(title: strings.pendingSection, count: nil)
-            }
-        }
-    }
-
     private var workspaceList: some View {
         List(selection: selection) {
-                pendingSection
                 ForEach(filteredGroups) { group in
                     Section {
                         if isExpanded(group.id) {
@@ -605,7 +597,6 @@ struct SidebarView<Model: SidebarModel>: View {
 
     private var timeList: some View {
         List(selection: selection) {
-            pendingSection
             ForEach(timeSections) { section in
                 Section {
                     ForEach(section.rows) { session in
@@ -621,6 +612,27 @@ struct SidebarView<Model: SidebarModel>: View {
         // 侧边栏不留滚动条。macOS 的 overlay scroller 在浅色下是半透明纯黑，
         // 压在会话行右缘上是一道很扎眼的深色竖条——而这里本来就不需要它指位置：
         // 一屏十来行、有搜索有筛选，位置感来自分组头。
+        .scrollIndicators(.never)
+        .accessibilityIdentifier("sidebar.list")
+    }
+
+    /// 「按状态」视图：待处理 / 进行中 / 已结束，段内按最后活动倒序。
+    /// **只有这一档看得见状态分段**——分区头与「按时间」同一款（`PlainSectionHeader`），
+    /// 一张列表上不该有两种长相的分区头。
+    private var statusList: some View {
+        List(selection: selection) {
+            ForEach(statusSections) { section in
+                Section {
+                    ForEach(section.rows) { session in
+                        row(session).tag(session.id)
+                    }
+                } header: {
+                    PlainSectionHeader(title: strings.statusBucket(section.bucket),
+                                       count: section.rows.count)
+                }
+            }
+        }
+        .listStyle(.sidebar)
         .scrollIndicators(.never)
         .accessibilityIdentifier("sidebar.list")
     }

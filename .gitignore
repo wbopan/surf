@@ -70,3 +70,6 @@ docs/spikes/hover/*
 
 # 分发流水线的产物（scripts/release-dmg.sh 的独立 derivedDataPath + dmg）
 /surf-app/host/build-dist/
+
+# status-indicator spike 的可执行产物（`swiftc Variants.swift` 重编即可）
+/docs/spikes/status-indicator/Variants

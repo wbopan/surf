@@ -85,7 +85,7 @@ surf-bridge/       唯一的特权插件：Swift 载荷登记表 + /surf/bridge 
 surf-layout/       占 root 槽：分栏、WebView 排版、sidebar 槽、开放的 toolbar 贡献槽
 surf-sidebar/      占 sidebar 槽：原生会话侧边栏。数据面在 node 半边，Swift 只管画
 surf-notify/       桌面通知：不占槽、不贡献界面，缺席即无通知。同时是「有什么在等着你」
-                   的唯一真相，供给侧边栏那个置顶的「待处理」分区
+                   的唯一真相，供给侧边栏的会话状态（缺席时退回只有「待批准」）
 surf-settings/     原生设置窗口：不占槽、自己一扇窗，前四栏编排照抄 dsh 的 Web 设置对话框
 surf-nativeify/    让 dsh Web UI 摸起来像原生 App：主力是 client 半边那段 CSS，
                    另有一个薄 Swift 载荷让原生侧跟随 dsh 的 ui-theme

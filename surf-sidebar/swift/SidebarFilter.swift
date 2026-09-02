@@ -13,22 +13,25 @@ import SwiftUI
 /// （拨完就该记住，重启也该记住），保管箱只活到进程结束。
 @MainActor
 final class SidebarFilterState: ObservableObject {
-    /// 列表的组织轴。**只剩两档**：按工作区分组，或按时间分段。
+    /// 列表的组织轴。三档：按工作区分组、按时间分段、按状态分段。
     ///
-    /// 曾经还有个 `pending`（当过滤器用，仍按工作区分组）。它升格成了**置顶分区**
-    /// ——「有什么在等着你」是恒常要看见的东西，不该是一个要先切过去才看得到的档位。
-    /// 收的仍是 `SidebarSessionStatus.needsAttention`：待批准、待回答、出错、跑完了
-    /// （后三样来自 surf-notify 的 `surfPending`，它缺席时退回只有待批准）。
+    /// **状态只在 `.status` 这一档影响分段**。曾经有过一个恒常置顶的「待处理」
+    /// 分区，两种视图都摆——它把"等着你"的行从所在分组里提走，于是按工作区看时
+    /// 一个项目的会话会缺几条、按时间看时今天的会话不在「今天」里。现在它是一个
+    /// **要切过去才看的组织轴**：`.status` 分成待处理 / 进行中 / 已结束
+    /// （分段规则见 `StatusBuckets`），另外两档一条都不提走。
     enum Mode: String, CaseIterable {
         case workspace
         case time
+        case status
 
-        /// 「筛选」菜单里那两行字。**rawValue 才是身份**（UserDefaults 存它），
+        /// 「筛选」菜单里那三行字。**rawValue 才是身份**（UserDefaults 存它），
         /// 显示名随语言走。
         func title(_ strings: L) -> String {
             switch self {
             case .workspace: return strings.groupByWorkspace
             case .time: return strings.groupByTime
+            case .status: return strings.groupByStatus
             }
         }
     }
@@ -121,26 +124,21 @@ extension SidebarFilterState {
     ///
     /// 兜底组（未分组）不适用：它是个桶，没东西就不该有桶。
     ///
-    /// **「查询」模式下也不摆空组头**（搜索词在场，或按待处理筛）：那两种模式下
-    /// 用户问的是"哪些符合"，一排空组头是噪音。dsh 没有这两个模式，这条取舍是
-    /// 我们自己的。
+    /// **搜索时也不摆空组头**：搜索词在场时用户问的是"哪些符合"，一排空组头是噪音。
+    /// dsh 没有搜索，这条取舍是我们自己的。
     func filteredGroups(from groups: [SidebarGroup]) -> [SidebarGroup] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let querying = !q.isEmpty
         return groups.compactMap { group in
             if hiddenGroups.contains(group.filterKey) { return nil }
-            let hits = group.sessions.filter(belongsToSections)
+            let hits = group.sessions.filter(passes)
             if !hits.isEmpty {
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
                                     title: group.title, sessions: hits)
             }
-            // 组名命中搜索：整组留着（但仍要过归档/待处理那两关）。
+            // 组名命中搜索：整组留着（但归档那关照过）。
             if !q.isEmpty && group.title.lowercased().contains(q) {
-                let rest = group.sessions.filter { session in
-                    if session.archived && !showArchived { return false }
-                    // 待处理的行归置顶分区，这儿不重复。
-                    return !session.status.needsAttention
-                }
+                let rest = group.sessions.filter { !$0.archived || showArchived }
                 if rest.isEmpty { return nil }
                 return SidebarGroup(id: group.id, workspaceId: group.workspaceId,
                                     title: group.title, sessions: rest)
@@ -155,35 +153,44 @@ extension SidebarFilterState {
         }
     }
 
-    /// 一条会话进不进**下面那些分区**。过筛之外还要不是待处理——
-    /// 待处理的行被置顶分区**提走**了（提取式，不重复）。
-    func belongsToSections(_ session: SidebarSession) -> Bool {
-        passes(session) && !session.status.needsAttention
-    }
-
-    /// 置顶「待处理」分区收的行：过筛 + `needsAttention`，按 updatedAt 倒序。
-    /// 空数组 = 整个分区不出现（没有"恭喜，没有待办"这种空态）。
-    ///
-    /// **两种分组视图共用它**：待处理是"有什么在等着你"，与你此刻按什么分组无关。
-    func pendingSessions(from groups: [SidebarGroup]) -> [SidebarSession] {
+    /// 摊平的「用户此刻看得见的会话」（不分段、不排序）：显出来的分组 × 过筛的行。
+    /// 「按时间」与「按状态」两个视图的原料。
+    func visibleSessions(from groups: [SidebarGroup]) -> [SidebarSession] {
         groups.filter { !hiddenGroups.contains($0.filterKey) }
-            .flatMap { group in group.sessions.filter { passes($0) && $0.status.needsAttention } }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .flatMap { $0.sessions.filter(passes) }
     }
 
-    /// 展示序的扁平会话表——快捷键导航（⌘⇧[ ]、⌘1-9、⌘⌥A）按它数数。
-    /// **置顶的待处理分区排在最前**，和列表画出来的一模一样；其后
-    /// 「按时间」= 全量按 updatedAt 倒序（分段视图段内就是这个序，段与段首尾相接），
-    /// 「按工作区」= 分组序 × 组内序。收起的分组不跳过——收起只是折叠了显示，
-    /// 行仍是列表成员，⌘1-9 的数法要和「筛选」的世界观一致。
-    func orderedSessions(from groups: [SidebarGroup]) -> [SidebarSession] {
-        let pending = pendingSessions(from: groups)
-        if mode == .time {
-            return pending + groups.filter { !hiddenGroups.contains($0.filterKey) }
-                .flatMap { $0.sessions.filter(belongsToSections) }
-                .sorted { $0.updatedAt > $1.updatedAt }
+    /// 「按状态」视图的三段（空段不出现）。段内按 updatedAt 倒序。
+    ///
+    /// 段的身份是 `StatusBuckets.Bucket`（稳定英文 id），标题走 `L.statusBucket(_:)`。
+    /// 视图与快捷键导航共用这一份，⌘1-9 才数得和屏幕一致。
+    func statusSections(from groups: [SidebarGroup])
+        -> [(bucket: StatusBuckets.Bucket, rows: [SidebarSession])] {
+        var buckets: [StatusBuckets.Bucket: [SidebarSession]] = [:]
+        for session in visibleSessions(from: groups) {
+            buckets[StatusBuckets.of(session.status), default: []].append(session)
         }
-        return pending + filteredGroups(from: groups).flatMap(\.sessions)
+        return StatusBuckets.order.compactMap { bucket in
+            guard let rows = buckets[bucket] else { return nil }
+            return (bucket, rows.sorted { $0.updatedAt > $1.updatedAt })
+        }
+    }
+
+    /// 展示序的扁平会话表——快捷键导航（⌘⇧[ ]、⌘1-9、⌘⌥A）按它数数，
+    /// 和列表画出来的一模一样：
+    /// 「按工作区」= 分组序 × 组内序，「按时间」= 全量按 updatedAt 倒序
+    /// （分段视图段内就是这个序，段与段首尾相接），「按状态」= 三段依次接上。
+    /// 收起的分组不跳过——收起只是折叠了显示，行仍是列表成员，
+    /// ⌘1-9 的数法要和「筛选」的世界观一致。
+    func orderedSessions(from groups: [SidebarGroup]) -> [SidebarSession] {
+        switch mode {
+        case .workspace:
+            return filteredGroups(from: groups).flatMap(\.sessions)
+        case .time:
+            return visibleSessions(from: groups).sorted { $0.updatedAt > $1.updatedAt }
+        case .status:
+            return statusSections(from: groups).flatMap(\.rows)
+        }
     }
 }
 

@@ -72,11 +72,10 @@ struct L {
     // MARK: - 搜索与分组
 
     var searchPlaceholder: String { t("搜索", "Search") }
-    /// 「筛选」菜单里的两个分组档位（三枚胶囊退休后，这是它们唯一的去处）。
+    /// 「筛选」菜单里的三个分组档位（三枚胶囊退休后，这是它们唯一的去处）。
     var groupByWorkspace: String { t("按工作区", "By Workspace") }
     var groupByTime: String { t("按时间", "By Date") }  // 原：按时间（en 按分段的实际维度写：那四段是日期）
-    /// 置顶那个分区的标题。**它不是筛选档位**，是恒常置顶的一段。
-    var pendingSection: String { t("待处理", "Pending") }
+    var groupByStatus: String { t("按状态", "By Status") }
 
     // MARK: - 「按时间」的分段（id 是稳定英文串，见 `TimeBuckets`）
 
@@ -86,6 +85,16 @@ struct L {
         case .yesterday: return t("昨天", "Yesterday")
         case .lastSevenDays: return t("过去 7 天", "Previous 7 Days")  // 原：前 7 天（对齐访达的分组用词）
         case .earlier: return t("更早", "Earlier")
+        }
+    }
+
+    // MARK: - 「按状态」的分段（id 是稳定英文串，见 `StatusBuckets`）
+
+    func statusBucket(_ bucket: StatusBuckets.Bucket) -> String {
+        switch bucket {
+        case .pending: return t("待处理", "Pending")
+        case .inProgress: return t("进行中", "In Progress")
+        case .ended: return t("已结束", "Ended")
         }
     }
 

@@ -19,12 +19,46 @@ public enum SidebarSessionStatus: Equatable {
     case done
     case idle
 
-    /// 「待处理」那枚胶囊筛的就是这四个：都是等着人来看一眼的。
-    /// `running` 不算——那是过程，不需要人动手。
+    /// 「有什么在等着你」：这四个都是等着人来看一眼的（判据与 surf-notify 的
+    /// 待办表同源）。`running` 不算——那是过程，不需要人动手。
+    ///
+    /// **它不再决定列表怎么分段**（「按状态」视图分的是 `StatusBuckets` 那三段），
+    /// 只剩 ⌘⌥A「下一个待处理会话」这一个用处。
     var needsAttention: Bool {
         switch self {
         case .pendingApproval, .pendingQuestion, .failed, .done: return true
         case .running, .idle: return false
+        }
+    }
+}
+
+/// 「按状态」视图的三段。**只有这一个组织轴按状态分段**——另外两个
+/// （按工作区 / 按时间）一条状态相关的分区都不摆。
+///
+/// 独立于 `SidebarSessionStatus` 而不是给它加个 `bucket` 属性：那个枚举是
+/// 会话状态的**事实**（对齐 web 语义），这里是"列表怎么分段"的**政策**。
+public enum StatusBuckets {
+    /// 分段的**身份**。rawValue 是稳定英文 id（与 `TimeBuckets.Bucket` 同一条纪律），
+    /// 显示名走 `L.statusBucket(_:)`。
+    public enum Bucket: String, CaseIterable {
+        /// 等着你动手：待批准、待回答。
+        case pending
+        /// 正在跑。
+        case inProgress
+        /// 跑完了 / 出错了 / 闲着——都是"这一轮结束了"。
+        case ended
+    }
+
+    /// 固定顺序：等你的排最前，结束的沉底。
+    public static let order: [Bucket] = [.pending, .inProgress, .ended]
+
+    public static func of(_ status: SidebarSessionStatus) -> Bucket {
+        switch status {
+        case .pendingApproval, .pendingQuestion: return .pending
+        case .running: return .inProgress
+        // `done` / `failed` 是"跑完了还没看"，仍然是终态：它们进「已结束」，
+        // 未读那层意思由行首的符号说（勾 / 三角警告），不占一个分段。
+        case .done, .failed, .idle: return .ended
         }
     }
 }
