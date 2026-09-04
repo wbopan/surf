@@ -32,7 +32,7 @@ docs/              文档，按受众分四层
 ./release              # 装成本机正式形态：只装 App 进 /Applications，不装常驻服务
 ./release --status     # 后端与 App 各在什么状态
 
-node --test surf-sidebar/test/*.test.js   # 全仓唯一的测试，约 2s
+node --test surf-sidebar/test/*.test.js surf-memory/test/*.test.js   # 全仓的测试，约 2s
 surf-app/host/scripts/dev.sh              # 手动构建壳的捷径（不想等轮询时）
 ```
 

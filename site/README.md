@@ -56,24 +56,32 @@ python3 -m http.server -d site 8000   # 然后开 http://localhost:8000
   压扁了。这个坑排查起来极贵，因为症状长得像浏览器的解码 bug。
 - **字体是系统栈**（`-apple-system` 打头），不引 web font。给一个原生 Mac App 做官网，
   用平台自己的字最诚实。
-- **侧边栏几何**按 `docs/archive/sidebar-redesign-plan.md` 的目标形态画：行高 32、标题 13pt
-  regular、状态槽 20、分区头 11pt Bold `rgb(178,178,178)`、搜索框 28、顶部常驻新建行、
-  待处理升格为置顶分区、无分隔线。**是重设计后的形态，不是当前 HEAD。**
+- **侧边栏几何与状态符号**照 `surf-sidebar/swift/` 画，改那边就要回来改这里：行高 32、
+  标题 13pt regular、分区头 18 高 11pt Bold `rgb(178,178,178)`（`SidebarView.swift` 的
+  `SessionRow` / `SectionHeaderStyle`）、状态槽 20（`StatusIndicator.slot`）、搜索框 28、
+  顶部常驻新建行、无分隔线。**状态不置顶提行**：默认分组是按工作区，状态只是行首那个符号；
+  分成待处理 / 进行中 / 已结束是「筛选」里「按状态」那一档的事（`SidebarFilter.swift`
+  的 `Mode`、`SidebarModel.swift` 的 `StatusBuckets`）。
+- **五个状态符号**是页面顶部那张 `<svg class="sprite">`，用 `<use>` 引。四个是从系统符号
+  实描下来的（`hand.raised` / `questionmark` / `exclamationmark.triangle` 13pt、
+  `checkmark` 12pt，按 `StatusIndicator.swift` 要的字号排进 20pt 槽），颜色取 Apple UI Kit
+  的浅色系统色；「正在运行」是手画的系统转轮，那是个控件、不是符号。**不画彩色圆底**。
 - **快捷键、编译耗时、包大小**逐条对过源码。改文案时请一起复查，别让页面跑在代码前面。
 
 ## 已知待办
 
-- 页脚 `[LICENCE]` 是占位：**仓库没有 LICENSE 文件，也没有一个 `package.json` 带
-  `license` 字段**。页面上挂着「View source」，上线前必须先补。
-- 所有 `href="#"` 都是占位，等仓库地址与 dmg 下载地址确定后填。
-- 页面上的插件模块名有四个是**提案**，与仓库实际不符：`SurfUI` 实为 `SurfNativeify`、
-  `SurfKit` 实为 `SurfBridge`、`SurfSessions` 实为 `SurfSidebar`、`SurfShell` 没有对应的包
-  （菜单与快捷键分散在 layout / app 两侧）。`SurfLayout` / `SurfNotify` / `SurfSettings` /
-  `SurfMemory` 与实际一致。模块名由 `surf-bridge/lib/module-name.js` 从包名推导。
 - **两张屏幕截图是真实会话，不是示意数据**，上线前逐项过一遍：会话标题、`Home` 路径里的
   用户名、浏览器标签栏、菜单栏上挂的第三方工具、composer 上显示的模型名，全都会随页面
   公开。
 - 插件切换区里的界面示意与通知横幅仍是示意数据。
+
+## 上线
+
+`.github/workflows/pages.yml` 把 `site/` 整个发到 GitHub Pages
+（`https://wbopan.github.io/surf/`），push 到 main 且动了 `site/**` 就跑。仓库设置里
+Pages 的 source 要选 GitHub Actions。**站点挂在 `/surf/` 子路径下**，所以两页里的资源
+与页内链接一律相对（`styles.css`、`surf.png`、`index.zh.html`、logo 是 `./`），
+一条都不能以 `/` 开头。
 
 ## 宽度
 
