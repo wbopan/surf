@@ -223,3 +223,11 @@ M4 与 M5 之间：因为要先有 Release 才能从 Release 页下载，端到�
 （每完成一个里程碑在此追加一行：日期、做了什么、验收结果、偏离计划之处。）
 
 - 2026-09-04 计划写成。盘点见 §0，三条待拍板决策见 §1（D1 许可证、D2 托管、D3 下载链接）。
+- 2026-09-04 **M1** 完成：LICENSE（MIT）、九个 `package.json` 补 `license` / `repository` / `homepage`、三份计划归档并在 `docs/README.md` 登记、个人路径清到只剩 `docs/archive/`、`release-dmg.sh` 引用改指 `distribution.md`、`Info.plist` 加 `NSHumanReadableCopyright`。测试 47/47。提交 `9a6429c`。
+- 2026-09-04 **M4** 完成：`release-dmg.sh --clean --notarize-profile surfclam` 一次通过，app 与 dmg 两次公证均 Accepted，六个嵌套 dylib 全 Developer ID，dmg 3.98 MB，SHA-256 `a847d47d…1eeee`。
+  - **端到端验收改了做法**：计划里的「新建 surf-qa 用户在登录界面登录」无法从命令行驱动另一个用户的 GUI 会话，没有建那个用户。替代：`ditto` 装进 `/Applications` 后手工写上 Safari 同款 `com.apple.quarantine`，挪开 `~/.dsh/profiles/surf`、清空 `native-plugins`，双击打开。结果：Gatekeeper 放行、新 profile 自举成功（`新建 profile，镜像已刷新，9 条链接已修`）、五个插件全部「bundle 预编译」、`generations/` 目录不存在（零 swiftc）。`spctl` 对 dmg 与 app 都是 `Notarized Developer ID`，`stapler validate` 两处通过。
+  - 副作用：`ditto` + quarantine 会触发 App Translocation，`.stamp` 里 `appPath` 记成了 `/private/var/folders/…/AppTranslocation/…`；真实用户经 Finder 拖入不会这样。验完已去掉 quarantine 并重开一次。`/Applications/Surf.app` 现在是这份公证版（替换了 `./release` 装的 ad-hoc 版）。
+- 2026-09-04 **M2 / M3** 完成（两个子代理并行）：README 按八节重写；官网 12 处占位填实、四个模块名改实名、侧边栏示意改到 HEAD 形态（`.by-space` / `.by-status` 两块 + 五个状态符号 sprite）、`pages.yml` 新建。对照截图重拍：同一会话「Hong Kong weather today」，Chrome 与 Surf 窗口对齐到同一 frame（内置屏，1200×830，`CGWindowList` 读 Surf 主窗坐标后把 Chrome 对上去），`screencapture -D 2` 整屏后按 `site/README.md` 的裁切参数出图。**D7 有折衷**：Dock 不在内置屏上所以画面里没有 Dock，桌面壁纸与菜单栏第三方项保持用户现状，没有为截图改系统设置。提交 `def80d7`。
+- 2026-09-04 **M5** 完成：仓库转 public、description / homepage / 8 个 topics、Pages 源设为 Actions（private 时 API 报 422，转 public 后才成功）、tag `v0.1.0`、Release 挂 `Surf-0.1.0.dmg`（先 draft 后正式）。Pages workflow 首跑 16s 成功。
+- 2026-09-04 **M6** 完成：官网两页与 README 里的全部链接 200；线上两页 `href="#"` 为 0；从 Release 下载的 dmg SHA-256 与 notes 一致，`spctl` 为 `Notarized Developer ID`。本计划随即归档。
+
