@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf-sidebar",
 	"version": "0.1.0",
 	"description": "surf 的原生会话侧边栏：占 surf-layout 的 sidebar 槽，数据面在 node 半边（订宿主服务，投影经桥下推）",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf-sidebar"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

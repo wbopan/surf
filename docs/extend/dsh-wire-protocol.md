@@ -35,7 +35,7 @@ Content-Type: application/json
 ```bash
 curl -s -X POST http://127.0.0.1:50241/api/host.describe -H 'Content-Type: application/json' \
   -d '{"type":"client-request","rpcId":"11111111-1111-1111-1111-111111111111","method":"host.describe","payload":{}}'
-# → {"type":"server-response",...,"result":{"ok":true,"value":{"version":"0.0.1","cwd":"/Users/wenbopan","provider":"zai-coding-cn","model":"glm-5.3","attachedSessions":10,"home":"/Users/wenbopan","canOpenPath":true}}}
+# → {"type":"server-response",...,"result":{"ok":true,"value":{"version":"0.0.1","cwd":"/Users/you","provider":"zai-coding-cn","model":"glm-5.3","attachedSessions":10,"home":"/Users/you","canOpenPath":true}}}
 ```
 
 ### session.list
@@ -46,7 +46,7 @@ payload `{}`（`cursor` 可选；实测传未知 cursor 仍返回全量）。**�
 
 ```json
 {"sessionId":"session-8b46...","updatedAt":1787486780702,"running":false,"blank":false,
- "cwd":"/Users/wenbopan/Repos/dsh-mac","agentPreset":"standard",
+ "cwd":"/Users/you/Repos/dsh-mac","agentPreset":"standard",
  "projections":{"asOfSeq":31,"values":{
    "title":"Simple greeting message",           ← 侧边栏标题来源（blank 会话为 null）
    "sessionListMetadata":{"blank":false,"lastPromptAt":1787486780702},
@@ -60,7 +60,7 @@ payload `{}`（`cursor` 可选；实测传未知 cursor 仍返回全量）。**�
 ### workspace.list
 
 ```json
-{"items":[{"workspaceId":"53f18...","path":"/Users/wenbopan/Repos/taste-bench","title":"taste-bench",
+{"items":[{"workspaceId":"53f18...","path":"/Users/you/Repos/taste-bench","title":"taste-bench",
   "sessionIds":["session-f418...","session-67f6..."],
   "createdAt":"2026-08-23T08:04:29.206Z","updatedAt":"2026-08-23T08:25:31.317Z"}],
  "archivedSessionIds":["session-b5f2...", ...]}

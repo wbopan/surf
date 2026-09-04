@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf-notify",
 	"version": "0.1.0",
 	"description": "surf 的可交互桌面通知：node 半边订 apiProxy 的 mux 帧流，Swift 半边发原生通知并把用户的决定原路答回 dsh",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf-notify"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

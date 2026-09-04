@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf-layout",
 	"version": "0.1.0",
 	"description": "surf 的窗口布局插件：Swift 半边接管 root 槽（分栏 + WebView 排版 + sidebar 槽）并定义会话展示面协议；client 半边装 window.__surf 动作桥并收起 web 侧边栏",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf-layout"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

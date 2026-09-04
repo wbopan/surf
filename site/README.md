@@ -56,7 +56,7 @@ python3 -m http.server -d site 8000   # 然后开 http://localhost:8000
   压扁了。这个坑排查起来极贵，因为症状长得像浏览器的解码 bug。
 - **字体是系统栈**（`-apple-system` 打头），不引 web font。给一个原生 Mac App 做官网，
   用平台自己的字最诚实。
-- **侧边栏几何**按 `docs/sidebar-redesign-plan.md` 的目标形态画：行高 32、标题 13pt
+- **侧边栏几何**按 `docs/archive/sidebar-redesign-plan.md` 的目标形态画：行高 32、标题 13pt
   regular、状态槽 20、分区头 11pt Bold `rgb(178,178,178)`、搜索框 28、顶部常驻新建行、
   待处理升格为置顶分区、无分隔线。**是重设计后的形态，不是当前 HEAD。**
 - **快捷键、编译耗时、包大小**逐条对过源码。改文案时请一起复查，别让页面跑在代码前面。

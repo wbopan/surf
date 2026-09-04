@@ -1,6 +1,6 @@
 #!/bin/bash
 # 分发流水线：Developer ID 签名 + Hardened Runtime 构建 → dmg → 签 dmg →（公证）。
-# 权威计划 docs/archive/distribution-plan.md §4 与 §5。
+# 机制与理由：docs/internals/distribution.md §5（签名与公证）、§6（dmg）。
 #
 # 用法：
 #   scripts/release-dmg.sh [--identity <名字>] [--skip-notarize]
@@ -13,7 +13,7 @@
 # 用**独立的 derivedDataPath**有两个理由：① 开发形态那份 Release 产物
 # （`./release` 装机用的、ad-hoc 签名的那个）不被这一轮的 Developer ID 产物覆盖；
 # ② 顺带保证 `CodeSign` 阶段必然真的跑一遍——增量构建下它可能被判定为不必重跑
-# （计划 §4.1a）。代价是每次全量编译，发布路径上无所谓。
+# （distribution.md §5.3）。代价是每次全量编译，发布路径上无所谓。
 #
 # **签名的知识只有一份**：entitlements 在 project.yml 的 `entitlements.properties`
 # 里（xcodegen 每次重写那个 plist，手改静默丢失，§4.3）；嵌套代码由
@@ -61,7 +61,7 @@ if [[ -z "${IDENTITY}" ]]; then
     | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p')
   if [[ ${#FOUND[@]} -eq 0 ]]; then
     echo "error: 钥匙串里没有 Developer ID Application 证书" >&2
-    echo "  它来自 Apple Developer Program（99 USD/年）；申请与导入见计划 §4.4。" >&2
+    echo "  它来自 Apple Developer Program（99 USD/年）；见 docs/internals/distribution.md §5。" >&2
     exit 1
   fi
   if [[ ${#FOUND[@]} -gt 1 ]]; then
@@ -90,7 +90,7 @@ echo "==> xcodegen generate…"
 ./tools/xcodegen generate
 
 echo "==> 构建 ${CONFIGURATION}（Developer ID + Hardened Runtime）…"
-# 四个覆盖，每个都缺一不可（计划 §4.2 / §4.3）：
+# 四个覆盖，每个都缺一不可（distribution.md §5 / §5.2）：
 #   CODE_SIGN_IDENTITY               ← 真身份；embed-modules.sh 与预编译工具读的
 #                                      EXPANDED_CODE_SIGN_IDENTITY 由它推出
 #   ENABLE_HARDENED_RUNTIME=YES      ← 公证的前提
@@ -119,12 +119,12 @@ ENTS="$(codesign -d --entitlements - "${PRODUCT_PATH}" 2>/dev/null || true)"
 if ! grep -q "com.apple.security.cs.disable-library-validation" <<<"${ENTS}"; then
   echo "error: entitlements 里没有 disable-library-validation" >&2
   echo "  少了它，Hardened Runtime 下现场编译出来的插件（ad-hoc 签名）一个都" >&2
-  echo "  dlopen 不了——整个热插件机制在分发形态下是死的。见计划 §4.3。" >&2
+  echo "  dlopen 不了——整个热插件机制在分发形态下是死的。见 distribution.md §5.2。" >&2
   exit 1
 fi
 if grep -q "get-task-allow" <<<"${ENTS}"; then
   echo "error: entitlements 里还有 get-task-allow，公证会直接拒收" >&2
-  echo "  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO 没生效？见计划 §4.2。" >&2
+  echo "  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO 没生效？见 distribution.md §5.2。" >&2
   exit 1
 fi
 codesign -d --verbose=4 "${PRODUCT_PATH}" 2>&1 | grep -E "^(Authority|TeamIdentifier|Timestamp|Signature|Runtime|CodeDirectory)" || true
@@ -145,25 +145,25 @@ while IFS= read -r -d '' dylib; do
   fi
 done < <(find "${PRODUCT_PATH}/Contents" -name '*.dylib' -print0)
 if [[ ${NESTED_BAD} -eq 1 ]]; then
-  echo "error: 上面这些嵌套 dylib 不是 Developer ID 签的（见计划 §4.2）" >&2
+  echo "error: 上面这些嵌套 dylib 不是 Developer ID 签的（见 distribution.md §5.1）" >&2
   exit 1
 fi
 echo "  嵌套 dylib 全部 Developer ID：$(find "${PRODUCT_PATH}/Contents" -name '*.dylib' | wc -l | tr -d ' ') 个"
 
 # ---------------------------------------------------------------- 公证：app 那一半
 
-# **公证要做两次、staple 两处，而且顺序不能换**（计划 §4.4）：
+# **公证要做两次、staple 两处，而且顺序不能换**（distribution.md §5.4）：
 #   ① 先把 **app** 交公证 → `stapler staple` 那个 .app
 #   ② 然后拿**已经 staple 过的 app** 打 dmg → 签 dmg → 交公证 → staple dmg
 # 反过来（先打 dmg 再回头 staple app）是做不到的：stapler 按 cdhash 取票，
 # 改了 app 就等于换了一个 dmg，之前那张票对不上号。
 #
 # 提交用 zip（zip **不能 staple**，只是个运输容器——这正是别的项目那套
-# "ditto -c -k → 公证 → staple → 再 ditto -c -k" 舞步的由来，计划 §4.4）。
+# "ditto -c -k → 公证 → staple → 再 ditto -c -k" 舞步的由来，distribution.md §5.4）。
 notarize() {
   local what="$1"
   echo "==> 公证 ${what}（--wait，可能要几分钟）…"
-  # --timeout 给宽：2026 年有若干报告公证卡在 In Progress 超过一小时（计划 §4.4）。
+  # --timeout 给宽：2026 年有若干报告公证卡在 In Progress 超过一小时（distribution.md §5.4）。
   xcrun notarytool submit "${what}" --keychain-profile "${NOTARIZE_PROFILE}" \
     --wait --timeout 2h
 }
@@ -183,7 +183,7 @@ fi
 
 command -v dmgbuild >/dev/null || {
   echo "error: 没有 dmgbuild" >&2
-  echo "  补法：pip install dmgbuild（或 uv tool install dmgbuild）。选型理由见计划 §5.1。" >&2
+  echo "  补法：pip install dmgbuild（或 uv tool install dmgbuild）。选型理由见 distribution.md §6。" >&2
   exit 1
 }
 
@@ -202,7 +202,7 @@ codesign --force --timestamp --sign "${IDENTITY}" "${DMG}"
 codesign -v --verbose=2 "${DMG}"
 
 echo "==> dmg：${DMG}"
-# hdiutil 在 macOS 27 上打弃用警告（走 stderr，不影响解析；计划 §5.3）。
+# hdiutil 在 macOS 27 上打弃用警告（走 stderr，不影响解析；distribution.md §6）。
 hdiutil imageinfo "${DMG}" 2>/dev/null \
   | grep -E "^(Format|Format Description|Class Name)|partition-name|Apple_APFS" || true
 
@@ -216,7 +216,7 @@ if [[ -z "${NOTARIZE_PROFILE}" ]]; then
   echo "─────────────────────────────────────────────────────────────"
   echo "未公证（notarization），dmg 只能在本机用。"
   echo
-  echo "缺的是 notarytool 的凭据，两种任选其一（计划 §4.4）："
+  echo "缺的是 notarytool 的凭据，两种任选其一（distribution.md §5.4）："
   echo "  · App Store Connect API key（.p8 + Key ID + Issuer ID）"
   echo "    xcrun notarytool store-credentials <profile 名> \\"
   echo "      --key <AuthKey_XXX.p8> --key-id <KEY_ID> --issuer <ISSUER_ID>"

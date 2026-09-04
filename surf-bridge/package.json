@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf-bridge",
 	"version": "0.1.0",
 	"description": "surf 原生插件的唯一特权插件：Swift 载荷登记表 + /surf/bridge WebSocket + snapshot/changed 广播",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf-bridge"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

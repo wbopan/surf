@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf-memory",
 	"version": "0.1.0",
 	"description": "给 dsh 加一个跨会话的持久记忆：一目录 markdown，索引注入上下文，正文与写入交给普通文件工具。纯 node，零 macOS 依赖",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf-memory"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"main": "lib/index.js",
 	"exports": {

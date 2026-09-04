@@ -24,9 +24,9 @@ function tmpRoot(tag) {
 test("slugFor 与本机真实的 Claude 目录名逐字节一致", () => {
 	// 这个断言与机器无关：路径存在时 gitRootFor 停在含 .git 的 surf 本身，
 	// 不存在时一路走到 / 再退回原路径——两条路给出同一个字符串。
-	assert.equal(slugFor("/Users/wenbopan/Repos/surf"), "-Users-wenbopan-Repos-surf");
+	assert.equal(slugFor("/Users/you/Repos/surf"), "-Users-you-Repos-surf");
 	// 以 `-` 开头不是笔误，是 Claude 的实际格式。
-	assert.ok(slugFor("/Users/wenbopan/Repos/surf").startsWith("-"));
+	assert.ok(slugFor("/Users/you/Repos/surf").startsWith("-"));
 });
 
 test("git worktree 里 .git 是文件，slug 用 worktree 自己的根", () => {
@@ -59,12 +59,12 @@ test("dir 缺省 → <dshHome>/memory/<slug>", () => {
 	try {
 		process.env.DSH_HOME = "/tmp/fake-dsh-home";
 		assert.equal(
-			memoryDirFor({ dir: "", cwd: "/Users/wenbopan/Repos/surf" }),
-			"/tmp/fake-dsh-home/memory/-Users-wenbopan-Repos-surf",
+			memoryDirFor({ dir: "", cwd: "/Users/you/Repos/surf" }),
+			"/tmp/fake-dsh-home/memory/-Users-you-Repos-surf",
 		);
 		assert.equal(
-			memoryDirFor({ cwd: "/Users/wenbopan/Repos/surf" }),
-			"/tmp/fake-dsh-home/memory/-Users-wenbopan-Repos-surf",
+			memoryDirFor({ cwd: "/Users/you/Repos/surf" }),
+			"/tmp/fake-dsh-home/memory/-Users-you-Repos-surf",
 		);
 		delete process.env.DSH_HOME;
 		assert.equal(dshHome(), path.join(os.homedir(), ".dsh"));
@@ -76,8 +76,8 @@ test("dir 缺省 → <dshHome>/memory/<slug>", () => {
 
 test('dir === "claude" → ~/.claude/projects/<slug>/memory', () => {
 	assert.equal(
-		memoryDirFor({ dir: "claude", cwd: "/Users/wenbopan/Repos/surf" }),
-		path.join(os.homedir(), ".claude", "projects", "-Users-wenbopan-Repos-surf", "memory"),
+		memoryDirFor({ dir: "claude", cwd: "/Users/you/Repos/surf" }),
+		path.join(os.homedir(), ".claude", "projects", "-Users-you-Repos-surf", "memory"),
 	);
 });
 

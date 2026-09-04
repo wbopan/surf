@@ -81,6 +81,8 @@
 | `native-feel-upgrade-plan.md` | 对照 `extend/webview-native-feel.md` 做的原生感升级 |
 | `web-header-native-match-plan.md` | 只用 CSS 把 web header 调到 macOS 27 工具栏形态 |
 | `native-subagent-catalog.md` | 子代理 catalog 原生化；实现已随 header 插件删除，保留是因为它是仓库里唯一记着 dsh 子代理契约的地方 |
+| `surf-rename-plan.md` / `surf-rename-anchors.md` | 2026-08-30 那次 surfclam → surf 改名：锚点清单与迁移计划 |
+| `sidebar-redesign-plan.md` | 侧边栏重设计（单行 32pt + 顶部新建行）；「按状态」分组随后又调过一次（提交 `a2ccc76`），以源码为准 |
 
 ## spikes/ —— 可复跑的验证台
 

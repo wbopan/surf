@@ -2,6 +2,13 @@
 	"name": "@wenbo/surf",
 	"version": "0.1.0",
 	"description": "surf：把 dsh 的 Web UI 装进 macOS 原生壳。伞 bundle——本包不含运行时代码，只有一张编排表（cordis.patch.yml）和一个安装器（bin/surf.js）。",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wbopan/surf.git",
+		"directory": "surf"
+	},
+	"homepage": "https://wbopan.github.io/surf/",
 	"type": "module",
 	"bin": {
 		"surf": "./bin/surf.js"
